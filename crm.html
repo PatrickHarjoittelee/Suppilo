@@ -573,6 +573,24 @@ async function loadData() {
     allContacts = yhRows.slice(1).filter(r=>r[0]).map((r,i)=>({
       ...Object.fromEntries(YH_COLS.map((k,j)=>[k,r[j]||''])), _rowIndex:i+2
     }));
+    const yhTiliIds = new Set(allContacts.map(c => c.tili_id));
+    const toMigrate = allProspects.filter(p =>
+      p['yhteyshenkilö'] && !p['yhteyshenkilö'].startsWith('#') && !yhTiliIds.has(p.spara_id)
+    );
+    if (toMigrate.length) {
+      const ts = Date.now();
+      const migRows = toMigrate.map((p, i) => {
+        const phone = (p.suora_numero && !p.suora_numero.startsWith('#')) ? p.suora_numero
+                    : (p.vaihde_puhelin && !p.vaihde_puhelin.startsWith('#')) ? p.vaihde_puhelin : '';
+        return ['YH'+(ts+i), p.spara_id, p['yhteyshenkilö'], p.titteli||'', phone,
+                p.henk_sahkoposti||'', p.linkedin||'', ''];
+      });
+      await sheetAppend(`${YH_TAB}!A:H`, migRows);
+      const yhRowsNew = await sheetGet(`${YH_TAB}!A:H`);
+      allContacts = yhRowsNew.slice(1).filter(r=>r[0]).map((r,i)=>({
+        ...Object.fromEntries(YH_COLS.map((k,j)=>[k,r[j]||''])), _rowIndex:i+2
+      }));
+    }
   } catch(e) {
     showToast('Virhe: '+e.message,'error'); console.error(e); return;
   }
@@ -1193,18 +1211,6 @@ function renderDashboard() {
 function renderContactsTab(p) {
   const div=document.getElementById('mt-yh'); if(!div) return;
   let html='';
-  if (p['yhteyshenkilö']) {
-    html+=`<div class="yh-item">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div class="yh-item-name">${esc(p['yhteyshenkilö'])}<span class="source-badge">Sheets</span></div>
-      </div>
-      <div class="yh-item-meta">
-        ${p.titteli?`<span>${esc(p.titteli)}</span>`:''}
-        ${p.suora_numero?`<span>📞 <a href="tel:${p.suora_numero.replace(/\s/g,'')}" style="color:var(--blue)">${esc(p.suora_numero)}</a> <button class="btn btn-ghost btn-sm" onclick="soitaJaLogi(${JSON.stringify(p.suora_numero)},${JSON.stringify(p['yhteyshenkilö']||'')})">Soita</button></span>`:''}
-        ${p.henk_sahkoposti?`<span>✉️ <a href="mailto:${esc(p.henk_sahkoposti)}" style="color:var(--blue)">${esc(p.henk_sahkoposti)}</a></span>`:''}
-        ${p.linkedin?`<span>🔗 <a href="${esc(p.linkedin)}" target="_blank" rel="noopener" style="color:var(--blue)">LinkedIn</a></span>`:''}
-      </div></div>`;
-  }
   allContacts.filter(c=>c.tili_id===p.spara_id).forEach(c=>{
     html+=`<div class="yh-item" id="yh-${c.id}-wrap">
       <div id="yh-${c.id}-meta">
