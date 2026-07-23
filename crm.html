@@ -457,7 +457,7 @@ const CLIENT_ID = '305442089079-umco1cv64ei5i8vu9pfefo4dm4fp3kj4.apps.googleuser
 const SHEET_ID  = '1NpkHd0nTpWvaOP6GrwyFo1-P2_dohUn6BdTV-rmT0og';
 const SCOPE     = 'https://www.googleapis.com/auth/spreadsheets';
 const CRM_TAB   = 'CRM-tila';
-const CRM_COLS  = ['spara_id','vaihe','omistaja','seuraava_toimenpide','seuraava_pvm','muistiinpanot','aktiviteetit','updated_at','status'];
+const CRM_COLS  = ['spara_id','vaihe','omistaja','seuraava_toimenpide','seuraava_pvm','muistiinpanot','aktiviteetit','updated_at','status','tili_override'];
 const MAIN_TAB  = 'Tilit';
 const TILIT_COLS = ['id','name','y_tunnus','toimiala','yhtiömuoto','osoite','postinumero','kaupunki','yhteyshenkilö','sahkoposti','rekisteroity','lisatiedot','created_at','www'];
 const YH_TAB  = 'Yhteyshenkilöt';
@@ -567,7 +567,7 @@ async function loadData() {
     }
     const mainRows = await sheetGet(`${MAIN_TAB}!A1:AZ500`);
     allProspects = parseProspects(mainRows);
-    const crmRows = await sheetGet(`${CRM_TAB}!A:I`);
+    const crmRows = await sheetGet(`${CRM_TAB}!A:J`);
     applyCrmState(crmRows);
     const yhRows = await sheetGet(`${YH_TAB}!A:H`);
     allContacts = yhRows.slice(1).filter(r=>r[0]).map((r,i)=>({
@@ -592,7 +592,7 @@ function detectVaihe(tila, tulos) {
   return 'Uusi';
 }
 
-function blankCrm() { return { omistaja:null, seuraava_toimenpide:null, seuraava_pvm:null, muistiinpanot:null, aktiviteetit:'[]', crm_status:'', _crmRow:null }; }
+function blankCrm() { return { omistaja:null, seuraava_toimenpide:null, seuraava_pvm:null, muistiinpanot:null, aktiviteetit:'[]', crm_status:'', tili_override:{}, _crmRow:null }; }
 
 function parseProspects(rows) {
   const out = [];
@@ -649,29 +649,44 @@ function applyCrmState(crmRows) {
   const map = {};
   crmRows.forEach((row,i) => {
     if (i===0||!row[0]) return;
+    let ov = {};
+    try { if (row[9]) ov = JSON.parse(row[9]); } catch(_) {}
     map[row[0]] = { vaihe:row[1]||null, omistaja:row[2]||null, seuraava_toimenpide:row[3]||null,
       seuraava_pvm:row[4]||null, muistiinpanot:row[5]||null, aktiviteetit:row[6]||'[]',
-      crm_status:row[8]||'', _crmRow:i+1 };
+      crm_status:row[8]||'', tili_override:ov, _crmRow:i+1 };
   });
   allProspects.forEach(p => {
     const s = map[p.spara_id];
     if (!s) return;
     if (s.vaihe) p.vaihe = s.vaihe;
+    const ov = s.tili_override || {};
     Object.assign(p, { omistaja:s.omistaja, seuraava_toimenpide:s.seuraava_toimenpide,
       seuraava_pvm:s.seuraava_pvm, muistiinpanot:s.muistiinpanot,
-      aktiviteetit:s.aktiviteetit||'[]', crm_status:s.crm_status||'', _crmRow:s._crmRow });
+      aktiviteetit:s.aktiviteetit||'[]', crm_status:s.crm_status||'', tili_override:ov, _crmRow:s._crmRow });
+    if (ov.yritys_nimi)       p.yritys_nimi       = ov.yritys_nimi;
+    if (ov.y_tunnus    != null) p.y_tunnus         = ov.y_tunnus;
+    if (ov.segmentti   != null) p.segmentti        = ov.segmentti;
+    if (ov.juridinen_yhtio != null) p.juridinen_yhtio = ov.juridinen_yhtio;
+    if (ov.osoite      != null) p.osoite           = ov.osoite;
+    if (ov.postinumero != null) p.postinumero      = ov.postinumero;
+    if (ov.kaupunki    != null) p.kaupunki         = ov.kaupunki;
+    if (ov.www         != null) p.www              = ov.www;
+    if (ov['yhteyshenkilö'] != null) p['yhteyshenkilö'] = ov['yhteyshenkilö'];
+    if (ov.henk_sahkoposti != null) p.henk_sahkoposti = ov.henk_sahkoposti;
+    if (ov.huomiot     != null) p.huomiot          = ov.huomiot;
   });
 }
 
 async function saveCrmState(p) {
+  const ov = p.tili_override && Object.keys(p.tili_override).length ? JSON.stringify(p.tili_override) : '';
   const row = [p.spara_id, p.vaihe||'Uusi', p.omistaja||'', p.seuraava_toimenpide||'',
     p.seuraava_pvm||'', p.muistiinpanot||'', p.aktiviteetit||'[]', new Date().toISOString(),
-    p.crm_status||''];
+    p.crm_status||'', ov];
   if (p._crmRow) {
-    await sheetPut(`${CRM_TAB}!A${p._crmRow}:I${p._crmRow}`, [row]);
+    await sheetPut(`${CRM_TAB}!A${p._crmRow}:J${p._crmRow}`, [row]);
   } else {
-    await sheetAppend(`${CRM_TAB}!A:I`, [row]);
-    const crmRows = await sheetGet(`${CRM_TAB}!A:I`);
+    await sheetAppend(`${CRM_TAB}!A:J`, [row]);
+    const crmRows = await sheetGet(`${CRM_TAB}!A:J`);
     applyCrmState(crmRows);
   }
 }
@@ -708,7 +723,6 @@ function renderMuokkaaTab(p) {
 async function saveMuokkaa() {
   if (!currentId) return;
   const p = allProspects.find(x => x.spara_id === currentId); if (!p) return;
-  if (!p._isTili) { showToast('Vain manuaalisesti lisättyjä tilejä voi muokata', 'error'); return; }
   p.yritys_nimi     = document.getElementById('me-name')?.value.trim() || p.yritys_nimi;
   p.y_tunnus        = document.getElementById('me-ytunnus')?.value.trim() || '';
   p.segmentti       = document.getElementById('me-toimiala')?.value.trim() || '';
@@ -720,8 +734,15 @@ async function saveMuokkaa() {
   p['yhteyshenkilö']= document.getElementById('me-yhteyshenkilö')?.value.trim() || '';
   p.henk_sahkoposti = document.getElementById('me-sahkoposti')?.value.trim() || '';
   p.huomiot         = document.getElementById('me-lisatiedot')?.value.trim() || '';
+  p.tili_override   = {
+    yritys_nimi: p.yritys_nimi, y_tunnus: p.y_tunnus, segmentti: p.segmentti,
+    juridinen_yhtio: p.juridinen_yhtio, osoite: p.osoite, postinumero: p.postinumero,
+    kaupunki: p.kaupunki, www: p.www, 'yhteyshenkilö': p['yhteyshenkilö'],
+    henk_sahkoposti: p.henk_sahkoposti, huomiot: p.huomiot
+  };
   try {
-    await saveTiliData(p);
+    await saveCrmState(p);
+    if (p._isTili && p._rowIndex) await saveTiliData(p);
     document.getElementById('modal-title').textContent = p.yritys_nimi;
     updateSummary(); applyFilters();
     showToast('Tallennettu ✓', 'success');
@@ -839,7 +860,7 @@ function openModal(sid) {
   document.getElementById('modal-title').textContent=p.yritys_nimi;
   const f=(label,val,full)=>{ if (val==null||val==='') return ''; return `<div class="info-block${full?' full':''}"><div class="info-label">${label}</div><div class="info-value">${val}</div></div>`; };
   const lnk=u=>u?`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`:null;
-  const tel=t=>t?`<a href="tel:${t.replace(/\s/g,'')}">${esc(t)}</a>`:null;
+  const tel=(t,nim)=>t?`<a href="tel:${t.replace(/\s/g,'')}">${esc(t)}</a><button class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:11px" onclick="soitaJaLogi(${JSON.stringify(t)},${JSON.stringify(nim||'')})">📞 Soita</button>`:null;
   const mail=m=>m?`<a href="mailto:${esc(m)}">${esc(m)}</a>`:null;
   document.getElementById('info-grid').innerHTML=`
     ${f('Spara ID',p.spara_id)} ${f('Projekti',p.kampanja)}
@@ -851,8 +872,8 @@ function openModal(sid) {
     ${f('Liikevaihto',p.liikevaihto_meur?p.liikevaihto_meur+' M€':null)} ${f('Kulutusarvio MWh/v',p.kulutusarvio_mwh)}
     <div class="section-divider"></div>
     ${f('Yhteyshenkilö',p['yhteyshenkilö'])} ${f('Titteli',p.titteli)}
-    ${f('Suora numero',tel(p.suora_numero))} ${f('Henk. sähköposti',mail(p.henk_sahkoposti))}
-    ${f('Vaihde / yleinen',tel(p.vaihde_puhelin))} ${f('Yleinen sähköposti',mail(p.yleinen_sahkoposti))}
+    ${f('Suora numero',tel(p.suora_numero, p['yhteyshenkilö']))} ${f('Henk. sähköposti',mail(p.henk_sahkoposti))}
+    ${f('Vaihde / yleinen',tel(p.vaihde_puhelin, p.yritys_nimi))} ${f('Yleinen sähköposti',mail(p.yleinen_sahkoposti))}
     ${f('LinkedIn',p.linkedin?lnk(p.linkedin):null)} ${f('WWW',lnk(p.www))}
     <div class="section-divider"></div>
     ${f('Signaali',p.signaali,true)} ${f('Perustelu',p.perustelu,true)}
@@ -869,17 +890,29 @@ function openModal(sid) {
   document.getElementById('e-pvm').value=p.seuraava_pvm||'';
   document.getElementById('e-muistiinpanot').value=p.muistiinpanot||'';
   document.getElementById('e-status').value=p.crm_status||'';
-  document.getElementById('tab-muokkaa').style.display = p._isTili ? '' : 'none';
+  document.getElementById('tab-muokkaa').style.display = '';
   document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
   document.querySelector('[data-mt="info"]').classList.add('active');
   document.getElementById('mt-info').classList.add('active');
   renderActivities(p);
-  if (p._isTili) renderMuokkaaTab(p);
+  renderMuokkaaTab(p);
   document.getElementById('modal-overlay').classList.remove('hidden');
 }
 function closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); currentId=null; }
 function closeMaybe(e) { if (e.target===document.getElementById('modal-overlay')) closeModal(); }
+
+function soitaJaLogi(numero, nimike) {
+  window.open('tel:' + numero.replace(/\s/g,''), '_blank');
+  document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
+  document.querySelector('[data-mt="historia"]').classList.add('active');
+  document.getElementById('mt-historia').classList.add('active');
+  const typeEl=document.getElementById('act-type');
+  if (typeEl) { typeEl.value='puhelu'; updateActFields(); }
+  const inputEl=document.getElementById('act-input');
+  if (inputEl) { inputEl.value=nimike ? nimike : ''; inputEl.focus(); }
+}
 
 async function saveMyynti() {
   if (!currentId) return;
@@ -1167,7 +1200,7 @@ function renderContactsTab(p) {
       </div>
       <div class="yh-item-meta">
         ${p.titteli?`<span>${esc(p.titteli)}</span>`:''}
-        ${p.suora_numero?`<span>📞 <a href="tel:${p.suora_numero.replace(/\s/g,'')}" style="color:var(--blue)">${esc(p.suora_numero)}</a></span>`:''}
+        ${p.suora_numero?`<span>📞 <a href="tel:${p.suora_numero.replace(/\s/g,'')}" style="color:var(--blue)">${esc(p.suora_numero)}</a> <button class="btn btn-ghost btn-sm" onclick="soitaJaLogi(${JSON.stringify(p.suora_numero)},${JSON.stringify(p['yhteyshenkilö']||'')})">Soita</button></span>`:''}
         ${p.henk_sahkoposti?`<span>✉️ <a href="mailto:${esc(p.henk_sahkoposti)}" style="color:var(--blue)">${esc(p.henk_sahkoposti)}</a></span>`:''}
         ${p.linkedin?`<span>🔗 <a href="${esc(p.linkedin)}" target="_blank" rel="noopener" style="color:var(--blue)">LinkedIn</a></span>`:''}
       </div></div>`;
@@ -1184,7 +1217,7 @@ function renderContactsTab(p) {
         </div>
         <div class="yh-item-meta">
           ${c.titteli?`<span>${esc(c.titteli)}</span>`:''}
-          ${c.puhelin?`<span>📞 <a href="tel:${c.puhelin.replace(/\s/g,'')}" style="color:var(--blue)">${esc(c.puhelin)}</a></span>`:''}
+          ${c.puhelin?`<span>📞 <a href="tel:${c.puhelin.replace(/\s/g,'')}" style="color:var(--blue)">${esc(c.puhelin)}</a> <button class="btn btn-ghost btn-sm" onclick="soitaJaLogi(${JSON.stringify(c.puhelin)},${JSON.stringify(c.nimi)})">Soita</button></span>`:''}
           ${c.sahkoposti?`<span>✉️ <a href="mailto:${esc(c.sahkoposti)}" style="color:var(--blue)">${esc(c.sahkoposti)}</a></span>`:''}
           ${c.linkedin?`<span>🔗 <a href="${esc(c.linkedin)}" target="_blank" rel="noopener" style="color:var(--blue)">LinkedIn</a></span>`:''}
         </div>
