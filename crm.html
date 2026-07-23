@@ -218,7 +218,7 @@
     <div class="toolbar">
       <input type="text" id="f-haku" placeholder="Hae yritystä, henkilöä, kaupunkia…">
       <select id="f-kampanja">
-        <option value="">Kaikki kampanjat</option>
+        <option value="">Kaikki projektit</option>
         <option>ETJ+</option><option>Talopakettivalmistajat FIN</option><option>Talopakettivalmistajat SWE</option>
       </select>
       <select id="f-vaihe">
@@ -237,19 +237,18 @@
     <div class="table-wrap">
       <table id="tbl-lista">
         <thead><tr>
-          <th data-col="prioriteetti">Prio <span class="sa">↕</span></th>
-          <th data-col="pisteet">Pisteet <span class="sa">↕</span></th>
+          <th data-col="pisteet">Arvosana <span class="sa">↕</span></th>
           <th data-col="yritys_nimi">Yritys <span class="sa">↕</span></th>
           <th data-col="segmentti">Segmentti <span class="sa">↕</span></th>
           <th data-col="kaupunki">Kaupunki <span class="sa">↕</span></th>
           <th data-col="yhteyshenkilö">Yhteyshenkilö</th>
           <th data-col="kulutusarvio_mwh">MWh/v <span class="sa">↕</span></th>
           <th data-col="vaihe">Vaihe <span class="sa">↕</span></th>
-          <th data-col="kampanja">Kampanja <span class="sa">↕</span></th>
+          <th data-col="kampanja">Projekti <span class="sa">↕</span></th>
           <th></th>
         </tr></thead>
         <tbody id="tbody-lista">
-          <tr><td colspan="10" class="loading"><div class="spinner"></div><br>Kirjaudu sisään ladataksesi data…</td></tr>
+          <tr><td colspan="9" class="loading"><div class="spinner"></div><br>Kirjaudu sisään ladataksesi data…</td></tr>
         </tbody>
       </table>
     </div>
@@ -263,7 +262,7 @@
   <div class="tab-content" id="tab-kanban">
     <div class="toolbar">
       <select id="k-kampanja">
-        <option value="">Kaikki kampanjat</option>
+        <option value="">Kaikki projektit</option>
         <option>ETJ+</option><option>Talopakettivalmistajat FIN</option><option>Talopakettivalmistajat SWE</option>
       </select>
     </div>
@@ -341,9 +340,32 @@
       </div>
       <div class="mtab-content" id="mt-historia">
         <div class="act-log" id="act-log"><div class="empty">Ei merkintöjä</div></div>
-        <div class="act-input-row" style="margin-top:10px;">
-          <input class="form-control" id="act-input" placeholder="Lisää kommentti…">
-          <button class="btn btn-ghost btn-sm" onclick="addActivity()">Lisää</button>
+        <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;gap:6px;align-items:center">
+            <select class="form-control" id="act-type" onchange="updateActFields()" style="min-width:130px;flex-shrink:0">
+              <option value="kommentti">💬 Kommentti</option>
+              <option value="puhelu">📞 Puhelu</option>
+              <option value="sahkoposti">✉️ Sähköposti</option>
+              <option value="tapaaminen">🤝 Tapaaminen</option>
+              <option value="tarjous">📄 Tarjous</option>
+            </select>
+            <input class="form-control" id="act-input" placeholder="Kuvaus…">
+            <button class="btn btn-ghost btn-sm" onclick="addActivity()">Lisää</button>
+          </div>
+          <div style="display:flex;gap:6px">
+            <div id="act-tulos-wrap" style="display:none;flex:1">
+              <select class="form-control" id="act-tulos">
+                <option value="">Tulos…</option>
+                <option>Tavoitettu</option>
+                <option>Ei vastattu</option>
+                <option>Vastaajaan</option>
+                <option>Soittaa takaisin</option>
+              </select>
+            </div>
+            <div id="act-arvo-wrap" style="display:none;flex:1">
+              <input class="form-control" id="act-arvo" placeholder="Arvo €" type="number" min="0">
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -625,7 +647,7 @@ function renderTable() {
   const tbody=document.getElementById('tbody-lista');
   const rows=filteredRows.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE);
   if (!rows.length) {
-    tbody.innerHTML='<tr><td colspan="10" class="empty">Ei tuloksia</td></tr>';
+    tbody.innerHTML='<tr><td colspan="9" class="empty">Ei tuloksia</td></tr>';
     document.getElementById('page-info').textContent='';
     document.getElementById('btn-prev').disabled=true;
     document.getElementById('btn-next').disabled=true;
@@ -633,8 +655,7 @@ function renderTable() {
   }
   tbody.innerHTML = rows.map(p=>`
     <tr onclick="openModal('${p.spara_id}')">
-      <td><span class="badge p-${p.prioriteetti||''}">${p.prioriteetti||'–'}</span></td>
-      <td class="${scoreClass(p.pisteet)}">${p.pisteet??'–'}</td>
+      <td class="${arvosanaClass(calcArvosana(p))}">${calcArvosana(p)??'–'}</td>
       <td title="${esc(p.yritys_nimi)}"><strong>${esc(p.yritys_nimi)}</strong></td>
       <td style="color:var(--text2)">${esc(p.segmentti)}</td>
       <td>${esc(p.kaupunki)}</td>
@@ -666,7 +687,7 @@ function renderKanban() {
     col.innerHTML=`<div class="kanban-header"><span class="kanban-title" style="color:${V_COLORS[v]}">${v}</span><span class="kanban-cnt">${cards.length}</span></div>
       <div class="kanban-body">${cards.length?cards.map(p=>`<div class="kcard" onclick="openModal('${p.spara_id}')">
         <div class="kc-name"><span class="kc-prio dot-${p.prioriteetti||'B'}"></span>${esc(p.yritys_nimi)}</div>
-        <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${p.pisteet!=null?`<br><span class="${scoreClass(p.pisteet)}">${p.pisteet} p</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
+        <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${calcArvosana(p)!=null?`<br><span class="${arvosanaClass(calcArvosana(p))}">${calcArvosana(p)}</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
       </div>`).join(''):'<div style="font-size:11px;color:var(--text2);text-align:center;padding:12px">–</div>'}</div>`;
     board.appendChild(col);
   });
@@ -695,9 +716,9 @@ function openModal(sid) {
   const tel=t=>t?`<a href="tel:${t.replace(/\s/g,'')}">${esc(t)}</a>`:null;
   const mail=m=>m?`<a href="mailto:${esc(m)}">${esc(m)}</a>`:null;
   document.getElementById('info-grid').innerHTML=`
-    ${f('Spara ID',p.spara_id)} ${f('Kampanja',p.kampanja)}
+    ${f('Spara ID',p.spara_id)} ${f('Projekti',p.kampanja)}
     ${f('Prioriteetti',p.prioriteetti?`<span class="badge p-${p.prioriteetti}">${p.prioriteetti}</span>`:null)}
-    ${f('Pisteet',p.pisteet!=null?`<span class="${scoreClass(p.pisteet)}">${p.pisteet}</span>`:null)}
+    ${f('Arvosana',calcArvosana(p)?`<span class="${arvosanaClass(calcArvosana(p))}">${calcArvosana(p)}</span>`:null)}
     ${f('Yrityksen nimi',`<strong>${esc(p.yritys_nimi)}</strong>`,true)}
     ${f('Konserni / juridinen',p.juridinen_yhtio,true)}
     ${f('Segmentti',p.segmentti)} ${f('Kaupunki',p.kaupunki)} ${f('Osoite',p.osoite)} ${f('Y-tunnus',p.y_tunnus)}
@@ -761,14 +782,31 @@ function renderActivities(p) {
       <div class="act-text">${esc(a.teksti)}</div>
     </div>`).join('');
 }
+function updateActFields() {
+  const t = document.getElementById('act-type')?.value;
+  document.getElementById('act-tulos-wrap').style.display = t==='puhelu' ? '' : 'none';
+  document.getElementById('act-arvo-wrap').style.display  = t==='tarjous' ? '' : 'none';
+}
 async function addActivity() {
   if (!currentId) return;
-  const input=document.getElementById('act-input'), teksti=input.value.trim(); if (!teksti) return;
-  const p=allProspects.find(x=>x.spara_id===currentId); if (!p) return;
-  const tekija=document.getElementById('e-omistaja').value.trim()||null;
-  addActToProspect(p,'kommentti',teksti,tekija);
-  try { await saveCrmState(p); input.value=''; renderActivities(p); showToast('Kommentti lisätty','success'); }
-  catch(e) { showToast('Virhe: '+e.message,'error'); }
+  const input  = document.getElementById('act-input');
+  const tyyppi = document.getElementById('act-type')?.value || 'kommentti';
+  const tulos  = tyyppi==='puhelu'  ? (document.getElementById('act-tulos')?.value||'') : '';
+  const arvo   = tyyppi==='tarjous' ? (document.getElementById('act-arvo')?.value||'')  : '';
+  let teksti   = input.value.trim();
+  if (tulos) teksti = (teksti ? teksti+' — ' : '') + 'Tulos: '+tulos;
+  if (arvo)  teksti = (teksti ? teksti+' — ' : '') + 'Arvo: '+arvo+' €';
+  if (!teksti) { showToast('Syötä kuvaus tai tulos','error'); return; }
+  const p = allProspects.find(x=>x.spara_id===currentId); if (!p) return;
+  const tekija = document.getElementById('e-omistaja').value.trim()||null;
+  addActToProspect(p, tyyppi, teksti, tekija);
+  try {
+    await saveCrmState(p);
+    input.value='';
+    const tEl=document.getElementById('act-tulos'); if(tEl) tEl.value='';
+    const aEl=document.getElementById('act-arvo');  if(aEl) aEl.value='';
+    renderActivities(p); showToast('Lisätty ✓','success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 const actIcon=t=>({kommentti:'💬',puhelu:'📞',sahkoposti:'✉️',tapaaminen:'🤝',vaihe_muutos:'🔄'}[t]||'📝');
 
@@ -1019,6 +1057,8 @@ function kampBadge(k) {
   return esc(k);
 }
 function scoreClass(s) { return !s?'':s>=85?'score-high':s>=70?'score-mid':'score-low'; }
+function calcArvosana(p) { return p.pisteet!=null ? parseFloat((p.pisteet/10).toFixed(1)) : null; }
+function arvosanaClass(a) { return a==null?'':a>=8.5?'score-high':a>=7.0?'score-mid':'score-low'; }
 function esc(s) { return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'):'–'; }
 function fmtDT(d) { return d?new Date(d).toLocaleString('fi-FI',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):''; }
 function showToast(msg,type='') {
