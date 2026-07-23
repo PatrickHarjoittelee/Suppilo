@@ -156,6 +156,17 @@
     .spinner{display:inline-block;width:22px;height:22px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin-bottom:10px;}
     @keyframes spin{to{transform:rotate(360deg)}}
     .empty{text-align:center;padding:32px;color:var(--text2);font-size:13px;}
+
+    /* YTJ / PRH autocomplete */
+    .ytj-row{display:flex;gap:8px;align-items:center;}
+    .ytj-row input{flex:1;}
+    .ytj-status{font-size:12px;margin-top:6px;min-height:16px;}
+    .ytj-ok{color:var(--accent);} .ytj-err{color:var(--red);} .ytj-spin{color:var(--text2);}
+    .ytj-dropdown{position:absolute;left:0;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 6px 20px rgba(0,0,0,.45);z-index:2100;max-height:240px;overflow-y:auto;margin-top:2px;}
+    .ytj-dropdown-item{padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;}
+    .ytj-dropdown-item:last-child{border-bottom:none;}
+    .ytj-dropdown-item:hover{background:var(--bg3);}
+    .ytj-item-name{font-weight:600;} .ytj-item-meta{font-size:11px;color:var(--text2);margin-top:2px;}
   </style>
 </head>
 <body>
@@ -182,6 +193,7 @@
   <div class="hdr-right">
     <span class="sync-dot"></span>
     <span class="user-chip" id="user-chip">–</span>
+    <button class="btn btn-primary btn-sm" onclick="openAddTili()">+ Lisää tili</button>
     <button class="btn btn-ghost btn-sm" onclick="logout()">Kirjaudu ulos</button>
   </div>
 </header>
@@ -198,6 +210,7 @@
 <div class="tabs">
   <div class="tab active" data-tab="lista">Listanäkymä</div>
   <div class="tab" data-tab="kanban">Kanban</div>
+  <div class="tab" data-tab="tilit">Tilit</div>
 </div>
 
 <main>
@@ -255,6 +268,29 @@
       </select>
     </div>
     <div class="kanban" id="kanban-board"></div>
+  </div>
+
+  <div class="tab-content" id="tab-tilit">
+    <div class="toolbar">
+      <input type="text" id="f-tilit-haku" placeholder="Hae tilin nimeä, y-tunnusta, kaupunkia…">
+      <div class="spacer"></div>
+      <button class="btn btn-primary btn-sm" onclick="openAddTili()">+ Lisää tili</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Yritys</th>
+          <th>Y-tunnus</th>
+          <th>Toimiala</th>
+          <th>Kaupunki</th>
+          <th>Yhteyshenkilö</th>
+          <th>Lisätty</th>
+        </tr></thead>
+        <tbody id="tbody-tilit">
+          <tr><td colspan="6" class="loading"><div class="spinner"></div><br>Kirjaudu sisään ladataksesi tilit…</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </main>
 </div>
@@ -314,6 +350,49 @@
   </div>
 </div>
 
+<!-- Add Tili modal -->
+<div class="modal-overlay hidden" id="addtili-modal" onclick="closeTiliMaybe(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Lisää tili</div>
+      <button class="modal-close" onclick="closeAddTili()">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- PRH search -->
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px;position:relative">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Hae yritystiedot PRH:n avoimesta rekisteristä (avoindata.prh.fi)</div>
+        <div class="ytj-row">
+          <input type="text" class="form-control" id="addtili-ytj-input" placeholder="Y-tunnus tai yrityksen nimi" autocomplete="off"
+            oninput="ytjInputChanged('addtili')"
+            onkeydown="if(event.key==='Enter'){fetchAndFillYTJ('addtili');hideYtjDropdown('addtili')}"
+            onblur="setTimeout(()=>hideYtjDropdown('addtili'),200)">
+          <button class="btn btn-primary btn-sm" onclick="fetchAndFillYTJ('addtili');hideYtjDropdown('addtili')">Hae</button>
+        </div>
+        <div class="ytj-status" id="addtili-ytj-status"></div>
+        <div id="addtili-ytj-dropdown" class="ytj-dropdown" style="display:none"></div>
+      </div>
+      <!-- Form fields -->
+      <div class="form-grid">
+        <div class="form-group full"><label>Yrityksen nimi *</label><input class="form-control" id="tf_name" placeholder="Yrityksen nimi"></div>
+        <div class="form-group"><label>Y-tunnus</label><input class="form-control" id="tf_ytunnus" placeholder="1234567-8"></div>
+        <div class="form-group"><label>Toimiala</label><input class="form-control" id="tf_toimiala"></div>
+        <div class="form-group"><label>Yhtiömuoto</label><input class="form-control" id="tf_yhtiömuoto"></div>
+        <div class="form-group"><label>Katuosoite</label><input class="form-control" id="tf_osoite"></div>
+        <div class="form-group"><label>Postinumero</label><input class="form-control" id="tf_postinumero"></div>
+        <div class="form-group"><label>Kaupunki</label><input class="form-control" id="tf_kaupunki"></div>
+        <div class="form-group"><label>Yhteyshenkilö</label><input class="form-control" id="tf_yhteyshenkilö" placeholder="Etu- ja sukunimi"></div>
+        <div class="form-group"><label>Sähköposti</label><input class="form-control" id="tf_sahkoposti" type="email" placeholder="nimi@yritys.fi"></div>
+        <div class="form-group"><label>Rekisteröity</label><input class="form-control" id="tf_rekisteroity" readonly></div>
+        <div class="form-group full"><label>Lisätiedot</label><textarea class="form-control" id="tf_lisatiedot" rows="2"></textarea></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+        <button class="btn btn-ghost" onclick="closeAddTili()">Peruuta</button>
+        <button class="btn btn-primary" onclick="saveNewTili()">Lisää järjestelmään</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast-wrap" id="toast-wrap"></div>
 
 <script>
@@ -322,9 +401,12 @@ const SHEET_ID  = '1NpkHd0nTpWvaOP6GrwyFo1-P2_dohUn6BdTV-rmT0og';
 const SCOPE     = 'https://www.googleapis.com/auth/spreadsheets';
 const CRM_TAB   = 'CRM-tila';
 const CRM_COLS  = ['spara_id','vaihe','omistaja','seuraava_toimenpide','seuraava_pvm','muistiinpanot','aktiviteetit','updated_at'];
+const TILIT_TAB  = 'Tilit';
+const TILIT_COLS = ['id','name','y_tunnus','toimiala','yhtiömuoto','osoite','postinumero','kaupunki','yhteyshenkilö','sahkoposti','rekisteroity','lisatiedot','created_at'];
 
 let accessToken = null, tokenClient = null;
 let allProspects = [], filteredRows = [], currentId = null;
+let allTilit = [];
 let page = 0, sortCol = 'pisteet', sortAsc = false;
 const PAGE_SIZE = 60;
 
@@ -403,15 +485,23 @@ async function loadData() {
       await apiPost(':batchUpdate', { requests:[{ addSheet:{ properties:{ title:CRM_TAB } } }] });
       await sheetAppend(`${CRM_TAB}!A1`, [CRM_COLS]);
     }
-    const mainTab = tabNames.find(n => n !== CRM_TAB) || tabNames[0];
-    const rows    = await sheetGet(`${mainTab}!A1:AB300`);
-    allProspects  = parseProspects(rows);
-    const crmRows = await sheetGet(`${CRM_TAB}!A:H`);
+    if (!tabNames.includes(TILIT_TAB)) {
+      await apiPost(':batchUpdate', { requests:[{ addSheet:{ properties:{ title:TILIT_TAB } } }] });
+      await sheetAppend(`${TILIT_TAB}!A1`, [TILIT_COLS]);
+    }
+    const mainTab  = tabNames.find(n => n !== CRM_TAB && n !== TILIT_TAB) || tabNames[0];
+    const rows     = await sheetGet(`${mainTab}!A1:AZ500`);
+    allProspects   = parseProspects(rows);
+    const crmRows  = await sheetGet(`${CRM_TAB}!A:H`);
     applyCrmState(crmRows);
+    const tilitRows = await sheetGet(`${TILIT_TAB}!A:M`);
+    allTilit = tilitRows.slice(1).filter(r => r[0]).map(r =>
+      Object.fromEntries(TILIT_COLS.map((k,i) => [k, r[i]||'']))
+    );
   } catch(e) {
     showToast('Virhe: ' + e.message, 'error'); console.error(e); return;
   }
-  buildSegmentFilter(); updateSummary(); applyFilters();
+  buildSegmentFilter(); updateSummary(); applyFilters(); renderTilit();
 }
 
 // ── Parse ─────────────────────────────────────────────────────────────────────
@@ -593,6 +683,7 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
   document.querySelectorAll('.tab-content').forEach(x=>x.classList.remove('active'));
   t.classList.add('active'); document.getElementById('tab-'+t.dataset.tab).classList.add('active');
   if (t.dataset.tab==='kanban') renderKanban();
+  if (t.dataset.tab==='tilit') renderTilit();
 }));
 
 function openModal(sid) {
@@ -680,6 +771,230 @@ async function addActivity() {
   catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 const actIcon=t=>({kommentti:'💬',puhelu:'📞',sahkoposti:'✉️',tapaaminen:'🤝',vaihe_muutos:'🔄'}[t]||'📝');
+
+// ── PRH / YTJ API v3 (lainattu Talorekkari/dashboard/etj-plus.html) ──────────
+const PRH_V3 = 'https://avoindata.prh.fi/opendata-ytj-api/v3/companies';
+const _ytjDebounce = {};
+
+function _str(v) {
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  if (Array.isArray(v)) {
+    const active = v.filter(x => !x.endDate);
+    const pick = active.find(x => (x.language||'').toUpperCase() === 'FI') || active[0] || v[0];
+    if (!pick) return '';
+    return _str(pick.name || pick.value || pick);
+  }
+  if (typeof v === 'object')
+    return _str(v.name || v.value || v.fi || v.FI || v.EN || v.en ||
+      Object.values(v).find(x => x && typeof x === 'string') || '');
+  return String(v);
+}
+
+function _prhName(res) {
+  const top = _str(res.name) || _str(res.companyName);
+  if (top) return top;
+  const arr = (res.names || []).filter(n => !n.endDate).sort((a,b) => (a.order||0)-(b.order||0));
+  return _str((arr.find(n => n.language==='FI') || arr[0] || {}).name);
+}
+
+function _prhToTiliForm(res) {
+  const addrs  = (res.addresses || []).filter(a => !a.endDate);
+  const addr   = addrs.find(a => a.type === 1) || addrs[0] || {};
+  const blines = (res.businessLines || []).filter(b => !b.endDate);
+  const bline  = blines.find(b => b.language==='FI') || blines[0] || {};
+  const cityStr = _str(addr.city) || _str(addr.postOffice) || _str(addr.municipality);
+  return {
+    tf_name:         _prhName(res),
+    tf_ytunnus:      _str(res.businessId),
+    tf_toimiala:     _str(bline.name) || _str(bline.code),
+    tf_yhtiömuoto:   _str(res.companyForm) || _str(res.legalForm) || '',
+    tf_osoite:       _str(addr.street),
+    tf_postinumero:  _str(addr.postCode),
+    tf_kaupunki:     cityStr,
+    tf_rekisteroity: _str(res.registrationDate),
+  };
+}
+
+async function _prhFetch(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const data = await r.json();
+  return data.companies || data.results || [];
+}
+
+async function prhFetchByBusinessId(id) {
+  const items = await _prhFetch(`${PRH_V3}?businessId=${encodeURIComponent(_str(id).trim())}`);
+  if (!items.length) throw new Error('Ei löydy Y-tunnuksella ' + _str(id).trim());
+  return _prhToTiliForm(items[0]);
+}
+
+async function prhSearchByName(name) {
+  return _prhFetch(`${PRH_V3}?name=${encodeURIComponent(name.trim())}&maxResults=10`);
+}
+
+function hideYtjDropdown(context) {
+  const el = document.getElementById(context + '-ytj-dropdown');
+  if (el) el.style.display = 'none';
+}
+
+function showYtjSuggestions(context, results) {
+  const el = document.getElementById(context + '-ytj-dropdown');
+  if (!el || !results.length) { if (el) el.style.display = 'none'; return; }
+  el.innerHTML = results.map((r, i) => {
+    const name  = _prhName(r) || _str(r.businessId) || '–';
+    const id    = _str(r.businessId);
+    const form  = _str(r.companyForm) || _str(r.legalForm);
+    const addrs = (r.addresses||[]).filter(a => !a.endDate);
+    const city  = _str((addrs[0]||{}).city) || _str((addrs[0]||{}).postOffice) || '';
+    const meta  = [id, form, city].filter(Boolean).join(' · ');
+    return `<div class="ytj-dropdown-item" onmousedown="selectYtjSuggestion('${context}',${i})">
+      <div class="ytj-item-name">${esc(name)}</div>
+      <div class="ytj-item-meta">${esc(meta || id)}</div>
+    </div>`;
+  }).join('');
+  el._results = results;
+  el.style.display = '';
+}
+
+function fillTiliForm(data) {
+  Object.entries(data).forEach(([k, v]) => {
+    const el = document.getElementById(k);
+    if (el) el.value = v || '';
+  });
+}
+
+async function selectYtjSuggestion(context, idx) {
+  const el = document.getElementById(context + '-ytj-dropdown');
+  const r  = el?._results?.[idx];
+  if (!r) return;
+  hideYtjDropdown(context);
+  const bId = _str(r.businessId);
+  if (!bId) return;
+  const st = document.getElementById(context + '-ytj-status');
+  document.getElementById(context + '-ytj-input').value = bId;
+  st.className = 'ytj-status ytj-spin'; st.textContent = 'Haetaan tietoja…';
+  try {
+    const formData = await prhFetchByBusinessId(bId);
+    fillTiliForm(formData);
+    st.className = 'ytj-status ytj-ok';
+    st.textContent = '✓ ' + formData.tf_name + (formData.tf_kaupunki ? ', ' + formData.tf_kaupunki : '');
+  } catch(e) {
+    st.className = 'ytj-status ytj-err';
+    st.textContent = 'Haku epäonnistui: ' + e.message;
+  }
+}
+
+function ytjInputChanged(context) {
+  const val = (document.getElementById(context + '-ytj-input').value || '').trim();
+  clearTimeout(_ytjDebounce[context]);
+  if (!val || val.length < 3) { hideYtjDropdown(context); return; }
+  if (/^\d{7}-\d$/.test(val)) { hideYtjDropdown(context); return; }
+  _ytjDebounce[context] = setTimeout(async () => {
+    try {
+      const results = await prhSearchByName(val);
+      showYtjSuggestions(context, results);
+    } catch(e) { hideYtjDropdown(context); }
+  }, 350);
+}
+
+async function fetchAndFillYTJ(context) {
+  const val = (document.getElementById(context + '-ytj-input').value || '').trim();
+  const st  = document.getElementById(context + '-ytj-status');
+  if (!val) { st.className='ytj-status ytj-err'; st.textContent='Syötä Y-tunnus tai yrityksen nimi.'; return; }
+  st.className='ytj-status ytj-spin'; st.textContent='Haetaan…';
+  try {
+    if (/^\d{7}-\d$/.test(val)) {
+      const formData = await prhFetchByBusinessId(val);
+      fillTiliForm(formData);
+      st.className = 'ytj-status ytj-ok';
+      st.textContent = '✓ Tiedot haettu: ' + formData.tf_name + (formData.tf_kaupunki ? ', ' + formData.tf_kaupunki : '');
+    } else {
+      const results = await prhSearchByName(val);
+      if (!results.length) throw new Error('Ei tuloksia haulle "' + val + '"');
+      if (results.length === 1) {
+        const bId = _str(results[0].businessId);
+        document.getElementById(context + '-ytj-input').value = bId;
+        const formData = await prhFetchByBusinessId(bId);
+        fillTiliForm(formData);
+        st.className = 'ytj-status ytj-ok';
+        st.textContent = '✓ Tiedot haettu: ' + formData.tf_name + (formData.tf_kaupunki ? ', ' + formData.tf_kaupunki : '');
+      } else {
+        showYtjSuggestions(context, results);
+        st.className = 'ytj-status ytj-ok';
+        st.textContent = results.length + ' hakutulosta – valitse alta.';
+      }
+    }
+  } catch(e) {
+    st.className = 'ytj-status ytj-err';
+    st.textContent = 'Haku epäonnistui: ' + e.message;
+  }
+}
+
+// ── Tilit ─────────────────────────────────────────────────────────────────────
+function openAddTili() {
+  document.getElementById('addtili-ytj-input').value = '';
+  document.getElementById('addtili-ytj-status').textContent = '';
+  hideYtjDropdown('addtili');
+  ['tf_name','tf_ytunnus','tf_toimiala','tf_yhtiömuoto','tf_osoite','tf_postinumero',
+   'tf_kaupunki','tf_yhteyshenkilö','tf_sahkoposti','tf_rekisteroity','tf_lisatiedot']
+    .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('addtili-modal').classList.remove('hidden');
+}
+function closeAddTili() { document.getElementById('addtili-modal').classList.add('hidden'); }
+function closeTiliMaybe(e) { if (e.target===document.getElementById('addtili-modal')) closeAddTili(); }
+
+async function saveNewTili() {
+  const name = document.getElementById('tf_name')?.value.trim();
+  if (!name) { showToast('Yrityksen nimi on pakollinen', 'error'); return; }
+  const id = 'T' + Date.now();
+  const row = [
+    id, name,
+    document.getElementById('tf_ytunnus')?.value.trim()||'',
+    document.getElementById('tf_toimiala')?.value.trim()||'',
+    document.getElementById('tf_yhtiömuoto')?.value.trim()||'',
+    document.getElementById('tf_osoite')?.value.trim()||'',
+    document.getElementById('tf_postinumero')?.value.trim()||'',
+    document.getElementById('tf_kaupunki')?.value.trim()||'',
+    document.getElementById('tf_yhteyshenkilö')?.value.trim()||'',
+    document.getElementById('tf_sahkoposti')?.value.trim()||'',
+    document.getElementById('tf_rekisteroity')?.value.trim()||'',
+    document.getElementById('tf_lisatiedot')?.value.trim()||'',
+    new Date().toISOString(),
+  ];
+  try {
+    await sheetAppend(`${TILIT_TAB}!A:M`, [row]);
+    allTilit.push(Object.fromEntries(TILIT_COLS.map((k,i) => [k, row[i]])));
+    renderTilit();
+    closeAddTili();
+    showToast('Tili lisätty: ' + name, 'success');
+  } catch(e) {
+    showToast('Virhe: ' + e.message, 'error');
+  }
+}
+
+function renderTilit() {
+  const tbody = document.getElementById('tbody-tilit');
+  if (!tbody) return;
+  const haku = (document.getElementById('f-tilit-haku')?.value||'').toLowerCase();
+  const rows = haku
+    ? allTilit.filter(t => ['name','y_tunnus','toimiala','kaupunki','yhteyshenkilö'].some(k => (t[k]||'').toLowerCase().includes(haku)))
+    : allTilit;
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">Ei tilejä – lisää ensimmäinen tili yllä olevasta painikkeesta</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(t => `
+    <tr>
+      <td><strong>${esc(t.name)}</strong></td>
+      <td style="color:var(--text2)">${esc(t.y_tunnus)}</td>
+      <td style="color:var(--text2)">${esc(t.toimiala)}</td>
+      <td>${esc(t.kaupunki)}</td>
+      <td style="color:var(--text2)">${esc(t['yhteyshenkilö'])}</td>
+      <td style="color:var(--text2);font-size:11px">${esc((t.created_at||'').substring(0,10))}</td>
+    </tr>`).join('');
+}
+document.getElementById('f-tilit-haku')?.addEventListener('input', renderTilit);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function updateSummary() {
