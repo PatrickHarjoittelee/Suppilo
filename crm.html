@@ -167,6 +167,29 @@
     .ytj-dropdown-item:last-child{border-bottom:none;}
     .ytj-dropdown-item:hover{background:var(--bg3);}
     .ytj-item-name{font-weight:600;} .ytj-item-meta{font-size:11px;color:var(--text2);margin-top:2px;}
+
+    /* Dashboard */
+    .dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;}
+    .dash-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;}
+    .dash-section-title{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;font-weight:600;}
+    .pipeline-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px;}
+    .pipeline-stage{flex:1;min-width:80px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;text-align:center;}
+    .pipeline-count{font-size:22px;font-weight:700;} .pipeline-label{font-size:10px;color:var(--text2);margin-top:2px;}
+    .dash-item{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;}
+    .dash-item:last-child{border-bottom:none;} .dash-item:hover{opacity:.8;}
+    .dash-item-date{color:var(--accent);font-weight:600;min-width:44px;font-size:12px;}
+    .dash-item-name{font-weight:600;font-size:12px;} .dash-item-task{color:var(--text2);font-size:11px;}
+    .proj-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);}
+    .proj-row:last-child{border-bottom:none;}
+    .proj-bar-wrap{flex:1;background:var(--bg3);border-radius:3px;height:6px;overflow:hidden;}
+    .proj-bar{height:6px;border-radius:3px;}
+
+    /* Contacts */
+    .yh-item{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:7px;}
+    .yh-item-name{font-weight:600;font-size:13px;}
+    .yh-item-meta{font-size:11px;color:var(--text2);margin-top:4px;display:flex;flex-wrap:wrap;gap:12px;}
+    .yh-add-form{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-top:10px;}
+    .source-badge{display:inline-block;font-size:9px;background:var(--bg4);color:var(--text2);padding:1px 6px;border-radius:8px;vertical-align:middle;margin-left:5px;}
   </style>
 </head>
 <body>
@@ -199,18 +222,18 @@
 </header>
 
 <div class="summary-bar">
-  <div class="card"><div class="card-label">Kaikki prospektit</div><div class="card-value cv-blue" id="s-total">–</div></div>
+  <div class="card"><div class="card-label">Kaikki tilit</div><div class="card-value cv-blue" id="s-total">–</div></div>
   <div class="card"><div class="card-label">ETJ+</div><div class="card-value cv-red" id="s-etj">–</div></div>
-  <div class="card"><div class="card-label">Talopakettivalmistajat</div><div class="card-value cv-orange" id="s-talo">–</div></div>
+  <div class="card"><div class="card-label">Talopaketit</div><div class="card-value cv-orange" id="s-talo">–</div></div>
   <div class="card"><div class="card-label">Aktiiviset</div><div class="card-value" style="color:var(--yellow)" id="s-active">–</div></div>
   <div class="card"><div class="card-label">Sopimukset</div><div class="card-value cv-green" id="s-sopimus">–</div></div>
-  <div class="card"><div class="card-label">Prioriteetti A</div><div class="card-value cv-red" id="s-a">–</div></div>
+  <div class="card"><div class="card-label">Muu Projekti</div><div class="card-value" style="color:var(--purple)" id="s-muu">–</div></div>
 </div>
 
 <div class="tabs">
-  <div class="tab active" data-tab="lista">Listanäkymä</div>
+  <div class="tab active" data-tab="lista">Tilit</div>
+  <div class="tab" data-tab="dashboard">Dashboard</div>
   <div class="tab" data-tab="kanban">Kanban</div>
-  <div class="tab" data-tab="tilit">Tilit</div>
 </div>
 
 <main>
@@ -220,6 +243,7 @@
       <select id="f-kampanja">
         <option value="">Kaikki projektit</option>
         <option>ETJ+</option><option>Talopakettivalmistajat FIN</option><option>Talopakettivalmistajat SWE</option>
+        <option>Muu Projekti</option>
       </select>
       <select id="f-vaihe">
         <option value="">Kaikki vaiheet</option>
@@ -264,31 +288,26 @@
       <select id="k-kampanja">
         <option value="">Kaikki projektit</option>
         <option>ETJ+</option><option>Talopakettivalmistajat FIN</option><option>Talopakettivalmistajat SWE</option>
+        <option>Muu Projekti</option>
       </select>
     </div>
     <div class="kanban" id="kanban-board"></div>
   </div>
 
-  <div class="tab-content" id="tab-tilit">
-    <div class="toolbar">
-      <input type="text" id="f-tilit-haku" placeholder="Hae tilin nimeä, y-tunnusta, kaupunkia…">
-      <div class="spacer"></div>
-      <button class="btn btn-primary btn-sm" onclick="openAddTili()">+ Lisää tili</button>
+  <div class="tab-content" id="tab-dashboard">
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px">
+      <div class="dash-section-title">Myyntiputki – tilit vaiheittain</div>
+      <div class="pipeline-row" id="dash-pipeline"><div class="empty" style="padding:8px">Ladataan…</div></div>
     </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th>Yritys</th>
-          <th>Y-tunnus</th>
-          <th>Toimiala</th>
-          <th>Kaupunki</th>
-          <th>Yhteyshenkilö</th>
-          <th>Lisätty</th>
-        </tr></thead>
-        <tbody id="tbody-tilit">
-          <tr><td colspan="6" class="loading"><div class="spinner"></div><br>Kirjaudu sisään ladataksesi tilit…</td></tr>
-        </tbody>
-      </table>
+    <div class="dash-grid">
+      <div class="dash-section">
+        <div class="dash-section-title">Seuraavat toimenpiteet <span style="font-weight:400;text-transform:none">(30 pv)</span></div>
+        <div id="dash-upcoming"><div class="empty" style="padding:16px">Ladataan…</div></div>
+      </div>
+      <div class="dash-section">
+        <div class="dash-section-title">Projektijakauma</div>
+        <div id="dash-projects"><div class="empty" style="padding:16px">Ladataan…</div></div>
+      </div>
     </div>
   </div>
 </main>
@@ -305,9 +324,11 @@
       <div class="mtabs">
         <div class="mtab active" data-mt="info">Tiedot</div>
         <div class="mtab" data-mt="myynti">Myynti</div>
+        <div class="mtab" data-mt="yh">Yhteyshenkilöt</div>
         <div class="mtab" data-mt="historia">Historia</div>
       </div>
       <div class="mtab-content active" id="mt-info"><div class="info-grid" id="info-grid"></div></div>
+      <div class="mtab-content" id="mt-yh"></div>
       <div class="mtab-content" id="mt-myynti">
         <div class="form-grid">
           <div class="form-group">
@@ -425,10 +446,12 @@ const CRM_TAB   = 'CRM-tila';
 const CRM_COLS  = ['spara_id','vaihe','omistaja','seuraava_toimenpide','seuraava_pvm','muistiinpanot','aktiviteetit','updated_at'];
 const TILIT_TAB  = 'Tilit';
 const TILIT_COLS = ['id','name','y_tunnus','toimiala','yhtiömuoto','osoite','postinumero','kaupunki','yhteyshenkilö','sahkoposti','rekisteroity','lisatiedot','created_at'];
+const YH_TAB  = 'Yhteyshenkilöt';
+const YH_COLS = ['id','tili_id','nimi','titteli','puhelin','sahkoposti','created_at'];
 
 let accessToken = null, tokenClient = null;
 let allProspects = [], filteredRows = [], currentId = null;
-let allTilit = [];
+let allTilit = [], allContacts = [];
 let page = 0, sortCol = 'pisteet', sortAsc = false;
 const PAGE_SIZE = 60;
 
@@ -497,33 +520,50 @@ async function sheetAppend(range, values) {
 }
 
 // ── Load ──────────────────────────────────────────────────────────────────────
+function tiliToProspect(t) {
+  return {
+    spara_id:t.id, kampanja:'Muu Projekti', prioriteetti:null,
+    segmentti:t.toimiala||'', yritys_nimi:t.name||'–', juridinen_yhtio:t.yhtiömuoto||'',
+    osoite:[t.osoite,t.postinumero,t.kaupunki].filter(Boolean).join(' '),
+    kaupunki:t.kaupunki||'', y_tunnus:t.y_tunnus||'',
+    liikevaihto_meur:null, kulutusarvio_mwh:null, pisteet:null,
+    'yhteyshenkilö':t['yhteyshenkilö']||'', titteli:'', suora_numero:'',
+    henk_sahkoposti:t.sahkoposti||'', yleinen_sahkoposti:'', vaihde_puhelin:'',
+    www:'', linkedin:'', signaali:'', perustelu:'', velvoiteluokka:'',
+    huomiot:t.lisatiedot||'', kontaktoinnin_tila:null, tulos_seuraava_toimi:null,
+    vaihe:'Uusi', ...blankCrm(), _isTili:true,
+  };
+}
+
 async function loadData() {
   document.getElementById('tbody-lista').innerHTML =
-    '<tr><td colspan="10" class="loading"><div class="spinner"></div><br>Ladataan Google Sheetsistä…</td></tr>';
+    '<tr><td colspan="9" class="loading"><div class="spinner"></div><br>Ladataan Google Sheetsistä…</td></tr>';
   try {
     const meta     = await apiGet('?fields=sheets.properties');
     const tabNames = meta.sheets.map(s => s.properties.title);
-    if (!tabNames.includes(CRM_TAB)) {
-      await apiPost(':batchUpdate', { requests:[{ addSheet:{ properties:{ title:CRM_TAB } } }] });
-      await sheetAppend(`${CRM_TAB}!A1`, [CRM_COLS]);
-    }
-    if (!tabNames.includes(TILIT_TAB)) {
-      await apiPost(':batchUpdate', { requests:[{ addSheet:{ properties:{ title:TILIT_TAB } } }] });
-      await sheetAppend(`${TILIT_TAB}!A1`, [TILIT_COLS]);
-    }
-    const mainTab  = tabNames.find(n => n !== CRM_TAB && n !== TILIT_TAB) || tabNames[0];
-    const rows     = await sheetGet(`${mainTab}!A1:AZ500`);
-    allProspects   = parseProspects(rows);
-    const crmRows  = await sheetGet(`${CRM_TAB}!A:H`);
-    applyCrmState(crmRows);
+    const addSheet = async (t,cols) => {
+      await apiPost(':batchUpdate',{requests:[{addSheet:{properties:{title:t}}}]});
+      await sheetAppend(`${t}!A1`,[cols]);
+    };
+    if (!tabNames.includes(CRM_TAB))  await addSheet(CRM_TAB,  CRM_COLS);
+    if (!tabNames.includes(TILIT_TAB)) await addSheet(TILIT_TAB, TILIT_COLS);
+    if (!tabNames.includes(YH_TAB))   await addSheet(YH_TAB,   YH_COLS);
+    const mainTab = tabNames.find(n => ![CRM_TAB,TILIT_TAB,YH_TAB].includes(n)) || tabNames[0];
+    const rows    = await sheetGet(`${mainTab}!A1:AZ500`);
+    allProspects  = parseProspects(rows);
     const tilitRows = await sheetGet(`${TILIT_TAB}!A:M`);
-    allTilit = tilitRows.slice(1).filter(r => r[0]).map(r =>
-      Object.fromEntries(TILIT_COLS.map((k,i) => [k, r[i]||'']))
-    );
+    allTilit = tilitRows.slice(1).filter(r=>r[0]).map(r=>
+      Object.fromEntries(TILIT_COLS.map((k,i)=>[k,r[i]||''])));
+    allProspects = [...allProspects, ...allTilit.map(tiliToProspect)];
+    const crmRows = await sheetGet(`${CRM_TAB}!A:H`);
+    applyCrmState(crmRows);
+    const yhRows = await sheetGet(`${YH_TAB}!A:G`);
+    allContacts = yhRows.slice(1).filter(r=>r[0]).map(r=>
+      Object.fromEntries(YH_COLS.map((k,i)=>[k,r[i]||''])));
   } catch(e) {
-    showToast('Virhe: ' + e.message, 'error'); console.error(e); return;
+    showToast('Virhe: '+e.message,'error'); console.error(e); return;
   }
-  buildSegmentFilter(); updateSummary(); applyFilters(); renderTilit();
+  buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard();
 }
 
 // ── Parse ─────────────────────────────────────────────────────────────────────
@@ -694,17 +734,20 @@ function renderKanban() {
 }
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
-document.querySelectorAll('.mtab').forEach(t=>t.addEventListener('click',()=>{
-  document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
-  document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
-  t.classList.add('active'); document.getElementById('mt-'+t.dataset.mt).classList.add('active');
-}));
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(x=>x.classList.remove('active'));
   t.classList.add('active'); document.getElementById('tab-'+t.dataset.tab).classList.add('active');
-  if (t.dataset.tab==='kanban') renderKanban();
-  if (t.dataset.tab==='tilit') renderTilit();
+  if (t.dataset.tab==='kanban')    renderKanban();
+  if (t.dataset.tab==='dashboard') renderDashboard();
+}));
+document.querySelectorAll('.mtab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active'); document.getElementById('mt-'+t.dataset.mt).classList.add('active');
+  if (t.dataset.mt==='yh' && currentId) {
+    const p=allProspects.find(x=>x.spara_id===currentId); if(p) renderContactsTab(p);
+  }
 }));
 
 function openModal(sid) {
@@ -969,6 +1012,114 @@ async function fetchAndFillYTJ(context) {
   }
 }
 
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+function renderDashboard() {
+  const VCOL={Uusi:'var(--blue)',Yhteytetty:'var(--orange)',Tapaaminen:'var(--purple)',
+    Tarjous:'var(--yellow)',Sopimus:'var(--green)','Hylätty':'var(--red)'};
+  const PCOL={'ETJ+':'var(--red)','Talopakettivalmistajat FIN':'var(--orange)',
+    'Talopakettivalmistajat SWE':'var(--blue)','Muu Projekti':'var(--purple)'};
+
+  // Pipeline
+  const plEl=document.getElementById('dash-pipeline');
+  if (plEl) {
+    const cnt={};
+    VAIHEET.forEach(v=>cnt[v]=0);
+    allProspects.forEach(p=>{if(cnt[p.vaihe]!=null)cnt[p.vaihe]++;});
+    plEl.innerHTML=Object.entries(cnt).map(([v,n])=>
+      `<div class="pipeline-stage"><div class="pipeline-count" style="color:${VCOL[v]}">${n}</div><div class="pipeline-label">${v}</div></div>`).join('');
+  }
+
+  // Upcoming actions (next 30 days)
+  const upEl=document.getElementById('dash-upcoming');
+  if (upEl) {
+    const today=new Date().toISOString().substring(0,10);
+    const cut=new Date(Date.now()+30*86400000).toISOString().substring(0,10);
+    const items=allProspects
+      .filter(p=>p.seuraava_pvm&&p.seuraava_pvm>=today&&p.seuraava_pvm<=cut)
+      .sort((a,b)=>a.seuraava_pvm.localeCompare(b.seuraava_pvm)).slice(0,12);
+    upEl.innerHTML=items.length
+      ?items.map(p=>`<div class="dash-item" onclick="openModal('${p.spara_id}')">
+          <div class="dash-item-date">${p.seuraava_pvm.substring(5)}</div>
+          <div><div class="dash-item-name">${esc(p.yritys_nimi)}</div>
+          <div class="dash-item-task">${esc(p.seuraava_toimenpide||'–')}</div></div></div>`).join('')
+      :'<div class="empty" style="padding:16px">Ei tulevia toimenpiteitä 30 pv:n sisällä</div>';
+  }
+
+  // Project distribution
+  const prEl=document.getElementById('dash-projects');
+  if (prEl) {
+    const projs={};
+    allProspects.forEach(p=>{const k=p.kampanja||'Muu Projekti';projs[k]=(projs[k]||0)+1;});
+    const total=allProspects.length||1;
+    prEl.innerHTML=Object.entries(projs).sort((a,b)=>b[1]-a[1]).map(([k,n])=>{
+      const pct=Math.round(n/total*100), col=PCOL[k]||'var(--accent)';
+      return `<div class="proj-row">
+        <div style="min-width:130px;font-size:12px">${kampBadge(k)} <span style="color:var(--text2)">${n}</span></div>
+        <div class="proj-bar-wrap"><div class="proj-bar" style="width:${pct}%;background:${col}"></div></div>
+        <div style="font-size:11px;color:var(--text2);min-width:30px;text-align:right">${pct}%</div>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ── Contacts (Yhteyshenkilöt) ─────────────────────────────────────────────────
+function renderContactsTab(p) {
+  const div=document.getElementById('mt-yh'); if(!div) return;
+  let html='';
+  if (p['yhteyshenkilö']) {
+    html+=`<div class="yh-item">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="yh-item-name">${esc(p['yhteyshenkilö'])}<span class="source-badge">Sheets</span></div>
+      </div>
+      <div class="yh-item-meta">
+        ${p.titteli?`<span>${esc(p.titteli)}</span>`:''}
+        ${p.suora_numero?`<span>📞 <a href="tel:${p.suora_numero.replace(/\s/g,'')}" style="color:var(--blue)">${esc(p.suora_numero)}</a></span>`:''}
+        ${p.henk_sahkoposti?`<span>✉️ <a href="mailto:${esc(p.henk_sahkoposti)}" style="color:var(--blue)">${esc(p.henk_sahkoposti)}</a></span>`:''}
+      </div></div>`;
+  }
+  allContacts.filter(c=>c.tili_id===p.spara_id).forEach(c=>{
+    html+=`<div class="yh-item">
+      <div class="yh-item-name">${esc(c.nimi)}</div>
+      <div class="yh-item-meta">
+        ${c.titteli?`<span>${esc(c.titteli)}</span>`:''}
+        ${c.puhelin?`<span>📞 <a href="tel:${c.puhelin.replace(/\s/g,'')}" style="color:var(--blue)">${esc(c.puhelin)}</a></span>`:''}
+        ${c.sahkoposti?`<span>✉️ <a href="mailto:${esc(c.sahkoposti)}" style="color:var(--blue)">${esc(c.sahkoposti)}</a></span>`:''}
+      </div></div>`;
+  });
+  if (!html) html='<div class="empty" style="padding:16px">Ei yhteyshenkilöitä</div>';
+  div.innerHTML=html+`
+    <div class="yh-add-form">
+      <div style="font-size:10px;color:var(--text2);margin-bottom:8px;font-weight:600;letter-spacing:.5px;text-transform:uppercase">Lisää yhteyshenkilö</div>
+      <div class="form-grid">
+        <div class="form-group"><label>Nimi *</label><input class="form-control" id="yh-nimi" placeholder="Etunimi Sukunimi"></div>
+        <div class="form-group"><label>Titteli / rooli</label><input class="form-control" id="yh-titteli" placeholder="Toimitusjohtaja"></div>
+        <div class="form-group"><label>Puhelin</label><input class="form-control" id="yh-puhelin" placeholder="+358 40…" type="tel"></div>
+        <div class="form-group"><label>Sähköposti</label><input class="form-control" id="yh-sahkoposti" placeholder="nimi@yritys.fi" type="email"></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-primary btn-sm" onclick="saveNewContact()">+ Lisää</button>
+      </div>
+    </div>`;
+}
+
+async function saveNewContact() {
+  if (!currentId) return;
+  const nimi=(document.getElementById('yh-nimi')?.value||'').trim();
+  if (!nimi) { showToast('Nimi on pakollinen','error'); return; }
+  const id='YH'+Date.now();
+  const row=[id,currentId,nimi,
+    document.getElementById('yh-titteli')?.value.trim()||'',
+    document.getElementById('yh-puhelin')?.value.trim()||'',
+    document.getElementById('yh-sahkoposti')?.value.trim()||'',
+    new Date().toISOString()];
+  try {
+    await sheetAppend(`${YH_TAB}!A:G`,[row]);
+    allContacts.push(Object.fromEntries(YH_COLS.map((k,i)=>[k,row[i]])));
+    const p=allProspects.find(x=>x.spara_id===currentId); if(p) renderContactsTab(p);
+    showToast('Yhteyshenkilö lisätty: '+nimi,'success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+}
+
 // ── Tilit ─────────────────────────────────────────────────────────────────────
 function openAddTili() {
   document.getElementById('addtili-ytj-input').value = '';
@@ -1002,47 +1153,25 @@ async function saveNewTili() {
   ];
   try {
     await sheetAppend(`${TILIT_TAB}!A:M`, [row]);
-    allTilit.push(Object.fromEntries(TILIT_COLS.map((k,i) => [k, row[i]])));
-    renderTilit();
+    const t = Object.fromEntries(TILIT_COLS.map((k,i) => [k, row[i]]));
+    allTilit.push(t);
+    allProspects.push(tiliToProspect(t));
     closeAddTili();
+    buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard();
     showToast('Tili lisätty: ' + name, 'success');
   } catch(e) {
     showToast('Virhe: ' + e.message, 'error');
   }
 }
 
-function renderTilit() {
-  const tbody = document.getElementById('tbody-tilit');
-  if (!tbody) return;
-  const haku = (document.getElementById('f-tilit-haku')?.value||'').toLowerCase();
-  const rows = haku
-    ? allTilit.filter(t => ['name','y_tunnus','toimiala','kaupunki','yhteyshenkilö'].some(k => (t[k]||'').toLowerCase().includes(haku)))
-    : allTilit;
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">Ei tilejä – lisää ensimmäinen tili yllä olevasta painikkeesta</td></tr>';
-    return;
-  }
-  tbody.innerHTML = rows.map(t => `
-    <tr>
-      <td><strong>${esc(t.name)}</strong></td>
-      <td style="color:var(--text2)">${esc(t.y_tunnus)}</td>
-      <td style="color:var(--text2)">${esc(t.toimiala)}</td>
-      <td>${esc(t.kaupunki)}</td>
-      <td style="color:var(--text2)">${esc(t['yhteyshenkilö'])}</td>
-      <td style="color:var(--text2);font-size:11px">${esc((t.created_at||'').substring(0,10))}</td>
-    </tr>`).join('');
-}
-document.getElementById('f-tilit-haku')?.addEventListener('input', renderTilit);
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function updateSummary() {
-  const t=allProspects.length;
-  document.getElementById('s-total').textContent=t;
-  document.getElementById('s-etj').textContent=allProspects.filter(p=>p.kampanja==='ETJ+').length;
-  document.getElementById('s-talo').textContent=allProspects.filter(p=>p.kampanja?.startsWith('Talopakett')).length;
-  document.getElementById('s-active').textContent=allProspects.filter(p=>!['Sopimus','Hylätty'].includes(p.vaihe)).length;
-  document.getElementById('s-sopimus').textContent=allProspects.filter(p=>p.vaihe==='Sopimus').length;
-  document.getElementById('s-a').textContent=allProspects.filter(p=>p.prioriteetti==='A').length;
+  document.getElementById('s-total').textContent  = allProspects.length;
+  document.getElementById('s-etj').textContent    = allProspects.filter(p=>p.kampanja==='ETJ+').length;
+  document.getElementById('s-talo').textContent   = allProspects.filter(p=>p.kampanja?.startsWith('Talopakett')).length;
+  document.getElementById('s-active').textContent = allProspects.filter(p=>!['Sopimus','Hylätty'].includes(p.vaihe)).length;
+  document.getElementById('s-sopimus').textContent= allProspects.filter(p=>p.vaihe==='Sopimus').length;
+  document.getElementById('s-muu').textContent    = allProspects.filter(p=>p.kampanja==='Muu Projekti').length;
 }
 function buildSegmentFilter() {
   const segs=[...new Set(allProspects.map(p=>p.segmentti).filter(Boolean))].sort();
@@ -1054,6 +1183,7 @@ function kampBadge(k) {
   if (k==='ETJ+') return '<span style="color:var(--red)">ETJ+</span>';
   if (k.includes('FIN')) return '<span style="color:var(--orange)">🇫🇮 FIN</span>';
   if (k.includes('SWE')) return '<span style="color:var(--blue)">🇸🇪 SWE</span>';
+  if (k==='Muu Projekti') return '<span style="color:var(--purple)">Muu</span>';
   return esc(k);
 }
 function scoreClass(s) { return !s?'':s>=85?'score-high':s>=70?'score-mid':'score-low'; }
