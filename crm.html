@@ -110,12 +110,12 @@
 
     /* Badges */
     .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;}
-    .v-Uusi{background:rgba(66,165,245,.15);color:#64B5F6;}
-    .v-Yhteytetty{background:rgba(255,167,38,.15);color:#FFB74D;}
+    .v-Liidi,.v-Uusi{background:rgba(66,165,245,.15);color:#64B5F6;}
+    .v-Mahdollisuus,.v-Yhteytetty{background:rgba(255,167,38,.15);color:#FFB74D;}
     .v-Tapaaminen{background:rgba(171,71,188,.15);color:#CE93D8;}
     .v-Tarjous{background:rgba(255,213,79,.15);color:#FFD54F;}
     .v-Sopimus{background:rgba(76,175,80,.2);color:#81C784;}
-    .v-Hylätty{background:rgba(239,83,80,.15);color:#EF9A9A;}
+    .v-Hävitty,.v-Hylätty{background:rgba(239,83,80,.15);color:#EF9A9A;}
     .p-A{background:rgba(239,83,80,.15);color:var(--red);}
     .p-B{background:rgba(255,167,38,.1);color:var(--orange);}
     .score-high{color:var(--green);font-weight:700;} .score-mid{color:var(--orange);} .score-low{color:var(--text2);}
@@ -293,8 +293,8 @@
       </select>
       <select id="f-vaihe">
         <option value="">Kaikki vaiheet</option>
-        <option>Uusi</option><option>Yhteytetty</option><option>Tapaaminen</option>
-        <option>Tarjous</option><option>Sopimus</option><option>Hylätty</option>
+        <option>Liidi</option><option>Mahdollisuus</option><option>Tapaaminen</option>
+        <option>Tarjous</option><option>Sopimus</option><option>Hävitty</option>
       </select>
       <select id="f-prioriteetti">
         <option value="">Kaikki prioriteetit</option>
@@ -371,9 +371,20 @@
         <div class="mtab active" data-mt="info">Tiedot</div>
         <div class="mtab" data-mt="tehtavat">Tehtävät</div>
         <div class="mtab" data-mt="historia">Historia</div>
-        <div class="mtab" data-mt="muokkaa" id="tab-muokkaa" style="display:none">Muokkaa</div>
       </div>
       <div class="mtab-content active" id="mt-info">
+        <div id="tili-status-bar" style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg3);border-bottom:1px solid var(--border);flex-wrap:wrap">
+          <span style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px">Tilin status</span>
+          <select class="form-control" id="tili-status" style="padding:3px 8px;font-size:12px;min-width:110px">
+            <option value="">–</option>
+            <option value="Prospekti">Prospekti</option>
+            <option value="Asiakas">Asiakas</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="saveTiliStatus()">Tallenna</button>
+          <div style="flex:1;min-width:0"></div>
+          <button class="btn btn-ghost btn-sm" onclick="toggleTiliEdit()" id="tili-edit-btn">✏️ Muokkaa</button>
+        </div>
+        <div id="mt-info-edit" style="display:none;padding:12px;border-bottom:1px solid var(--border)"></div>
         <div class="info-grid" id="info-grid"></div>
         <div class="contacts-section" id="mt-info-contacts"></div>
       </div>
@@ -382,21 +393,13 @@
           <div class="form-group">
             <label>Vaihe</label>
             <select class="form-control" id="e-vaihe">
-              <option>Uusi</option><option>Yhteytetty</option><option>Tapaaminen</option>
-              <option>Tarjous</option><option>Sopimus</option><option>Hylätty</option>
+              <option>Liidi</option><option>Mahdollisuus</option><option>Tapaaminen</option>
+              <option>Tarjous</option><option>Sopimus</option><option>Hävitty</option>
             </select>
           </div>
           <div class="form-group">
             <label>Omistaja</label>
             <input class="form-control" id="e-omistaja" placeholder="Patrick">
-          </div>
-          <div class="form-group">
-            <label>Status</label>
-            <select class="form-control" id="e-status">
-              <option value="">–</option>
-              <option value="Prospekti">Prospekti</option>
-              <option value="Asiakas">Asiakas</option>
-            </select>
           </div>
           <div class="form-group full">
             <label>Muistiinpanot</label>
@@ -458,7 +461,6 @@
           </div>
         </div>
       </div>
-      <div class="mtab-content" id="mt-muokkaa"></div>
     </div>
   </div>
 </div>
@@ -663,8 +665,8 @@ function detectVaihe(tila, tulos) {
   if (s.includes('sopimus')||s.includes('kauppa')) return 'Sopimus';
   if (s.includes('tarjous')) return 'Tarjous';
   if (s.includes('tapaaminen')||s.includes('sovittu')) return 'Tapaaminen';
-  if (s.includes('reititys vahvistettu')||s.includes('nimetty')||s.includes('vahvistettu')) return 'Yhteytetty';
-  return 'Uusi';
+  if (s.includes('reititys vahvistettu')||s.includes('nimetty')||s.includes('vahvistettu')) return 'Mahdollisuus';
+  return 'Liidi';
 }
 
 function blankCrm() { return { omistaja:null, seuraava_toimenpide:null, seuraava_pvm:null, muistiinpanot:null, aktiviteetit:'[]', crm_status:'', tili_override:{}, _crmRow:null }; }
@@ -698,7 +700,7 @@ function parseProspects(rows) {
         prioriteetti:c0, sija, segmentti:cv(c,3), yritys_nimi:cv(c,1)||'–', juridinen_yhtio:cv(c,2),
         liikevaihto_meur:cv(c,4), pisteet:cn(c,5), 'yhteyshenkilö':cv(c,6), titteli:cv(c,7),
         vaihde_puhelin:cv(c,8), yleinen_sahkoposti:cv(c,9), linkedin:cv(c,11), signaali:cv(c,12),
-        vaihe:'Uusi', ...blankCrm() });
+        vaihe:'Liidi', ...blankCrm() });
     } else if (/^T\d+$/.test(c0)) {
       out.push({
         spara_id:c0, kampanja:'Muu Projekti',
@@ -712,7 +714,7 @@ function parseProspects(rows) {
         titteli:null, suora_numero:null, linkedin:null,
         vaihde_puhelin:null, yleinen_sahkoposti:null,
         kontaktoinnin_tila:null, tulos_seuraava_toimi:null,
-        vaihe:'Uusi', _isTili:true, _rowIndex:idx + 1,
+        vaihe:'Liidi', _isTili:true, _rowIndex:idx + 1,
         ...blankCrm()
       });
     }
@@ -754,7 +756,7 @@ function applyCrmState(crmRows) {
 
 async function saveCrmState(p) {
   const ov = p.tili_override && Object.keys(p.tili_override).length ? JSON.stringify(p.tili_override) : '';
-  const row = [p.spara_id, p.vaihe||'Uusi', p.omistaja||'', p.seuraava_toimenpide||'',
+  const row = [p.spara_id, p.vaihe||'Liidi', p.omistaja||'', p.seuraava_toimenpide||'',
     p.seuraava_pvm||'', p.muistiinpanot||'', p.aktiviteetit||'[]', new Date().toISOString(),
     p.crm_status||'', ov];
   if (p._crmRow) {
@@ -775,8 +777,8 @@ async function saveTiliData(p) {
   await sheetPut(`${MAIN_TAB}!A${p._rowIndex}:N${p._rowIndex}`, [row]);
 }
 
-function renderMuokkaaTab(p) {
-  document.getElementById('mt-muokkaa').innerHTML = `
+function renderTiedotEdit(p) {
+  document.getElementById('mt-info-edit').innerHTML = `
     <div class="form-grid">
       <div class="form-group full"><label>Yrityksen nimi *</label><input class="form-control" id="me-name" value="${esc(p.yritys_nimi)}"></div>
       <div class="form-group"><label>Y-tunnus</label><input class="form-control" id="me-ytunnus" value="${esc(p.y_tunnus||'')}"></div>
@@ -790,7 +792,8 @@ function renderMuokkaaTab(p) {
       <div class="form-group"><label>Sähköposti</label><input class="form-control" id="me-sahkoposti" value="${esc(p.henk_sahkoposti||'')}" type="email"></div>
       <div class="form-group full"><label>Lisätiedot</label><textarea class="form-control" id="me-lisatiedot" rows="3">${esc(p.huomiot||'')}</textarea></div>
     </div>
-    <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:14px;">
+      <button class="btn btn-ghost btn-sm" onclick="toggleTiliEdit()">Peruuta</button>
       <button class="btn btn-primary" onclick="saveMuokkaa()">Tallenna muutokset</button>
     </div>`;
 }
@@ -820,6 +823,7 @@ async function saveMuokkaa() {
     if (p._isTili && p._rowIndex) await saveTiliData(p);
     document.getElementById('modal-title').textContent = p.yritys_nimi;
     updateSummary(); applyFilters();
+    openModal(p.spara_id);
     showToast('Tallennettu ✓', 'success');
   } catch(e) { showToast('Virhe: '+e.message, 'error'); }
 }
@@ -892,8 +896,8 @@ function renderTable() {
 function changePage(d) { page+=d; renderTable(); }
 
 // ── Kanban ─────────────────────────────────────────────────────────────────────
-const VAIHEET=['Uusi','Yhteytetty','Tapaaminen','Tarjous','Sopimus','Hylätty'];
-const V_COLORS={Uusi:'var(--blue)',Yhteytetty:'var(--orange)',Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)',Hylätty:'var(--red)'};
+const VAIHEET=['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'];
+const V_COLORS={Liidi:'var(--blue)',Mahdollisuus:'var(--orange)',Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)',Hävitty:'var(--red)'};
 
 function renderKanban() {
   const kf=document.getElementById('k-kampanja').value;
@@ -959,24 +963,44 @@ function openModal(sid) {
     ${f('CRM-vaihe',`<span class="badge v-${p.vaihe}">${esc(p.vaihe)}</span>`)}
     ${f('Omistaja',p.omistaja)} ${f('Seuraava toimenpide',p.seuraava_toimenpide,true)}
     ${f('Seuraava pvm',p.seuraava_pvm)} ${f('Muistiinpanot',p.muistiinpanot,true)}`;
-  document.getElementById('e-vaihe').value=p.vaihe||'Uusi';
+  document.getElementById('e-vaihe').value=p.vaihe||'Liidi';
   document.getElementById('e-omistaja').value=p.omistaja||'';
   document.getElementById('e-toimenpide').value=p.seuraava_toimenpide||'';
   document.getElementById('e-pvm').value=p.seuraava_pvm||'';
   document.getElementById('e-muistiinpanot').value=p.muistiinpanot||'';
-  document.getElementById('e-status').value=p.crm_status||'';
-  document.getElementById('tab-muokkaa').style.display = '';
+  document.getElementById('tili-status').value=p.crm_status||'';
+  document.getElementById('mt-info-edit').style.display='none';
+  document.getElementById('info-grid').style.display='';
+  document.getElementById('tili-edit-btn').textContent='✏️ Muokkaa';
   document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
   document.querySelector('[data-mt="info"]').classList.add('active');
   document.getElementById('mt-info').classList.add('active');
   renderActivities(p);
-  renderMuokkaaTab(p);
+  renderTiedotEdit(p);
   renderContactsInTiedot(p);
   document.getElementById('modal-overlay').classList.remove('hidden');
 }
 function closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); currentId=null; }
 function closeMaybe(e) { if (e.target===document.getElementById('modal-overlay')) closeModal(); }
+
+function toggleTiliEdit() {
+  const editDiv=document.getElementById('mt-info-edit');
+  const infoGrid=document.getElementById('info-grid');
+  const btn=document.getElementById('tili-edit-btn');
+  const isHidden=editDiv.style.display==='none';
+  editDiv.style.display=isHidden?'':'none';
+  infoGrid.style.display=isHidden?'none':'';
+  btn.textContent=isHidden?'✕ Sulje':'✏️ Muokkaa';
+}
+
+async function saveTiliStatus() {
+  if (!currentId) return;
+  const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return;
+  p.crm_status=document.getElementById('tili-status')?.value||'';
+  try { await saveCrmState(p); showToast('Status tallennettu ✓','success'); updateSummary(); applyFilters(); }
+  catch(e) { showToast('Virhe: '+e.message,'error'); }
+}
 
 function soitaJaLogi(numero, nimike) {
   window.open('tel:' + numero.replace(/\s/g,''), '_blank');
@@ -997,7 +1021,6 @@ async function saveTehtavat() {
   p.vaihe=document.getElementById('e-vaihe').value;
   p.omistaja=document.getElementById('e-omistaja').value.trim()||null;
   p.muistiinpanot=document.getElementById('e-muistiinpanot').value.trim()||null;
-  p.crm_status=document.getElementById('e-status').value||'';
   if (prev!==p.vaihe) addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${p.vaihe}`,p.omistaja);
   try { await saveCrmState(p); showToast('Tallennettu ✓','success'); updateSummary(); applyFilters(); }
   catch(e) { showToast('Virhe: '+e.message,'error'); }
@@ -1275,8 +1298,8 @@ async function fetchAndFillYTJ(context) {
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function renderDashboard() {
-  const VCOL={Uusi:'var(--blue)',Yhteytetty:'var(--orange)',Tapaaminen:'var(--purple)',
-    Tarjous:'var(--yellow)',Sopimus:'var(--green)','Hylätty':'var(--red)'};
+  const VCOL={Liidi:'var(--blue)',Mahdollisuus:'var(--orange)',Tapaaminen:'var(--purple)',
+    Tarjous:'var(--yellow)',Sopimus:'var(--green)','Hävitty':'var(--red)'};
   const PCOL={'ETJ+':'var(--red)','Talopakettivalmistajat FIN':'var(--orange)',
     'Talopakettivalmistajat SWE':'var(--blue)','Muu Projekti':'var(--purple)'};
 
@@ -1485,7 +1508,7 @@ async function saveNewTili() {
       henk_sahkoposti:row[9]||'', yleinen_sahkoposti:null, vaihde_puhelin:null,
       www, linkedin:null, signaali:null, perustelu:null, velvoiteluokka:null,
       huomiot:row[11]||'', kontaktoinnin_tila:null, tulos_seuraava_toimi:null,
-      vaihe:'Uusi', _isTili:true, _rowIndex:rowIndex,
+      vaihe:'Liidi', _isTili:true, _rowIndex:rowIndex,
       ...blankCrm()
     };
     allProspects.push(p);
@@ -1502,7 +1525,7 @@ function updateSummary() {
   document.getElementById('s-total').textContent  = allProspects.length;
   document.getElementById('s-etj').textContent    = allProspects.filter(p=>p.kampanja==='ETJ+').length;
   document.getElementById('s-talo').textContent   = allProspects.filter(p=>p.kampanja?.startsWith('Talopakett')).length;
-  document.getElementById('s-active').textContent = allProspects.filter(p=>!['Sopimus','Hylätty'].includes(p.vaihe)).length;
+  document.getElementById('s-active').textContent = allProspects.filter(p=>!['Sopimus','Hävitty'].includes(p.vaihe)).length;
   document.getElementById('s-sopimus').textContent= allProspects.filter(p=>p.vaihe==='Sopimus').length;
   document.getElementById('s-muu').textContent    = allProspects.filter(p=>p.kampanja==='Muu Projekti').length;
 }
