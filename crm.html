@@ -923,8 +923,8 @@ function renderTable() {
 function changePage(d) { page+=d; renderTable(); }
 
 // ── Kanban ─────────────────────────────────────────────────────────────────────
-const VAIHEET=['Tapaaminen','Tarjous','Sopimus','Hävitty'];
-const V_COLORS={Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)',Hävitty:'var(--red)'};
+const VAIHEET=['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'];
+const V_COLORS={Liidi:'var(--blue)',Mahdollisuus:'var(--orange)',Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)',Hävitty:'var(--red)'};
 const TASK_TILA={
   kauppa:    ['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'],
   soitto:    ['Uusi','Vastaamaton','Viesti vastaajaan','SMS-viesti','Tavoitettu'],
@@ -1440,7 +1440,7 @@ async function fetchAndFillYTJ(context) {
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function renderDashboard() {
-  const VCOL={Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)','Hävitty':'var(--red)'};
+  const VCOL={Liidi:'var(--blue)',Mahdollisuus:'var(--orange)',Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)','Hävitty':'var(--red)'};
   const PCOL={'ETJ+':'var(--red)','Talopakettivalmistajat FIN':'var(--orange)',
     'Talopakettivalmistajat SWE':'var(--blue)','Muu Projekti':'var(--purple)'};
 
