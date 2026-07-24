@@ -182,6 +182,9 @@
     .task-item.overdue{border-color:rgba(239,83,80,.4);}
     .task-due{font-size:11px;font-weight:700;min-width:42px;margin-top:2px;color:var(--text2);}
     .task-due.late{color:var(--red);} .task-due.today{color:var(--orange);}
+    .task-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:9px 10px;border-bottom:1px solid var(--border);}
+    .task-row:last-child{border-bottom:none;} .task-row.done-row{opacity:.45;}
+    .task-tila-sel{padding:2px 6px!important;font-size:11px!important;min-width:0!important;}
     .contacts-section{margin-top:18px;border-top:1px solid var(--border);padding-top:14px;}
     .cs-title{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:8px;}
 
@@ -391,13 +394,6 @@
       <div class="mtab-content" id="mt-tehtavat">
         <div class="form-grid">
           <div class="form-group">
-            <label>Vaihe</label>
-            <select class="form-control" id="e-vaihe">
-              <option>Liidi</option><option>Mahdollisuus</option><option>Tapaaminen</option>
-              <option>Tarjous</option><option>Sopimus</option><option>Hävitty</option>
-            </select>
-          </div>
-          <div class="form-group">
             <label>Omistaja</label>
             <input class="form-control" id="e-omistaja" placeholder="Patrick">
           </div>
@@ -412,21 +408,22 @@
           <button class="btn btn-primary btn-sm" onclick="saveTehtavat()">Tallenna</button>
         </div>
         <div style="margin-top:14px">
-          <div class="cs-title">Ajastetut tehtävät</div>
+          <div class="cs-title">Tehtävät</div>
           <div id="task-list"></div>
         </div>
         <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-top:8px">
           <div class="cs-title" style="margin-bottom:8px">Lisää tehtävä</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">
-            <select class="form-control" id="task-type" style="min-width:130px;flex-shrink:0">
+            <select class="form-control" id="task-type" onchange="updateTaskTilaOptions()" style="min-width:120px;flex-shrink:0">
+              <option value="kauppa">🤝 Kauppa</option>
               <option value="soitto">📞 Soitto</option>
               <option value="sahkoposti">✉️ Sähköposti</option>
-              <option value="tapaaminen">🤝 Tapaaminen</option>
-              <option value="tarjous">📄 Tarjous</option>
-              <option value="muu">📝 Muu</option>
+              <option value="muu">📝 Muu tehtävä</option>
             </select>
-            <input class="form-control" id="task-input" placeholder="Kuvaus…" style="flex:1;min-width:120px">
-            <input class="form-control" id="task-due" type="date" style="width:140px;flex-shrink:0">
+            <select class="form-control" id="task-tila" style="min-width:120px;flex-shrink:0"></select>
+            <input class="form-control" id="task-aihe" placeholder="Aihe…" style="flex:1;min-width:100px">
+            <input class="form-control" id="task-arvo" type="number" placeholder="Arvo €" min="0" style="width:90px;flex-shrink:0;display:none">
+            <input class="form-control" id="task-due" type="date" style="width:135px;flex-shrink:0">
             <button class="btn btn-ghost btn-sm" onclick="addTask()">Lisää</button>
           </div>
         </div>
@@ -669,7 +666,7 @@ function detectVaihe(tila, tulos) {
   return 'Liidi';
 }
 
-function blankCrm() { return { omistaja:null, seuraava_toimenpide:null, seuraava_pvm:null, muistiinpanot:null, aktiviteetit:'[]', crm_status:'', tili_override:{}, _crmRow:null }; }
+function blankCrm() { return { omistaja:null, seuraava_toimenpide:null, seuraava_pvm:null, muistiinpanot:null, aktiviteetit:'[]', crm_status:'Prospekti', tili_override:{}, _crmRow:null }; }
 
 function parseProspects(rows) {
   const out = [];
@@ -694,7 +691,7 @@ function parseProspects(rows) {
         vaihde_puhelin:cv(c,8), yleinen_sahkoposti:cv(c,9), linkedin:cv(c,11), signaali:cv(c,12),
         lahde:cv(c,13), kontaktoinnin_tila:tila, huomiot:cv(c,16),
         vaihe:detectVaihe(tila,null), ...blankCrm() });
-    } else if (idx>=235 && /^\d+$/.test(c0)) {
+    } else if (idx>146 && /^\d+$/.test(c0)) {
       const sija=parseInt(c0);
       out.push({ spara_id:`TALOSWE${String(sija).padStart(3,'0')}`, kampanja:'Talopakettivalmistajat SWE',
         prioriteetti:c0, sija, segmentti:cv(c,3), yritys_nimi:cv(c,1)||'–', juridinen_yhtio:cv(c,2),
@@ -730,7 +727,7 @@ function applyCrmState(crmRows) {
     try { if (row[9]) ov = JSON.parse(row[9]); } catch(_) {}
     map[row[0]] = { vaihe:row[1]||null, omistaja:row[2]||null, seuraava_toimenpide:row[3]||null,
       seuraava_pvm:row[4]||null, muistiinpanot:row[5]||null, aktiviteetit:row[6]||'[]',
-      crm_status:row[8]||'', tili_override:ov, _crmRow:i+1 };
+      crm_status:row[8]||'Prospekti', tili_override:ov, _crmRow:i+1 };
   });
   allProspects.forEach(p => {
     const s = map[p.spara_id];
@@ -739,7 +736,7 @@ function applyCrmState(crmRows) {
     const ov = s.tili_override || {};
     Object.assign(p, { omistaja:s.omistaja, seuraava_toimenpide:s.seuraava_toimenpide,
       seuraava_pvm:s.seuraava_pvm, muistiinpanot:s.muistiinpanot,
-      aktiviteetit:s.aktiviteetit||'[]', crm_status:s.crm_status||'', tili_override:ov, _crmRow:s._crmRow });
+      aktiviteetit:s.aktiviteetit||'[]', crm_status:s.crm_status||'Prospekti', tili_override:ov, _crmRow:s._crmRow });
     if (ov.yritys_nimi)       p.yritys_nimi       = ov.yritys_nimi;
     if (ov.y_tunnus    != null) p.y_tunnus         = ov.y_tunnus;
     if (ov.segmentti   != null) p.segmentti        = ov.segmentti;
@@ -758,7 +755,7 @@ async function saveCrmState(p) {
   const ov = p.tili_override && Object.keys(p.tili_override).length ? JSON.stringify(p.tili_override) : '';
   const row = [p.spara_id, p.vaihe||'Liidi', p.omistaja||'', p.seuraava_toimenpide||'',
     p.seuraava_pvm||'', p.muistiinpanot||'', p.aktiviteetit||'[]', new Date().toISOString(),
-    p.crm_status||'', ov];
+    p.crm_status||'Prospekti', ov];
   if (p._crmRow) {
     await sheetPut(`${CRM_TAB}!A${p._crmRow}:J${p._crmRow}`, [row]);
   } else {
@@ -898,6 +895,33 @@ function changePage(d) { page+=d; renderTable(); }
 // ── Kanban ─────────────────────────────────────────────────────────────────────
 const VAIHEET=['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'];
 const V_COLORS={Liidi:'var(--blue)',Mahdollisuus:'var(--orange)',Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)',Hävitty:'var(--red)'};
+const TASK_TILA={
+  kauppa:['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'],
+  soitto:['Vastaamaton','Viesti vastaajaan','SMS-viesti','Tavoitettu'],
+  sahkoposti:['Hylkäys','Lomavastaaja','Toimitettu'],
+  muu:['Aloitettu','Odottaa lisätietoa','Valmis']
+};
+const TASK_DONE={kauppa:['Sopimus','Hävitty'],soitto:['Tavoitettu'],sahkoposti:['Toimitettu'],muu:['Valmis']};
+const TASK_ICON={kauppa:'🤝',soitto:'📞',sahkoposti:'✉️',muu:'📝'};
+const TASK_LABEL={kauppa:'Kauppa',soitto:'Soitto',sahkoposti:'Sähköposti',muu:'Muu tehtävä'};
+
+function updateTaskTilaOptions() {
+  const tyyppi=document.getElementById('task-type')?.value||'kauppa';
+  const sel=document.getElementById('task-tila'); if(!sel) return;
+  sel.innerHTML=(TASK_TILA[tyyppi]||TASK_TILA.muu).map(t=>`<option>${t}</option>`).join('');
+  const arvoEl=document.getElementById('task-arvo');
+  if(arvoEl) arvoEl.style.display=tyyppi==='kauppa'?'':'none';
+}
+function updateGtTilaOptions() {
+  const tyyppi=document.getElementById('gt-type')?.value||'kauppa';
+  const sel=document.getElementById('gt-tila'); if(!sel) return;
+  sel.innerHTML=(TASK_TILA[tyyppi]||TASK_TILA.muu).map(t=>`<option>${t}</option>`).join('');
+  const wrap=document.getElementById('gt-arvo-wrap');
+  if(wrap) wrap.style.display=tyyppi==='kauppa'?'':'none';
+}
+function taskIsDone(t){return t.done||(TASK_DONE[t.tyyppi]||[]).includes(t.tila);}
+function normalizeTask(a){return{...a,aihe:a.aihe||a.teksti||'',tila:a.tila||(a.tyyppi==='soitto'?'Vastaamaton':a.tyyppi==='sahkoposti'?'Hylkäys':a.tyyppi==='kauppa'?'Liidi':'Aloitettu'),tyyppi:TASK_TILA[a.tyyppi]?a.tyyppi:'muu'};}
+function nearestTask(p){return parseActs(p).map(normalizeTask).filter(a=>a.due_date&&!taskIsDone(a)).sort((a,b)=>a.due_date.localeCompare(b.due_date))[0];}
 
 function renderKanban() {
   const kf=document.getElementById('k-kampanja').value;
@@ -929,6 +953,7 @@ document.querySelectorAll('.mtab').forEach(t=>t.addEventListener('click',()=>{
   document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
   t.classList.add('active'); document.getElementById('mt-'+t.dataset.mt).classList.add('active');
   if (t.dataset.mt==='tehtavat' && currentId) {
+    updateTaskTilaOptions();
     const p=allProspects.find(x=>x.spara_id===currentId); if(p) renderTaskList(p);
   }
 }));
@@ -963,7 +988,6 @@ function openModal(sid) {
     ${f('CRM-vaihe',`<span class="badge v-${p.vaihe}">${esc(p.vaihe)}</span>`)}
     ${f('Omistaja',p.omistaja)} ${f('Seuraava toimenpide',p.seuraava_toimenpide,true)}
     ${f('Seuraava pvm',p.seuraava_pvm)} ${f('Muistiinpanot',p.muistiinpanot,true)}`;
-  document.getElementById('e-vaihe').value=p.vaihe||'Liidi';
   document.getElementById('e-omistaja').value=p.omistaja||'';
   document.getElementById('e-toimenpide').value=p.seuraava_toimenpide||'';
   document.getElementById('e-pvm').value=p.seuraava_pvm||'';
@@ -972,6 +996,7 @@ function openModal(sid) {
   document.getElementById('mt-info-edit').style.display='none';
   document.getElementById('info-grid').style.display='';
   document.getElementById('tili-edit-btn').textContent='✏️ Muokkaa';
+  updateTaskTilaOptions();
   document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
   document.querySelector('[data-mt="info"]').classList.add('active');
@@ -1017,11 +1042,8 @@ function soitaJaLogi(numero, nimike) {
 async function saveTehtavat() {
   if (!currentId) return;
   const p=allProspects.find(x=>x.spara_id===currentId); if (!p) return;
-  const prev=p.vaihe;
-  p.vaihe=document.getElementById('e-vaihe').value;
   p.omistaja=document.getElementById('e-omistaja').value.trim()||null;
   p.muistiinpanot=document.getElementById('e-muistiinpanot').value.trim()||null;
-  if (prev!==p.vaihe) addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${p.vaihe}`,p.omistaja);
   try { await saveCrmState(p); showToast('Tallennettu ✓','success'); updateSummary(); applyFilters(); }
   catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
@@ -1029,28 +1051,27 @@ async function saveTehtavat() {
 async function addTask() {
   if (!currentId) return;
   const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return;
-  const tyyppi=document.getElementById('task-type')?.value||'muu';
-  const teksti=(document.getElementById('task-input')?.value||'').trim();
+  const tyyppi=document.getElementById('task-type')?.value||'kauppa';
+  const tila=document.getElementById('task-tila')?.value||'';
+  const aihe=(document.getElementById('task-aihe')?.value||'').trim();
   const due_date=document.getElementById('task-due')?.value||'';
+  const arvoRaw=tyyppi==='kauppa'?(document.getElementById('task-arvo')?.value||''):'';
+  const arvo=arvoRaw?parseFloat(arvoRaw):null;
   if (!due_date) { showToast('Valitse päivämäärä','error'); return; }
   const tekija=document.getElementById('e-omistaja')?.value.trim()||null;
+  const done=(TASK_DONE[tyyppi]||[]).includes(tila);
   const acts=parseActs(p);
-  acts.push({id:'TK'+Date.now(),tyyppi,teksti,tekija,created_at:new Date().toISOString(),due_date,done:false});
+  acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,tekija,created_at:new Date().toISOString(),due_date,done});
   p.aktiviteetit=JSON.stringify(acts);
-  if (tyyppi==='tarjous' && !['Tarjous','Sopimus'].includes(p.vaihe)) {
-    const prev=p.vaihe; p.vaihe='Tarjous';
-    document.getElementById('e-vaihe').value='Tarjous';
-    addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → Tarjous`,tekija);
-  }
-  const near=parseActs(p).filter(a=>a.due_date&&!a.done).sort((a,b)=>a.due_date.localeCompare(b.due_date))[0];
-  p.seuraava_toimenpide=near?near.teksti||near.tyyppi:null;
-  p.seuraava_pvm=near?.due_date||null;
+  if(tyyppi==='kauppa'&&tila){const prev=p.vaihe;p.vaihe=tila;if(prev!==tila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${tila}`,tekija);}
+  const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
   document.getElementById('e-toimenpide').value=p.seuraava_toimenpide||'';
   document.getElementById('e-pvm').value=p.seuraava_pvm||'';
   try {
     await saveCrmState(p);
-    document.getElementById('task-input').value='';
+    document.getElementById('task-aihe').value='';
     document.getElementById('task-due').value='';
+    const arvoEl=document.getElementById('task-arvo'); if(arvoEl) arvoEl.value='';
     renderTaskList(p); renderActivities(p); updateSummary(); applyFilters();
     showToast('Tehtävä lisätty ✓','success');
   } catch(e) { showToast('Virhe: '+e.message,'error'); }
@@ -1059,36 +1080,70 @@ async function addTask() {
 function renderTaskList(p) {
   const today=new Date().toISOString().substring(0,10);
   const acts=parseActs(p);
-  const tasks=acts.filter(a=>a.due_date&&!a.done).sort((a,b)=>a.due_date.localeCompare(b.due_date));
+  const tasks=acts.filter(a=>a.due_date).map(normalizeTask).sort((a,b)=>{
+    const da=taskIsDone(a), db=taskIsDone(b);
+    if(da!==db) return da?1:-1;
+    return a.due_date.localeCompare(b.due_date);
+  });
   const el=document.getElementById('task-list'); if(!el) return;
-  if (!tasks.length) { el.innerHTML='<div class="empty" style="padding:10px;font-size:12px">Ei ajastettuja tehtäviä</div>'; return; }
-  el.innerHTML=tasks.map(a=>{
-    const late=a.due_date<today, isToday=a.due_date===today;
-    const cls=late?'late':isToday?'today':'';
-    const disp=a.due_date.split('-').slice(1).join('.');
-    const allIdx=acts.indexOf(a);
-    return `<div class="task-item${late?' overdue':''}">
-      <div class="task-due ${cls}">${disp}</div>
-      <div style="flex:1"><div style="font-size:12px;font-weight:600">${actIcon(a.tyyppi)} ${esc(a.teksti||a.tyyppi)}</div>
-        ${a.tekija?`<div style="font-size:11px;color:var(--text2)">${esc(a.tekija)}</div>`:''}</div>
-      <button class="btn btn-ghost btn-sm" onclick="markTaskDone(${allIdx})" title="Merkitse tehdyksi">✓</button>
+  if(!tasks.length){el.innerHTML='<div class="empty" style="padding:10px;font-size:12px">Ei tehtäviä</div>';return;}
+  el.innerHTML=tasks.map(t=>{
+    const done=taskIsDone(t);
+    const late=!done&&t.due_date<today;
+    const tilaOpts=(TASK_TILA[t.tyyppi]||TASK_TILA.muu).map(o=>`<option${o===t.tila?' selected':''}>${esc(o)}</option>`).join('');
+    return `<div class="task-row${done?' done-row':''}">
+      <span style="font-size:13px">${TASK_ICON[t.tyyppi]||'📝'}</span>
+      <span style="font-size:11px;color:var(--text2);font-weight:600;white-space:nowrap">${TASK_LABEL[t.tyyppi]}</span>
+      ${done
+        ?`<span class="badge" style="background:rgba(76,175,80,.2);color:#81C784;font-size:10px">✓ ${esc(t.tila)}</span>`
+        :`<select class="form-control task-tila-sel" onchange="updateTaskTila('${t.id}',this.value)">${tilaOpts}</select>`}
+      <span style="flex:1;min-width:60px;font-size:12px">${esc(t.aihe)}</span>
+      ${t.arvo?`<span style="font-size:11px;color:var(--green);font-weight:600;white-space:nowrap">${Number(t.arvo).toLocaleString('fi')} €</span>`:''}
+      <span style="font-size:11px;color:${late?'var(--red)':'var(--text2)'};white-space:nowrap">${t.due_date}</span>
+      ${!done?`<button class="btn btn-ghost btn-sm" onclick="completeTask('${t.id}')" title="Valmis">✓</button>`:''}
+      <button class="btn btn-ghost btn-sm" onclick="deleteTask('${t.id}')" title="Poista" style="color:var(--red)">✕</button>
     </div>`;
   }).join('');
 }
 
-async function markTaskDone(idx) {
-  if (!currentId) return;
+async function updateTaskTila(taskId, newTila) {
+  if(!currentId) return;
   const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return;
-  const acts=parseActs(p); if(!acts[idx]) return;
-  acts[idx].done=true; delete acts[idx].due_date;
+  const acts=parseActs(p); const task=acts.find(a=>a.id===taskId); if(!task) return;
+  task.tila=newTila; task.done=(TASK_DONE[task.tyyppi]||[]).includes(newTila);
+  if(task.tyyppi==='kauppa'){const prev=p.vaihe;p.vaihe=newTila;if(prev!==newTila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${newTila}`,p.omistaja);}
   p.aktiviteetit=JSON.stringify(acts);
-  const near=acts.filter(a=>a.due_date&&!a.done).sort((a,b)=>a.due_date.localeCompare(b.due_date))[0];
-  p.seuraava_toimenpide=near?near.teksti||near.tyyppi:null;
-  p.seuraava_pvm=near?.due_date||null;
+  const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
+  try{await saveCrmState(p);renderTaskList(p);updateSummary();applyFilters();showToast('Tila päivitetty ✓','success');}
+  catch(e){showToast('Virhe: '+e.message,'error');}
+}
+
+async function completeTask(taskId) {
+  if(!currentId) return;
+  const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return;
+  const acts=parseActs(p); const task=acts.find(a=>a.id===taskId); if(!task) return;
+  task.done=true;
+  const doneStates=TASK_DONE[task.tyyppi]||[];
+  if(doneStates.length&&!doneStates.includes(task.tila)) task.tila=doneStates[doneStates.length-1];
+  if(task.tyyppi==='kauppa'){const prev=p.vaihe;p.vaihe=task.tila;if(prev!==task.tila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${task.tila}`,p.omistaja);}
+  p.aktiviteetit=JSON.stringify(acts);
+  const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
   document.getElementById('e-toimenpide').value=p.seuraava_toimenpide||'';
   document.getElementById('e-pvm').value=p.seuraava_pvm||'';
-  try { await saveCrmState(p); renderTaskList(p); renderActivities(p); showToast('Tehty ✓','success'); }
-  catch(e) { showToast('Virhe: '+e.message,'error'); }
+  try{await saveCrmState(p);renderTaskList(p);renderActivities(p);updateSummary();applyFilters();showToast('Valmis ✓','success');}
+  catch(e){showToast('Virhe: '+e.message,'error');}
+}
+
+async function deleteTask(taskId) {
+  if(!confirm('Poistetaanko tehtävä?')) return;
+  const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return;
+  const acts=parseActs(p); const idx=acts.findIndex(a=>a.id===taskId); if(idx<0) return;
+  acts.splice(idx,1); p.aktiviteetit=JSON.stringify(acts);
+  const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
+  document.getElementById('e-toimenpide').value=p.seuraava_toimenpide||'';
+  document.getElementById('e-pvm').value=p.seuraava_pvm||'';
+  try{await saveCrmState(p);renderTaskList(p);renderActivities(p);updateSummary();applyFilters();showToast('Poistettu','success');}
+  catch(e){showToast('Virhe: '+e.message,'error');}
 }
 
 // ── Activities ────────────────────────────────────────────────────────────────
@@ -1597,26 +1652,27 @@ function openGlobalTask() {
   sel.innerHTML=sorted.map(p=>`<option value="${p.spara_id}">${esc(p.yritys_nimi)}</option>`).join('');
   document.getElementById('gt-input').value='';
   document.getElementById('gt-due').value='';
+  updateGtTilaOptions();
   document.getElementById('addtask-modal').classList.remove('hidden');
 }
 function closeGlobalTask() { document.getElementById('addtask-modal').classList.add('hidden'); }
 function closeGlobalTaskMaybe(e) { if(e.target===document.getElementById('addtask-modal')) closeGlobalTask(); }
 async function saveGlobalTask() {
   const tiliId=document.getElementById('gt-tili')?.value;
-  const tyyppi=document.getElementById('gt-type')?.value||'muu';
-  const teksti=(document.getElementById('gt-input')?.value||'').trim();
+  const tyyppi=document.getElementById('gt-type')?.value||'kauppa';
+  const tila=document.getElementById('gt-tila')?.value||'';
+  const aihe=(document.getElementById('gt-input')?.value||'').trim();
   const due_date=document.getElementById('gt-due')?.value||'';
+  const arvoRaw=tyyppi==='kauppa'?(document.getElementById('gt-arvo')?.value||''):'';
+  const arvo=arvoRaw?parseFloat(arvoRaw):null;
   if(!tiliId||!due_date){showToast('Tili ja päivämäärä ovat pakollisia','error');return;}
   const p=allProspects.find(x=>x.spara_id===tiliId); if(!p) return;
+  const done=(TASK_DONE[tyyppi]||[]).includes(tila);
   const acts=parseActs(p);
-  acts.push({id:'TK'+Date.now(),tyyppi,teksti,tekija:null,created_at:new Date().toISOString(),due_date,done:false});
+  acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,tekija:null,created_at:new Date().toISOString(),due_date,done});
   p.aktiviteetit=JSON.stringify(acts);
-  if(tyyppi==='tarjous'&&!['Tarjous','Sopimus'].includes(p.vaihe)){
-    const prev=p.vaihe; p.vaihe='Tarjous';
-    addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → Tarjous`,null);
-  }
-  const near=parseActs(p).filter(a=>a.due_date&&!a.done).sort((a,b)=>a.due_date.localeCompare(b.due_date))[0];
-  p.seuraava_toimenpide=near?near.teksti||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
+  if(tyyppi==='kauppa'&&tila){const prev=p.vaihe;p.vaihe=tila;if(prev!==tila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${tila}`,null);}
+  const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
   try {
     await saveCrmState(p);
     closeGlobalTask(); updateSummary(); applyFilters(); renderDashboard();
@@ -1660,16 +1716,17 @@ async function saveGlobalTask() {
       <div class="form-grid">
         <div class="form-group full"><label>Tili *</label><select class="form-control" id="gt-tili"></select></div>
         <div class="form-group"><label>Tyyppi</label>
-          <select class="form-control" id="gt-type">
+          <select class="form-control" id="gt-type" onchange="updateGtTilaOptions()">
+            <option value="kauppa">🤝 Kauppa</option>
             <option value="soitto">📞 Soitto</option>
             <option value="sahkoposti">✉️ Sähköposti</option>
-            <option value="tapaaminen">🤝 Tapaaminen</option>
-            <option value="tarjous">📄 Tarjous</option>
-            <option value="muu">📝 Muu</option>
+            <option value="muu">📝 Muu tehtävä</option>
           </select>
         </div>
+        <div class="form-group"><label>Tila</label><select class="form-control" id="gt-tila"></select></div>
+        <div class="form-group full"><label>Aihe</label><input class="form-control" id="gt-input" placeholder="Aihe…"></div>
+        <div class="form-group" id="gt-arvo-wrap"><label>Arvo €</label><input class="form-control" id="gt-arvo" type="number" min="0" placeholder="0"></div>
         <div class="form-group"><label>Päivämäärä *</label><input class="form-control" id="gt-due" type="date"></div>
-        <div class="form-group full"><label>Kuvaus</label><input class="form-control" id="gt-input" placeholder="Kuvaus…"></div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
         <button class="btn btn-ghost" onclick="closeGlobalTask()">Peruuta</button>
