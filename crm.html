@@ -367,7 +367,10 @@
   <div class="modal">
     <div class="modal-header">
       <div class="modal-title" id="modal-title">Prospekti</div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
+      <div style="display:flex;align-items:center;gap:4px">
+        <button class="modal-close" onclick="switchToTiedotAndEdit()" title="Muokkaa tilitietoja">✏️</button>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
     </div>
     <div class="modal-body">
       <div class="mtabs">
@@ -1008,6 +1011,16 @@ function openModal(sid) {
 }
 function closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); currentId=null; }
 function closeMaybe(e) { if (e.target===document.getElementById('modal-overlay')) closeModal(); }
+
+function switchToTiedotAndEdit() {
+  document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
+  document.querySelector('[data-mt="info"]').classList.add('active');
+  document.getElementById('mt-info').classList.add('active');
+  const editDiv=document.getElementById('mt-info-edit');
+  if(editDiv.style.display==='none') toggleTiliEdit();
+  editDiv.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
 
 function toggleTiliEdit() {
   const editDiv=document.getElementById('mt-info-edit');
