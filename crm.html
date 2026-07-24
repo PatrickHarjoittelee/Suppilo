@@ -303,10 +303,6 @@
         <option>ETJ+</option><option>Talopakettivalmistajat FIN</option><option>Talopakettivalmistajat SWE</option>
         <option>Muu Projekti</option>
       </select>
-      <select id="f-vaihe">
-        <option value="">Kaikki vaiheet</option>
-        <option>Tapaaminen</option><option>Tarjous</option><option>Sopimus</option><option>Hävitty</option>
-      </select>
       <select id="f-prioriteetti">
         <option value="">Kaikki prioriteetit</option>
         <option value="A">A – korkea</option><option value="B">B – normaali</option>
@@ -314,7 +310,7 @@
       <select id="f-segmentti"><option value="">Kaikki segmentit</option></select>
       <div class="spacer"></div>
       <span class="result-count" id="result-count"></span>
-      <button class="btn btn-ghost btn-sm" id="btn-etj-init" onclick="initETJKeissi()" title="Lisää ETJ+ keissi -kauppatehtävä kaikille ETJ+ tileille">🚀 ETJ+ keissi kaikille</button>
+      <button class="btn btn-ghost btn-sm" id="btn-etj-init" onclick="initKaupat()" title="Lisää Kauppa-tehtävä kaikille tileille joilla ei vielä ole kauppaa">🤝 Alusta kaupat</button>
     </div>
     <div class="table-wrap">
       <table id="tbl-lista">
@@ -325,7 +321,6 @@
           <th data-col="kaupunki">Kaupunki <span class="sa">↕</span></th>
           <th data-col="yhteyshenkilö">Yhteyshenkilö</th>
           <th data-col="kulutusarvio_mwh">MWh/v <span class="sa">↕</span></th>
-          <th data-col="vaihe">Vaihe <span class="sa">↕</span></th>
           <th data-col="kampanja">Projekti <span class="sa">↕</span></th>
           <th></th>
         </tr></thead>
@@ -864,20 +859,18 @@ async function saveMuokkaa() {
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────────
-['f-haku','f-kampanja','f-vaihe','f-prioriteetti','f-segmentti'].forEach(id =>
+['f-haku','f-kampanja','f-prioriteetti','f-segmentti'].forEach(id =>
   document.getElementById(id)?.addEventListener('input', () => { page=0; applyFilters(); }));
 document.getElementById('k-kampanja').addEventListener('change', renderKanban);
 
 function applyFilters() {
   const haku=document.getElementById('f-haku').value.toLowerCase();
   const komp=document.getElementById('f-kampanja').value;
-  const vaihe=document.getElementById('f-vaihe').value;
   const prio=document.getElementById('f-prioriteetti').value;
   const seg=document.getElementById('f-segmentti').value;
   filteredRows = allProspects.filter(p => {
     if (haku && !['yritys_nimi','kaupunki','yhteyshenkilö','signaali','osoite','segmentti'].some(k=>(p[k]||'').toLowerCase().includes(haku))) return false;
     if (komp  && p.kampanja!==komp) return false;
-    if (vaihe && p.vaihe!==vaihe) return false;
     if (prio  && p.prioriteetti!==prio) return false;
     if (seg   && p.segmentti!==seg) return false;
     return true;
@@ -905,7 +898,7 @@ function renderTable() {
   const tbody=document.getElementById('tbody-lista');
   const rows=filteredRows.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE);
   if (!rows.length) {
-    tbody.innerHTML='<tr><td colspan="9" class="empty">Ei tuloksia</td></tr>';
+    tbody.innerHTML='<tr><td colspan="8" class="empty">Ei tuloksia</td></tr>';
     document.getElementById('page-info').textContent='';
     document.getElementById('btn-prev').disabled=true;
     document.getElementById('btn-next').disabled=true;
@@ -919,7 +912,6 @@ function renderTable() {
       <td>${esc(p.kaupunki)}</td>
       <td style="color:var(--text2)">${esc(p['yhteyshenkilö'])}</td>
       <td style="color:var(--text2);font-size:11px">${esc(p.kulutusarvio_mwh)}</td>
-      <td><span class="badge v-${p.vaihe}">${esc(p.vaihe)}</span></td>
       <td style="color:var(--text2);font-size:11px">${kampBadge(p.kampanja)}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openModal('${p.spara_id}')">Avaa</button></td>
     </tr>`).join('');
@@ -1038,7 +1030,6 @@ function openModal(sid) {
     <div class="section-divider"></div>
     ${f('Kontaktoinnin tila (Sheets)',p.kontaktoinnin_tila,true)}
     ${f('Tulos / seuraava toimi (Sheets)',p.tulos_seuraava_toimi,true)}
-    ${f('CRM-vaihe',`<span class="badge v-${p.vaihe}">${esc(p.vaihe)}</span>`)}
     ${f('Omistaja',p.omistaja)} ${f('Seuraava toimenpide',p.seuraava_toimenpide,true)}
     ${f('Seuraava pvm',p.seuraava_pvm)} ${f('Muistiinpanot',p.muistiinpanot,true)}`;
   document.getElementById('e-toimenpide').value=p.seuraava_toimenpide||'';
@@ -1218,26 +1209,30 @@ async function deleteTask(taskId) {
 
 // ── Activities ────────────────────────────────────────────────────────────────
 function parseActs(p) { try { return JSON.parse(p.aktiviteetit||'[]'); } catch(_) { return []; } }
-async function initETJKeissi() {
+async function initKaupat() {
   const btn=document.getElementById('btn-etj-init');
-  if (!confirm('Lisätään ETJ+ keissi -kauppatehtävä (299 €, erääntyy 15.9.2026) kaikille ETJ+ tileille joilla ei vielä ole keissiä?')) return;
+  if (!confirm('Lisätään Kauppa-tehtävä kaikille tileille joilla ei vielä ole kauppaa?')) return;
   if (btn) { btn.disabled=true; btn.textContent='⏳ Lisätään…'; }
   let added=0;
   for (const p of allProspects) {
-    if (p.kampanja !== 'ETJ+') continue;
     const acts=parseActs(p);
-    if (acts.some(a=>a.tyyppi==='kauppa'&&(a.aihe||a.teksti||'').includes('ETJ+'))) continue;
+    if (acts.some(a=>a.tyyppi==='kauppa')) continue;
+    let aihe, arvo;
+    if (p.kampanja==='ETJ+') { aihe='ETJ+'; arvo=299; }
+    else if (p.kampanja?.startsWith('Talopakett')) { aihe=p.kampanja; arvo=7000; }
+    else { aihe=p.kampanja||'Projekti'; arvo=0; }
     acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
-      tyyppi:'kauppa',tila:'Tarjous',aihe:'ETJ+ keissi',arvo:299,tekija:null,muistiinpanot:null,
-      created_at:new Date().toISOString(),due_date:'2026-09-15',done:false});
+      tyyppi:'kauppa',tila:'Liidi',aihe,arvo,tekija:null,muistiinpanot:null,
+      created_at:new Date().toISOString(),due_date:null,done:false});
     p.aktiviteetit=JSON.stringify(acts);
+    p.vaihe='Liidi';
     const near=nearestTask(p); p.seuraava_toimenpide=near?.aihe||near?.tyyppi||null; p.seuraava_pvm=near?.due_date||null;
     try { await saveCrmState(p); added++; } catch(e) { console.error(e); }
     await new Promise(r=>setTimeout(r,80));
   }
   updateSummary(); applyFilters(); renderDashboard();
-  showToast(`ETJ+ keissi lisätty ${added} tilille ✓`,'success');
-  if (btn) { btn.disabled=false; btn.textContent='🚀 ETJ+ keissi kaikille'; }
+  showToast(`Kauppa lisätty ${added} tilille ✓`,'success');
+  if (btn) { btn.disabled=false; btn.textContent='🤝 Alusta kaupat'; }
 }
 
 function addActToProspect(p,tyyppi,teksti,tekija) {
@@ -1669,7 +1664,13 @@ async function saveNewTili() {
       vaihe:null, _isTili:true, _rowIndex:rowIndex,
       ...blankCrm()
     };
+    const kauppa = {id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
+      tyyppi:'kauppa',tila:'Liidi',aihe:'Projekti',arvo:0,tekija:null,muistiinpanot:null,
+      created_at:new Date().toISOString(),due_date:null,done:false};
+    p.aktiviteetit=JSON.stringify([kauppa]);
+    p.vaihe='Liidi';
     allProspects.push(p);
+    await saveCrmState(p);
     closeAddTili();
     buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard();
     showToast('Tili lisätty: ' + name, 'success');
