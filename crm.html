@@ -670,7 +670,24 @@ async function loadData() {
   } catch(e) {
     showToast('Virhe: '+e.message,'error'); console.error(e); return;
   }
+  initVirtualKaupat();
   buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard();
+}
+
+function initVirtualKaupat() {
+  allProspects.forEach(p => {
+    const acts = parseActs(p);
+    if (acts.some(a => a.tyyppi === 'kauppa')) return;
+    let aihe, arvo;
+    if (p.kampanja === 'ETJ+') { aihe='ETJ+'; arvo=299; }
+    else if (p.kampanja?.startsWith('Talopakett')) { aihe=p.kampanja; arvo=7000; }
+    else return;
+    acts.push({id:'TKv_'+p.spara_id, tyyppi:'kauppa', tila:'Liidi', aihe, arvo,
+      tekija:null, muistiinpanot:p.signaali||null,
+      created_at:new Date().toISOString(), due_date:null, done:false});
+    p.aktiviteetit = JSON.stringify(acts);
+    if (!p.vaihe) p.vaihe = 'Liidi';
+  });
 }
 
 // ── Parse ─────────────────────────────────────────────────────────────────────
@@ -1211,27 +1228,30 @@ async function deleteTask(taskId) {
 function parseActs(p) { try { return JSON.parse(p.aktiviteetit||'[]'); } catch(_) { return []; } }
 async function initKaupat() {
   const btn=document.getElementById('btn-etj-init');
-  if (!confirm('Lisätään Kauppa-tehtävä kaikille tileille joilla ei vielä ole kauppaa?')) return;
-  if (btn) { btn.disabled=true; btn.textContent='⏳ Lisätään…'; }
-  let added=0;
-  for (const p of allProspects) {
+  const targets=allProspects.filter(p=>{
     const acts=parseActs(p);
-    if (acts.some(a=>a.tyyppi==='kauppa')) continue;
-    let aihe, arvo;
-    if (p.kampanja==='ETJ+') { aihe='ETJ+'; arvo=299; }
-    else if (p.kampanja?.startsWith('Talopakett')) { aihe=p.kampanja; arvo=7000; }
-    else { aihe=p.kampanja||'Projekti'; arvo=0; }
-    acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
-      tyyppi:'kauppa',tila:'Liidi',aihe,arvo,tekija:null,muistiinpanot:null,
-      created_at:new Date().toISOString(),due_date:null,done:false});
+    return acts.some(a=>a.tyyppi==='kauppa') && !p._crmRow;
+  });
+  if (!targets.length) { showToast('Kaikki kaupat jo tallennettu ✓','success'); return; }
+  if (!confirm(`Tallennetaan ${targets.length} kauppaa pilveen (1 API-kutsu)?`)) return;
+  if (btn) { btn.disabled=true; btn.textContent='⏳ Tallennetaan…'; }
+  const ts=new Date().toISOString();
+  const rows=targets.map(p=>{
+    const acts=parseActs(p).map(a=>
+      a.id?.startsWith('TKv_')?{...a,id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8)}:a
+    );
     p.aktiviteetit=JSON.stringify(acts);
-    p.vaihe='Liidi';
-    const near=nearestTask(p); p.seuraava_toimenpide=near?.aihe||near?.tyyppi||null; p.seuraava_pvm=near?.due_date||null;
-    try { await saveCrmState(p); added++; } catch(e) { console.error(e); }
-    await new Promise(r=>setTimeout(r,80));
-  }
-  updateSummary(); applyFilters(); renderDashboard();
-  showToast(`Kauppa lisätty ${added} tilille ✓`,'success');
+    const ov=p.tili_override&&Object.keys(p.tili_override).length?JSON.stringify(p.tili_override):'';
+    return [p.spara_id,p.vaihe||'',p.omistaja||'',p.seuraava_toimenpide||'',
+      p.seuraava_pvm||'',p.muistiinpanot||'',p.aktiviteetit,ts,p.crm_status||'Prospekti',ov];
+  });
+  try {
+    await sheetAppend(`${CRM_TAB}!A:J`,rows);
+    const crmRows=await sheetGet(`${CRM_TAB}!A:J`);
+    applyCrmState(crmRows);
+    updateSummary(); applyFilters(); renderDashboard();
+    showToast(`${rows.length} kauppaa tallennettu ✓`,'success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
   if (btn) { btn.disabled=false; btn.textContent='🤝 Alusta kaupat'; }
 }
 
@@ -1665,7 +1685,7 @@ async function saveNewTili() {
       ...blankCrm()
     };
     const kauppa = {id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
-      tyyppi:'kauppa',tila:'Liidi',aihe:'Projekti',arvo:0,tekija:null,muistiinpanot:null,
+      tyyppi:'kauppa',tila:'Liidi',aihe:'Projekti',arvo:0,tekija:null,muistiinpanot:p.signaali||null,
       created_at:new Date().toISOString(),due_date:null,done:false};
     p.aktiviteetit=JSON.stringify([kauppa]);
     p.vaihe='Liidi';
