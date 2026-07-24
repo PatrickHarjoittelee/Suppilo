@@ -305,8 +305,7 @@
       </select>
       <select id="f-vaihe">
         <option value="">Kaikki vaiheet</option>
-        <option>Liidi</option><option>Mahdollisuus</option><option>Tapaaminen</option>
-        <option>Tarjous</option><option>Sopimus</option><option>Hävitty</option>
+        <option>Tapaaminen</option><option>Tarjous</option><option>Sopimus</option><option>Hävitty</option>
       </select>
       <select id="f-prioriteetti">
         <option value="">Kaikki prioriteetit</option>
@@ -315,7 +314,7 @@
       <select id="f-segmentti"><option value="">Kaikki segmentit</option></select>
       <div class="spacer"></div>
       <span class="result-count" id="result-count"></span>
-      <button class="btn btn-ghost btn-sm" id="btn-etj-init" onclick="initETJKeissi()" title="Lisää ETJ+ keissi -kauppatehtävä kaikille Liidi-tileille">🚀 ETJ+ keissi kaikille</button>
+      <button class="btn btn-ghost btn-sm" id="btn-etj-init" onclick="initETJKeissi()" title="Lisää ETJ+ keissi -kauppatehtävä kaikille ETJ+ tileille">🚀 ETJ+ keissi kaikille</button>
     </div>
     <div class="table-wrap">
       <table id="tbl-lista">
@@ -645,7 +644,7 @@ async function loadData() {
             prioriteetti:c0, sija, segmentti:cv(c,3), yritys_nimi:cv(c,1)||'–', juridinen_yhtio:cv(c,2),
             liikevaihto_meur:cv(c,4), pisteet:cn(c,5), 'yhteyshenkilö':cv(c,6), titteli:cv(c,7),
             vaihde_puhelin:cv(c,8), yleinen_sahkoposti:cv(c,9), linkedin:cv(c,11), signaali:cv(c,12),
-            vaihe:'Liidi', ...blankCrm() });
+            vaihe:null, ...blankCrm() });
         });
       } catch(_) {}
     }
@@ -688,8 +687,7 @@ function detectVaihe(tila, tulos) {
   if (s.includes('sopimus')||s.includes('kauppa')) return 'Sopimus';
   if (s.includes('tarjous')) return 'Tarjous';
   if (s.includes('tapaaminen')||s.includes('sovittu')) return 'Tapaaminen';
-  if (s.includes('reititys vahvistettu')||s.includes('nimetty')||s.includes('vahvistettu')) return 'Mahdollisuus';
-  return 'Liidi';
+  return null;
 }
 
 function blankCrm() { return { omistaja:null, seuraava_toimenpide:null, seuraava_pvm:null, muistiinpanot:null, aktiviteetit:'[]', crm_status:'Prospekti', tili_override:{}, _crmRow:null }; }
@@ -732,7 +730,7 @@ function parseProspects(rows) {
         titteli:null, suora_numero:null, linkedin:null,
         vaihde_puhelin:null, yleinen_sahkoposti:null,
         kontaktoinnin_tila:null, tulos_seuraava_toimi:null,
-        vaihe:'Liidi', _isTili:true, _rowIndex:idx + 1,
+        vaihe:null, _isTili:true, _rowIndex:idx + 1,
         ...blankCrm()
       });
     }
@@ -774,7 +772,7 @@ function applyCrmState(crmRows) {
 
 async function saveCrmState(p) {
   const ov = p.tili_override && Object.keys(p.tili_override).length ? JSON.stringify(p.tili_override) : '';
-  const row = [p.spara_id, p.vaihe||'Liidi', p.omistaja||'', p.seuraava_toimenpide||'',
+  const row = [p.spara_id, p.vaihe||'', p.omistaja||'', p.seuraava_toimenpide||'',
     p.seuraava_pvm||'', p.muistiinpanot||'', p.aktiviteetit||'[]', new Date().toISOString(),
     p.crm_status||'Prospekti', ov];
   if (p._crmRow) {
@@ -933,8 +931,8 @@ function renderTable() {
 function changePage(d) { page+=d; renderTable(); }
 
 // ── Kanban ─────────────────────────────────────────────────────────────────────
-const VAIHEET=['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'];
-const V_COLORS={Liidi:'var(--blue)',Mahdollisuus:'var(--orange)',Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)',Hävitty:'var(--red)'};
+const VAIHEET=['Tapaaminen','Tarjous','Sopimus','Hävitty'];
+const V_COLORS={Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)',Hävitty:'var(--red)'};
 const TASK_TILA={
   kauppa:    ['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'],
   soitto:    ['Uusi','Vastaamaton','Viesti vastaajaan','SMS-viesti','Tavoitettu'],
@@ -976,7 +974,7 @@ function updateGtTilaOptions() {
   if(wrap) wrap.style.display=tyyppi==='kauppa'?'':'none';
 }
 function taskIsDone(t){return t.done||(TASK_DONE[t.tyyppi]||[]).includes(t.tila);}
-function normalizeTask(a){return{...a,aihe:a.aihe||a.teksti||'',tila:a.tila||(a.tyyppi==='kauppa'?'Liidi':'Uusi'),tyyppi:TASK_TILA[a.tyyppi]?a.tyyppi:'muu'};}
+function normalizeTask(a){return{...a,aihe:a.aihe||a.teksti||'',tila:a.tila||(a.tyyppi==='kauppa'?'Tarjous':'Uusi'),tyyppi:TASK_TILA[a.tyyppi]?a.tyyppi:'muu'};}
 function nearestTask(p){return parseActs(p).map(normalizeTask).filter(a=>a.due_date&&!taskIsDone(a)).sort((a,b)=>a.due_date.localeCompare(b.due_date))[0];}
 
 function renderKanban() {
@@ -1222,15 +1220,15 @@ async function deleteTask(taskId) {
 function parseActs(p) { try { return JSON.parse(p.aktiviteetit||'[]'); } catch(_) { return []; } }
 async function initETJKeissi() {
   const btn=document.getElementById('btn-etj-init');
-  if (!confirm('Lisätään ETJ+ keissi -kauppatehtävä (299 €, erääntyy 15.9.2026) kaikille Liidi-vaiheessa oleville tileille?')) return;
+  if (!confirm('Lisätään ETJ+ keissi -kauppatehtävä (299 €, erääntyy 15.9.2026) kaikille ETJ+ tileille joilla ei vielä ole keissiä?')) return;
   if (btn) { btn.disabled=true; btn.textContent='⏳ Lisätään…'; }
   let added=0;
   for (const p of allProspects) {
-    if (p.vaihe!=='Liidi') continue;
+    if (p.kampanja !== 'ETJ+') continue;
     const acts=parseActs(p);
     if (acts.some(a=>a.tyyppi==='kauppa'&&(a.aihe||a.teksti||'').includes('ETJ+'))) continue;
     acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
-      tyyppi:'kauppa',tila:'Liidi',aihe:'ETJ+ keissi',arvo:299,tekija:null,muistiinpanot:null,
+      tyyppi:'kauppa',tila:'Tarjous',aihe:'ETJ+ keissi',arvo:299,tekija:null,muistiinpanot:null,
       created_at:new Date().toISOString(),due_date:'2026-09-15',done:false});
     p.aktiviteetit=JSON.stringify(acts);
     const near=nearestTask(p); p.seuraava_toimenpide=near?.aihe||near?.tyyppi||null; p.seuraava_pvm=near?.due_date||null;
@@ -1447,8 +1445,7 @@ async function fetchAndFillYTJ(context) {
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function renderDashboard() {
-  const VCOL={Liidi:'var(--blue)',Mahdollisuus:'var(--orange)',Tapaaminen:'var(--purple)',
-    Tarjous:'var(--yellow)',Sopimus:'var(--green)','Hävitty':'var(--red)'};
+  const VCOL={Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)','Hävitty':'var(--red)'};
   const PCOL={'ETJ+':'var(--red)','Talopakettivalmistajat FIN':'var(--orange)',
     'Talopakettivalmistajat SWE':'var(--blue)','Muu Projekti':'var(--purple)'};
 
@@ -1669,7 +1666,7 @@ async function saveNewTili() {
       huomiot, kontaktoinnin_tila:null, tulos_seuraava_toimi:null,
       lahde:rekisteroity, 'yhteyshenkilö':yhteyshenkilö, titteli:null, suora_numero:null,
       henk_sahkoposti, linkedin:null,
-      vaihe:'Liidi', _isTili:true, _rowIndex:rowIndex,
+      vaihe:null, _isTili:true, _rowIndex:rowIndex,
       ...blankCrm()
     };
     allProspects.push(p);
