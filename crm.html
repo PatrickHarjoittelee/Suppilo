@@ -697,37 +697,25 @@ function blankCrm() { return { omistaja:null, seuraava_toimenpide:null, seuraava
 function parseProspects(rows) {
   const out = [];
   rows.forEach((c, idx) => {
-    if (!c||c.length<2) return;
+    if (!c||!c.length) return;
     const c0 = (c[0]||'').trim();
-    if (idx>=3 && idx<=92 && c0.startsWith('ID')) {
+    // All data rows use ID... prefix (ETJ+, TALO FIN, TALO SWE share same column layout)
+    if (c0.startsWith('ID')) {
+      const kampanja = cv(c,1)||'ETJ+';
       const tila=cv(c,19), tulos=cv(c,20);
-      out.push({ spara_id:c0, kampanja:cv(c,1)||'ETJ+', prioriteetti:cv(c,2), segmentti:cv(c,3),
+      const p = { spara_id:c0, kampanja, prioriteetti:cv(c,2), segmentti:cv(c,3),
         yritys_nimi:cv(c,4)||'–', juridinen_yhtio:cv(c,5), osoite:cv(c,6), kaupunki:cv(c,7),
         y_tunnus:cv(c,8), liikevaihto_meur:cv(c,9), kulutusarvio_mwh:cv(c,10), pisteet:cn(c,11),
         vaihde_puhelin:cv(c,12), yleinen_sahkoposti:cv(c,13), www:cv(c,14), signaali:cv(c,15),
         perustelu:cv(c,16), velvoiteluokka:cv(c,17), huomiot:cv(c,18), kontaktoinnin_tila:tila,
         tulos_seuraava_toimi:tulos, lahde:cv(c,21), 'yhteyshenkilö':cv(c,22), titteli:cv(c,23),
         suora_numero:cv(c,24), henk_sahkoposti:cv(c,25), linkedin:cv(c,26),
-        vaihe:detectVaihe(tila,tulos), ...blankCrm() });
-    } else if (/^\d+$/.test(c0)) {
-      // Col B (c[1]) = kampanja ("Talopakettivalmistajat FIN/SWE") — screenshot confirmed
-      // Col C (c[2]) = yritys_nimi, Col F (c[5]) = juridinen yhtiö — screenshot confirmed
-      const kb = cv(c,1)||'';
-      const isFIN = /FIN/i.test(kb);
-      const isSWE = /SWE/i.test(kb);
-      if (isFIN || isSWE) {
-        const sija=parseInt(c0);
-        const prefix = isSWE?'TALOSWE':'TALOFIN';
-        const kampanja = isSWE?'Talopakettivalmistajat SWE':'Talopakettivalmistajat FIN';
-        const tila = cv(c,14);
-        out.push({ spara_id:`${prefix}${String(sija).padStart(3,'0')}`, kampanja,
-          prioriteetti:c0, sija, yritys_nimi:cv(c,2)||'–', juridinen_yhtio:cv(c,5),
-          segmentti:cv(c,3), liikevaihto_meur:cv(c,4), pisteet:cn(c,6),
-          'yhteyshenkilö':cv(c,7), titteli:cv(c,8),
-          vaihde_puhelin:cv(c,9), yleinen_sahkoposti:cv(c,10), linkedin:cv(c,12),
-          signaali:cv(c,13), lahde:cv(c,14), kontaktoinnin_tila:tila, huomiot:cv(c,15),
-          vaihe:detectVaihe(tila,null), ...blankCrm() });
+        vaihe:detectVaihe(tila,tulos), ...blankCrm() };
+      if (kampanja.startsWith('Talopakett')) {
+        p.sija = parseInt(cv(c,2)||'0') || null;
+        p.liikevaihto_meur = cn(c,9); // numeric for TALO
       }
+      out.push(p);
     } else if (/^T\d+$/.test(c0)) {
       out.push({
         spara_id:c0, kampanja:'Muu Projekti',
