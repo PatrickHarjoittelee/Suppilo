@@ -395,39 +395,42 @@
         <div class="contacts-section" id="mt-info-contacts"></div>
       </div>
       <div class="mtab-content" id="mt-tehtavat">
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Omistaja</label>
-            <input class="form-control" id="e-omistaja" placeholder="Patrick">
-          </div>
-          <div class="form-group full">
-            <label>Muistiinpanot</label>
-            <textarea class="form-control" id="e-muistiinpanot" rows="2"></textarea>
-          </div>
-        </div>
         <input type="hidden" id="e-toimenpide">
         <input type="hidden" id="e-pvm">
-        <div style="display:flex;justify-content:flex-end;margin-top:10px;">
-          <button class="btn btn-primary btn-sm" onclick="saveTehtavat()">Tallenna</button>
-        </div>
-        <div style="margin-top:14px">
-          <div class="cs-title">Tehtävät</div>
-          <div id="task-list"></div>
-        </div>
-        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-top:8px">
+        <!-- Lisää tehtävä – aina päällimmäisenä -->
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:14px">
           <div class="cs-title" style="margin-bottom:8px">Lisää tehtävä</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">
-            <select class="form-control" id="task-type" onchange="updateTaskTilaOptions()" style="min-width:120px;flex-shrink:0">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            <select class="form-control" id="task-type" onchange="updateTaskTilaOptions()">
               <option value="kauppa">🤝 Kauppa</option>
               <option value="soitto">📞 Soitto</option>
               <option value="sahkoposti">✉️ Sähköposti</option>
               <option value="muu">📝 Muu tehtävä</option>
             </select>
-            <select class="form-control" id="task-tila" style="min-width:120px;flex-shrink:0"></select>
-            <input class="form-control" id="task-aihe" placeholder="Aihe…" style="flex:1;min-width:100px">
-            <input class="form-control" id="task-arvo" type="number" placeholder="Arvo €" min="0" style="width:90px;flex-shrink:0;display:none">
-            <input class="form-control" id="task-due" type="date" style="width:135px;flex-shrink:0">
-            <button class="btn btn-ghost btn-sm" onclick="addTask()">Lisää</button>
+            <select class="form-control" id="task-tila"></select>
+            <input class="form-control" id="task-aihe" placeholder="Aihe…" style="grid-column:1/-1">
+            <input class="form-control" id="task-arvo" type="number" placeholder="Arvo €" min="0" style="display:none">
+            <input class="form-control" id="task-due" type="date">
+            <button class="btn btn-primary btn-sm" onclick="addTask()" style="justify-self:end;align-self:center">+ Lisää</button>
+          </div>
+        </div>
+        <!-- Tehtävälista -->
+        <div class="cs-title">Tehtävät</div>
+        <div id="task-list" style="margin-bottom:14px"></div>
+        <!-- Omistaja ja muistiinpanot – tilin yleiset kentät -->
+        <div style="border-top:1px solid var(--border);padding-top:12px">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Omistaja</label>
+              <input class="form-control" id="e-omistaja" placeholder="Patrick">
+            </div>
+            <div class="form-group full">
+              <label>Muistiinpanot</label>
+              <textarea class="form-control" id="e-muistiinpanot" rows="2"></textarea>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-top:8px">
+            <button class="btn btn-primary btn-sm" onclick="saveTehtavat()">Tallenna</button>
           </div>
         </div>
       </div>
