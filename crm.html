@@ -305,8 +305,7 @@
       </select>
       <select id="f-vaihe">
         <option value="">Kaikki vaiheet</option>
-        <option>Liidi</option><option>Mahdollisuus</option><option>Tapaaminen</option>
-        <option>Tarjous</option><option>Sopimus</option><option>Hävitty</option>
+        <option>Tapaaminen</option><option>Tarjous</option><option>Sopimus</option><option>Hävitty</option>
       </select>
       <select id="f-prioriteetti">
         <option value="">Kaikki prioriteetit</option>
@@ -315,7 +314,7 @@
       <select id="f-segmentti"><option value="">Kaikki segmentit</option></select>
       <div class="spacer"></div>
       <span class="result-count" id="result-count"></span>
-      <button class="btn btn-ghost btn-sm" id="btn-etj-init" onclick="initETJKeissi()" title="Lisää ETJ+ keissi -kauppatehtävä kaikille Liidi-tileille">🚀 ETJ+ keissi kaikille</button>
+      <button class="btn btn-ghost btn-sm" id="btn-etj-init" onclick="initETJKeissi()" title="Lisää ETJ+ keissi -kauppatehtävä kaikille ETJ+ tileille">🚀 ETJ+ keissi kaikille</button>
     </div>
     <div class="table-wrap">
       <table id="tbl-lista">
@@ -645,7 +644,7 @@ async function loadData() {
             prioriteetti:c0, sija, segmentti:cv(c,3), yritys_nimi:cv(c,1)||'–', juridinen_yhtio:cv(c,2),
             liikevaihto_meur:cv(c,4), pisteet:cn(c,5), 'yhteyshenkilö':cv(c,6), titteli:cv(c,7),
             vaihde_puhelin:cv(c,8), yleinen_sahkoposti:cv(c,9), linkedin:cv(c,11), signaali:cv(c,12),
-            vaihe:'Liidi', ...blankCrm() });
+            vaihe:null, ...blankCrm() });
         });
       } catch(_) {}
     }
@@ -688,8 +687,7 @@ function detectVaihe(tila, tulos) {
   if (s.includes('sopimus')||s.includes('kauppa')) return 'Sopimus';
   if (s.includes('tarjous')) return 'Tarjous';
   if (s.includes('tapaaminen')||s.includes('sovittu')) return 'Tapaaminen';
-  if (s.includes('reititys vahvistettu')||s.includes('nimetty')||s.includes('vahvistettu')) return 'Mahdollisuus';
-  return 'Liidi';
+  return null;
 }
 
 function blankCrm() { return { omistaja:null, seuraava_toimenpide:null, seuraava_pvm:null, muistiinpanot:null, aktiviteetit:'[]', crm_status:'Prospekti', tili_override:{}, _crmRow:null }; }
@@ -713,7 +711,10 @@ function parseProspects(rows) {
         vaihe:detectVaihe(tila,tulos), ...blankCrm() };
       if (kampanja.startsWith('Talopakett')) {
         p.sija = parseInt(cv(c,2)||'0') || null;
-        p.liikevaihto_meur = cn(c,9); // numeric for TALO
+        p.liikevaihto_meur = cn(c,9);
+      } else if (kampanja === 'Muu Projekti') {
+        p._isTili = true;
+        p._rowIndex = idx + 1;
       }
       out.push(p);
     } else if (/^T\d+$/.test(c0)) {
@@ -729,7 +730,7 @@ function parseProspects(rows) {
         titteli:null, suora_numero:null, linkedin:null,
         vaihde_puhelin:null, yleinen_sahkoposti:null,
         kontaktoinnin_tila:null, tulos_seuraava_toimi:null,
-        vaihe:'Liidi', _isTili:true, _rowIndex:idx + 1,
+        vaihe:null, _isTili:true, _rowIndex:idx + 1,
         ...blankCrm()
       });
     }
@@ -771,7 +772,7 @@ function applyCrmState(crmRows) {
 
 async function saveCrmState(p) {
   const ov = p.tili_override && Object.keys(p.tili_override).length ? JSON.stringify(p.tili_override) : '';
-  const row = [p.spara_id, p.vaihe||'Liidi', p.omistaja||'', p.seuraava_toimenpide||'',
+  const row = [p.spara_id, p.vaihe||'', p.omistaja||'', p.seuraava_toimenpide||'',
     p.seuraava_pvm||'', p.muistiinpanot||'', p.aktiviteetit||'[]', new Date().toISOString(),
     p.crm_status||'Prospekti', ov];
   if (p._crmRow) {
@@ -785,11 +786,28 @@ async function saveCrmState(p) {
 
 async function saveTiliData(p) {
   if (!p._rowIndex) { showToast('Lataa sivu uudelleen muokataksesi', 'error'); return; }
-  const row = [p.spara_id, p.yritys_nimi||'', p.y_tunnus||'', p.segmentti||'',
-    p.juridinen_yhtio||'', p.osoite||'', p.postinumero||'', p.kaupunki||'',
-    p['yhteyshenkilö']||'', p.henk_sahkoposti||'', p.rekisteroity||'',
-    p.huomiot||'', p.created_at||'', p.www||''];
-  await sheetPut(`${MAIN_TAB}!A${p._rowIndex}:N${p._rowIndex}`, [row]);
+  let row, range;
+  if (p.spara_id.startsWith('ID')) {
+    row = [
+      p.spara_id, p.kampanja||'Muu Projekti', p.prioriteetti||'',
+      p.segmentti||'', p.yritys_nimi||'', p.juridinen_yhtio||'',
+      p.osoite||'', p.kaupunki||'', p.y_tunnus||'',
+      p.liikevaihto_meur||'', p.kulutusarvio_mwh||'', p.pisteet||'',
+      p.vaihde_puhelin||'', p.yleinen_sahkoposti||'', p.www||'',
+      p.signaali||'', p.perustelu||'', p.velvoiteluokka||'',
+      p.huomiot||'', p.kontaktoinnin_tila||'', p.tulos_seuraava_toimi||'',
+      p.lahde||'', p['yhteyshenkilö']||'', p.titteli||'', p.suora_numero||'',
+      p.henk_sahkoposti||'', p.linkedin||''
+    ];
+    range = `${MAIN_TAB}!A${p._rowIndex}:AA${p._rowIndex}`;
+  } else {
+    row = [p.spara_id, p.yritys_nimi||'', p.y_tunnus||'', p.segmentti||'',
+      p.juridinen_yhtio||'', p.osoite||'', p.postinumero||'', p.kaupunki||'',
+      p['yhteyshenkilö']||'', p.henk_sahkoposti||'', p.rekisteroity||'',
+      p.huomiot||'', p.created_at||'', p.www||''];
+    range = `${MAIN_TAB}!A${p._rowIndex}:N${p._rowIndex}`;
+  }
+  await sheetPut(range, [row]);
 }
 
 function renderTiedotEdit(p) {
@@ -913,8 +931,8 @@ function renderTable() {
 function changePage(d) { page+=d; renderTable(); }
 
 // ── Kanban ─────────────────────────────────────────────────────────────────────
-const VAIHEET=['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'];
-const V_COLORS={Liidi:'var(--blue)',Mahdollisuus:'var(--orange)',Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)',Hävitty:'var(--red)'};
+const VAIHEET=['Tapaaminen','Tarjous','Sopimus','Hävitty'];
+const V_COLORS={Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)',Hävitty:'var(--red)'};
 const TASK_TILA={
   kauppa:    ['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'],
   soitto:    ['Uusi','Vastaamaton','Viesti vastaajaan','SMS-viesti','Tavoitettu'],
@@ -956,7 +974,7 @@ function updateGtTilaOptions() {
   if(wrap) wrap.style.display=tyyppi==='kauppa'?'':'none';
 }
 function taskIsDone(t){return t.done||(TASK_DONE[t.tyyppi]||[]).includes(t.tila);}
-function normalizeTask(a){return{...a,aihe:a.aihe||a.teksti||'',tila:a.tila||(a.tyyppi==='kauppa'?'Liidi':'Uusi'),tyyppi:TASK_TILA[a.tyyppi]?a.tyyppi:'muu'};}
+function normalizeTask(a){return{...a,aihe:a.aihe||a.teksti||'',tila:a.tila||(a.tyyppi==='kauppa'?'Tarjous':'Uusi'),tyyppi:TASK_TILA[a.tyyppi]?a.tyyppi:'muu'};}
 function nearestTask(p){return parseActs(p).map(normalizeTask).filter(a=>a.due_date&&!taskIsDone(a)).sort((a,b)=>a.due_date.localeCompare(b.due_date))[0];}
 
 function renderKanban() {
@@ -1202,15 +1220,15 @@ async function deleteTask(taskId) {
 function parseActs(p) { try { return JSON.parse(p.aktiviteetit||'[]'); } catch(_) { return []; } }
 async function initETJKeissi() {
   const btn=document.getElementById('btn-etj-init');
-  if (!confirm('Lisätään ETJ+ keissi -kauppatehtävä (299 €, erääntyy 15.9.2026) kaikille Liidi-vaiheessa oleville tileille?')) return;
+  if (!confirm('Lisätään ETJ+ keissi -kauppatehtävä (299 €, erääntyy 15.9.2026) kaikille ETJ+ tileille joilla ei vielä ole keissiä?')) return;
   if (btn) { btn.disabled=true; btn.textContent='⏳ Lisätään…'; }
   let added=0;
   for (const p of allProspects) {
-    if (p.vaihe!=='Liidi') continue;
+    if (p.kampanja !== 'ETJ+') continue;
     const acts=parseActs(p);
     if (acts.some(a=>a.tyyppi==='kauppa'&&(a.aihe||a.teksti||'').includes('ETJ+'))) continue;
     acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
-      tyyppi:'kauppa',tila:'Liidi',aihe:'ETJ+ keissi',arvo:299,tekija:null,muistiinpanot:null,
+      tyyppi:'kauppa',tila:'Tarjous',aihe:'ETJ+ keissi',arvo:299,tekija:null,muistiinpanot:null,
       created_at:new Date().toISOString(),due_date:'2026-09-15',done:false});
     p.aktiviteetit=JSON.stringify(acts);
     const near=nearestTask(p); p.seuraava_toimenpide=near?.aihe||near?.tyyppi||null; p.seuraava_pvm=near?.due_date||null;
@@ -1427,8 +1445,7 @@ async function fetchAndFillYTJ(context) {
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function renderDashboard() {
-  const VCOL={Liidi:'var(--blue)',Mahdollisuus:'var(--orange)',Tapaaminen:'var(--purple)',
-    Tarjous:'var(--yellow)',Sopimus:'var(--green)','Hävitty':'var(--red)'};
+  const VCOL={Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)','Hävitty':'var(--red)'};
   const PCOL={'ETJ+':'var(--red)','Talopakettivalmistajat FIN':'var(--orange)',
     'Talopakettivalmistajat SWE':'var(--blue)','Muu Projekti':'var(--purple)'};
 
@@ -1607,37 +1624,49 @@ function closeTiliMaybe(e) { if (e.target===document.getElementById('addtili-mod
 async function saveNewTili() {
   const name = document.getElementById('tf_name')?.value.trim();
   if (!name) { showToast('Yrityksen nimi on pakollinen', 'error'); return; }
-  const id = 'T' + Date.now();
-  const www = document.getElementById('tf_www')?.value.trim()||'';
+  const maxId = allProspects
+    .map(p => p.spara_id)
+    .filter(sid => /^ID\d+$/.test(sid))
+    .reduce((max, sid) => Math.max(max, parseInt(sid.replace('ID',''))), 20260119);
+  const id = 'ID' + (maxId + 1);
+  const segmentti   = document.getElementById('tf_toimiala')?.value.trim()||'';
+  const yhtiömuoto  = document.getElementById('tf_yhtiömuoto')?.value.trim()||'';
+  const osoite      = document.getElementById('tf_osoite')?.value.trim()||'';
+  const postinumero = document.getElementById('tf_postinumero')?.value.trim()||'';
+  const kaupunki    = document.getElementById('tf_kaupunki')?.value.trim()||'';
+  const kaupunkiVal = postinumero ? `${postinumero} ${kaupunki}`.trim() : kaupunki;
+  const yhteyshenkilö  = document.getElementById('tf_yhteyshenkilö')?.value.trim()||'';
+  const henk_sahkoposti= document.getElementById('tf_sahkoposti')?.value.trim()||'';
+  const rekisteroity   = document.getElementById('tf_rekisteroity')?.value.trim()||'';
+  const huomiot        = document.getElementById('tf_lisatiedot')?.value.trim()||'';
+  const www            = document.getElementById('tf_www')?.value.trim()||'';
+  const y_tunnus       = document.getElementById('tf_ytunnus')?.value.trim()||'';
   const row = [
-    id, name,
-    document.getElementById('tf_ytunnus')?.value.trim()||'',
-    document.getElementById('tf_toimiala')?.value.trim()||'',
-    document.getElementById('tf_yhtiömuoto')?.value.trim()||'',
-    document.getElementById('tf_osoite')?.value.trim()||'',
-    document.getElementById('tf_postinumero')?.value.trim()||'',
-    document.getElementById('tf_kaupunki')?.value.trim()||'',
-    document.getElementById('tf_yhteyshenkilö')?.value.trim()||'',
-    document.getElementById('tf_sahkoposti')?.value.trim()||'',
-    document.getElementById('tf_rekisteroity')?.value.trim()||'',
-    document.getElementById('tf_lisatiedot')?.value.trim()||'',
-    new Date().toISOString(),
-    www,
+    id, 'Muu Projekti', '',
+    segmentti, name, yhtiömuoto,
+    osoite, kaupunkiVal, y_tunnus,
+    '', '', '',
+    '', '', www,
+    '', '', '',
+    huomiot, '', '',
+    rekisteroity, yhteyshenkilö, '', '',
+    henk_sahkoposti, ''
   ];
   try {
     const colA = await sheetGet(`${MAIN_TAB}!A:A`);
-    await sheetAppend(`${MAIN_TAB}!A:N`, [row]);
+    await sheetAppend(`${MAIN_TAB}!A:AA`, [row]);
     const rowIndex = colA.length + 1;
     const p = {
       spara_id:id, kampanja:'Muu Projekti', prioriteetti:null,
-      segmentti:row[3]||'', yritys_nimi:name, juridinen_yhtio:row[4]||'',
-      osoite:row[5]||'', postinumero:row[6]||'', kaupunki:row[7]||'',
-      y_tunnus:row[2]||'', liikevaihto_meur:null, kulutusarvio_mwh:null, pisteet:null,
-      'yhteyshenkilö':row[8]||'', titteli:null, suora_numero:null,
-      henk_sahkoposti:row[9]||'', yleinen_sahkoposti:null, vaihde_puhelin:null,
-      www, linkedin:null, signaali:null, perustelu:null, velvoiteluokka:null,
-      huomiot:row[11]||'', kontaktoinnin_tila:null, tulos_seuraava_toimi:null,
-      vaihe:'Liidi', _isTili:true, _rowIndex:rowIndex,
+      segmentti, yritys_nimi:name, juridinen_yhtio:yhtiömuoto,
+      osoite, kaupunki:kaupunkiVal, y_tunnus,
+      liikevaihto_meur:null, kulutusarvio_mwh:null, pisteet:null,
+      vaihde_puhelin:null, yleinen_sahkoposti:null, www,
+      signaali:null, perustelu:null, velvoiteluokka:null,
+      huomiot, kontaktoinnin_tila:null, tulos_seuraava_toimi:null,
+      lahde:rekisteroity, 'yhteyshenkilö':yhteyshenkilö, titteli:null, suora_numero:null,
+      henk_sahkoposti, linkedin:null,
+      vaihe:null, _isTili:true, _rowIndex:rowIndex,
       ...blankCrm()
     };
     allProspects.push(p);
