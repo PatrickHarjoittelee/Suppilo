@@ -666,7 +666,7 @@ function detectVaihe(tila, tulos) {
   return 'Liidi';
 }
 
-function blankCrm() { return { omistaja:null, seuraava_toimenpide:null, seuraava_pvm:null, muistiinpanot:null, aktiviteetit:'[]', crm_status:'', tili_override:{}, _crmRow:null }; }
+function blankCrm() { return { omistaja:null, seuraava_toimenpide:null, seuraava_pvm:null, muistiinpanot:null, aktiviteetit:'[]', crm_status:'Prospekti', tili_override:{}, _crmRow:null }; }
 
 function parseProspects(rows) {
   const out = [];
@@ -691,7 +691,7 @@ function parseProspects(rows) {
         vaihde_puhelin:cv(c,8), yleinen_sahkoposti:cv(c,9), linkedin:cv(c,11), signaali:cv(c,12),
         lahde:cv(c,13), kontaktoinnin_tila:tila, huomiot:cv(c,16),
         vaihe:detectVaihe(tila,null), ...blankCrm() });
-    } else if (idx>=235 && /^\d+$/.test(c0)) {
+    } else if (idx>146 && /^\d+$/.test(c0)) {
       const sija=parseInt(c0);
       out.push({ spara_id:`TALOSWE${String(sija).padStart(3,'0')}`, kampanja:'Talopakettivalmistajat SWE',
         prioriteetti:c0, sija, segmentti:cv(c,3), yritys_nimi:cv(c,1)||'–', juridinen_yhtio:cv(c,2),
@@ -727,7 +727,7 @@ function applyCrmState(crmRows) {
     try { if (row[9]) ov = JSON.parse(row[9]); } catch(_) {}
     map[row[0]] = { vaihe:row[1]||null, omistaja:row[2]||null, seuraava_toimenpide:row[3]||null,
       seuraava_pvm:row[4]||null, muistiinpanot:row[5]||null, aktiviteetit:row[6]||'[]',
-      crm_status:row[8]||'', tili_override:ov, _crmRow:i+1 };
+      crm_status:row[8]||'Prospekti', tili_override:ov, _crmRow:i+1 };
   });
   allProspects.forEach(p => {
     const s = map[p.spara_id];
@@ -736,7 +736,7 @@ function applyCrmState(crmRows) {
     const ov = s.tili_override || {};
     Object.assign(p, { omistaja:s.omistaja, seuraava_toimenpide:s.seuraava_toimenpide,
       seuraava_pvm:s.seuraava_pvm, muistiinpanot:s.muistiinpanot,
-      aktiviteetit:s.aktiviteetit||'[]', crm_status:s.crm_status||'', tili_override:ov, _crmRow:s._crmRow });
+      aktiviteetit:s.aktiviteetit||'[]', crm_status:s.crm_status||'Prospekti', tili_override:ov, _crmRow:s._crmRow });
     if (ov.yritys_nimi)       p.yritys_nimi       = ov.yritys_nimi;
     if (ov.y_tunnus    != null) p.y_tunnus         = ov.y_tunnus;
     if (ov.segmentti   != null) p.segmentti        = ov.segmentti;
@@ -755,7 +755,7 @@ async function saveCrmState(p) {
   const ov = p.tili_override && Object.keys(p.tili_override).length ? JSON.stringify(p.tili_override) : '';
   const row = [p.spara_id, p.vaihe||'Liidi', p.omistaja||'', p.seuraava_toimenpide||'',
     p.seuraava_pvm||'', p.muistiinpanot||'', p.aktiviteetit||'[]', new Date().toISOString(),
-    p.crm_status||'', ov];
+    p.crm_status||'Prospekti', ov];
   if (p._crmRow) {
     await sheetPut(`${CRM_TAB}!A${p._crmRow}:J${p._crmRow}`, [row]);
   } else {
