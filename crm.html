@@ -696,9 +696,15 @@ function blankCrm() { return { omistaja:null, seuraava_toimenpide:null, seuraava
 
 function parseProspects(rows) {
   const out = [];
+  let curTalo = null; // tracks current TALO kampanja section (FIN/SWE)
   rows.forEach((c, idx) => {
-    if (!c||c.length<2) return;
+    if (!c||!c.length) return;
     const c0 = (c[0]||'').trim();
+    // Update section tracker from ANY row — handles headers in any column/format
+    const rowText = c.join(' ');
+    const taloM = rowText.match(/talopakettivalmistajat\s*(fin|swe)/i);
+    if (taloM) curTalo = 'Talopakettivalmistajat ' + taloM[1].toUpperCase();
+    if (!c0 && c.length<2) return;
     if (idx>=3 && idx<=92 && c0.startsWith('ID')) {
       const tila=cv(c,19), tulos=cv(c,20);
       out.push({ spara_id:c0, kampanja:cv(c,1)||'ETJ+', prioriteetti:cv(c,2), segmentti:cv(c,3),
@@ -710,11 +716,11 @@ function parseProspects(rows) {
         suora_numero:cv(c,24), henk_sahkoposti:cv(c,25), linkedin:cv(c,26),
         vaihe:detectVaihe(tila,tulos), ...blankCrm() });
     } else if (/^\d+$/.test(c0)) {
-      // Col B (c[1]) = kampanja ("Talopakettivalmistajat FIN/SWE") — screenshot confirmed
-      // Col C (c[2]) = yritys_nimi, Col F (c[5]) = juridinen yhtiö — screenshot confirmed
+      // TALO FIN/SWE row — use column B if available, else fall back to tracked section
       const kb = cv(c,1)||'';
-      const isFIN = /FIN/i.test(kb);
-      const isSWE = /SWE/i.test(kb);
+      const effKb = kb || curTalo || '';
+      const isFIN = /FIN/i.test(effKb);
+      const isSWE = /SWE/i.test(effKb);
       if (isFIN || isSWE) {
         const sija=parseInt(c0);
         const prefix = isSWE?'TALOSWE':'TALOFIN';
