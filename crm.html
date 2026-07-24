@@ -289,13 +289,13 @@
 </div>
 
 <div class="tabs">
-  <div class="tab active" data-tab="lista">Tilit</div>
-  <div class="tab" data-tab="dashboard">Dashboard</div>
+  <div class="tab active" data-tab="dashboard">Dashboard</div>
   <div class="tab" data-tab="kanban">Kanban</div>
+  <div class="tab" data-tab="lista">Tilit</div>
 </div>
 
 <main>
-  <div class="tab-content active" id="tab-lista">
+  <div class="tab-content" id="tab-lista">
     <div class="toolbar">
       <input type="text" id="f-haku" placeholder="Hae yritystä, henkilöä, kaupunkia…">
       <select id="f-kampanja">
@@ -315,6 +315,7 @@
       <select id="f-segmentti"><option value="">Kaikki segmentit</option></select>
       <div class="spacer"></div>
       <span class="result-count" id="result-count"></span>
+      <button class="btn btn-ghost btn-sm" id="btn-etj-init" onclick="initETJKeissi()" title="Lisää ETJ+ keissi -kauppatehtävä kaikille Liidi-tileille">🚀 ETJ+ keissi kaikille</button>
     </div>
     <div class="table-wrap">
       <table id="tbl-lista">
@@ -352,7 +353,7 @@
     <div class="kanban" id="kanban-board"></div>
   </div>
 
-  <div class="tab-content" id="tab-dashboard">
+  <div class="tab-content active" id="tab-dashboard">
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px">
       <div class="dash-section-title">Myyntiputki – tilit vaiheittain</div>
       <div class="pipeline-row" id="dash-pipeline"><div class="empty" style="padding:8px">Ladataan…</div></div>
@@ -421,8 +422,10 @@
             <select class="form-control" id="task-tila" style="grid-column:1/-1"></select>
             <input class="form-control" id="task-aihe" placeholder="Aihe…" style="grid-column:1/-1">
             <input class="form-control" id="task-arvo" type="number" placeholder="Arvo €" min="0" style="display:none;grid-column:1/-1">
+            <input class="form-control" id="task-tekija" placeholder="Tekijä…">
             <input class="form-control" id="task-due" type="date">
-            <div style="display:flex;gap:6px;justify-content:flex-end;align-items:center">
+            <textarea class="form-control" id="task-muistiinpanot" rows="2" placeholder="Muistiinpanot…" style="grid-column:1/-1;resize:vertical"></textarea>
+            <div style="grid-column:1/-1;display:flex;gap:6px;justify-content:flex-end">
               <button class="btn btn-ghost btn-sm" onclick="closeTaskForm()">Peruuta</button>
               <button class="btn btn-primary btn-sm" onclick="addTask()">+ Lisää</button>
             </div>
@@ -430,23 +433,7 @@
         </div>
         <!-- Tehtäväkortit -->
         <div class="cs-title">Tehtävät</div>
-        <div id="task-list" style="margin-bottom:14px"></div>
-        <!-- Omistaja ja muistiinpanot -->
-        <div style="border-top:1px solid var(--border);padding-top:12px">
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Omistaja</label>
-              <input class="form-control" id="e-omistaja" placeholder="Patrick">
-            </div>
-            <div class="form-group full">
-              <label>Muistiinpanot</label>
-              <textarea class="form-control" id="e-muistiinpanot" rows="2"></textarea>
-            </div>
-          </div>
-          <div style="display:flex;justify-content:flex-end;margin-top:8px">
-            <button class="btn btn-primary btn-sm" onclick="saveTehtavat()">Tallenna</button>
-          </div>
-        </div>
+        <div id="task-list"></div>
       </div>
       <div class="mtab-content" id="mt-historia">
         <div class="act-log" id="act-log"><div class="empty">Ei merkintöjä</div></div>
@@ -643,6 +630,25 @@ async function loadData() {
     }
     const mainRows = await sheetGet(`${MAIN_TAB}!A1:AZ500`);
     allProspects = parseProspects(mainRows);
+    // Try fetching SWE companies from a dedicated tab if it exists
+    const sweTab = tabNames.find(t => t !== MAIN_TAB && /swe/i.test(t));
+    if (sweTab) {
+      try {
+        const sweRows = await sheetGet(`${sweTab}!A1:Z200`);
+        const sweIds = new Set(allProspects.map(p=>p.spara_id));
+        sweRows.slice(1).forEach(c => {
+          if (!c||c.length<2) return;
+          const c0=(c[0]||'').trim(); if(!/^\d+$/.test(c0)) return;
+          const sija=parseInt(c0), sid=`TALOSWE${String(sija).padStart(3,'0')}`;
+          if (sweIds.has(sid)) return;
+          allProspects.push({ spara_id:sid, kampanja:'Talopakettivalmistajat SWE',
+            prioriteetti:c0, sija, segmentti:cv(c,3), yritys_nimi:cv(c,1)||'–', juridinen_yhtio:cv(c,2),
+            liikevaihto_meur:cv(c,4), pisteet:cn(c,5), 'yhteyshenkilö':cv(c,6), titteli:cv(c,7),
+            vaihde_puhelin:cv(c,8), yleinen_sahkoposti:cv(c,9), linkedin:cv(c,11), signaali:cv(c,12),
+            vaihe:'Liidi', ...blankCrm() });
+        });
+      } catch(_) {}
+    }
     const crmRows = await sheetGet(`${CRM_TAB}!A:J`);
     applyCrmState(crmRows);
     const yhRows = await sheetGet(`${YH_TAB}!A:H`);
@@ -808,6 +814,7 @@ function renderTiedotEdit(p) {
       <div class="form-group"><label>Yhteyshenkilö</label><input class="form-control" id="me-yhteyshenkilö" value="${esc(p['yhteyshenkilö']||'')}"></div>
       <div class="form-group"><label>Sähköposti</label><input class="form-control" id="me-sahkoposti" value="${esc(p.henk_sahkoposti||'')}" type="email"></div>
       <div class="form-group full"><label>Lisätiedot</label><textarea class="form-control" id="me-lisatiedot" rows="3">${esc(p.huomiot||'')}</textarea></div>
+      <div class="form-group"><label>Omistaja (CRM)</label><input class="form-control" id="me-omistaja" placeholder="Patrick" value="${esc(p.omistaja||'')}"></div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:14px;">
       <button class="btn btn-ghost btn-sm" onclick="toggleTiliEdit()">Peruuta</button>
@@ -829,6 +836,7 @@ async function saveMuokkaa() {
   p['yhteyshenkilö']= document.getElementById('me-yhteyshenkilö')?.value.trim() || '';
   p.henk_sahkoposti = document.getElementById('me-sahkoposti')?.value.trim() || '';
   p.huomiot         = document.getElementById('me-lisatiedot')?.value.trim() || '';
+  p.omistaja        = document.getElementById('me-omistaja')?.value.trim() || null;
   p.tili_override   = {
     yritys_nimi: p.yritys_nimi, y_tunnus: p.y_tunnus, segmentti: p.segmentti,
     juridinen_yhtio: p.juridinen_yhtio, osoite: p.osoite, postinumero: p.postinumero,
@@ -916,10 +924,10 @@ function changePage(d) { page+=d; renderTable(); }
 const VAIHEET=['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'];
 const V_COLORS={Liidi:'var(--blue)',Mahdollisuus:'var(--orange)',Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)',Hävitty:'var(--red)'};
 const TASK_TILA={
-  kauppa:['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'],
-  soitto:['Vastaamaton','Viesti vastaajaan','SMS-viesti','Tavoitettu'],
-  sahkoposti:['Hylkäys','Lomavastaaja','Toimitettu'],
-  muu:['Aloitettu','Odottaa lisätietoa','Valmis']
+  kauppa:    ['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'],
+  soitto:    ['Uusi','Vastaamaton','Viesti vastaajaan','SMS-viesti','Tavoitettu'],
+  sahkoposti:['Uusi','Hylkäys','Lomavastaaja','Toimitettu'],
+  muu:       ['Uusi','Aloitettu','Odottaa lisätietoa','Valmis']
 };
 const TASK_DONE={kauppa:['Sopimus','Hävitty'],soitto:['Tavoitettu'],sahkoposti:['Toimitettu'],muu:['Valmis']};
 const TASK_ICON={kauppa:'🤝',soitto:'📞',sahkoposti:'✉️',muu:'📝'};
@@ -945,6 +953,8 @@ function closeTaskForm() {
   const aihe=document.getElementById('task-aihe'); if(aihe) aihe.value='';
   const due=document.getElementById('task-due'); if(due) due.value='';
   const arvo=document.getElementById('task-arvo'); if(arvo){arvo.value='';arvo.style.display='none';}
+  const tekija=document.getElementById('task-tekija'); if(tekija) tekija.value='';
+  const nota=document.getElementById('task-muistiinpanot'); if(nota) nota.value='';
 }
 function updateGtTilaOptions() {
   const tyyppi=document.getElementById('gt-type')?.value||'kauppa';
@@ -954,7 +964,7 @@ function updateGtTilaOptions() {
   if(wrap) wrap.style.display=tyyppi==='kauppa'?'':'none';
 }
 function taskIsDone(t){return t.done||(TASK_DONE[t.tyyppi]||[]).includes(t.tila);}
-function normalizeTask(a){return{...a,aihe:a.aihe||a.teksti||'',tila:a.tila||(a.tyyppi==='soitto'?'Vastaamaton':a.tyyppi==='sahkoposti'?'Hylkäys':a.tyyppi==='kauppa'?'Liidi':'Aloitettu'),tyyppi:TASK_TILA[a.tyyppi]?a.tyyppi:'muu'};}
+function normalizeTask(a){return{...a,aihe:a.aihe||a.teksti||'',tila:a.tila||(a.tyyppi==='kauppa'?'Liidi':'Uusi'),tyyppi:TASK_TILA[a.tyyppi]?a.tyyppi:'muu'};}
 function nearestTask(p){return parseActs(p).map(normalizeTask).filter(a=>a.due_date&&!taskIsDone(a)).sort((a,b)=>a.due_date.localeCompare(b.due_date))[0];}
 
 function renderKanban() {
@@ -987,7 +997,6 @@ document.querySelectorAll('.mtab').forEach(t=>t.addEventListener('click',()=>{
   document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
   t.classList.add('active'); document.getElementById('mt-'+t.dataset.mt).classList.add('active');
   if (t.dataset.mt==='tehtavat' && currentId) {
-    updateTaskTilaOptions();
     const p=allProspects.find(x=>x.spara_id===currentId); if(p) renderTaskList(p);
   }
 }));
@@ -1022,10 +1031,8 @@ function openModal(sid) {
     ${f('CRM-vaihe',`<span class="badge v-${p.vaihe}">${esc(p.vaihe)}</span>`)}
     ${f('Omistaja',p.omistaja)} ${f('Seuraava toimenpide',p.seuraava_toimenpide,true)}
     ${f('Seuraava pvm',p.seuraava_pvm)} ${f('Muistiinpanot',p.muistiinpanot,true)}`;
-  document.getElementById('e-omistaja').value=p.omistaja||'';
   document.getElementById('e-toimenpide').value=p.seuraava_toimenpide||'';
   document.getElementById('e-pvm').value=p.seuraava_pvm||'';
-  document.getElementById('e-muistiinpanot').value=p.muistiinpanot||'';
   document.getElementById('tili-status').value=p.crm_status||'';
   document.getElementById('mt-info-edit').style.display='none';
   document.getElementById('info-grid').style.display='';
@@ -1102,10 +1109,11 @@ async function addTask() {
   const arvoRaw=tyyppi==='kauppa'?(document.getElementById('task-arvo')?.value||''):'';
   const arvo=arvoRaw?parseFloat(arvoRaw):null;
   if (!due_date) { showToast('Valitse päivämäärä','error'); return; }
-  const tekija=document.getElementById('e-omistaja')?.value.trim()||null;
+  const tekija=(document.getElementById('task-tekija')?.value||'').trim()||null;
+  const taskNote=(document.getElementById('task-muistiinpanot')?.value||'').trim()||null;
   const done=(TASK_DONE[tyyppi]||[]).includes(tila);
   const acts=parseActs(p);
-  acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,tekija,created_at:new Date().toISOString(),due_date,done});
+  acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,tekija,muistiinpanot:taskNote,created_at:new Date().toISOString(),due_date,done});
   p.aktiviteetit=JSON.stringify(acts);
   if(tyyppi==='kauppa'&&tila){const prev=p.vaihe;p.vaihe=tila;if(prev!==tila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${tila}`,tekija);}
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
@@ -1149,6 +1157,7 @@ function renderTaskList(p) {
           :`<select class="form-control task-tila-sel" onchange="updateTaskTila('${t.id}',this.value)">${tilaOpts}</select>`}
         <span style="margin-left:auto;font-size:11px;font-weight:700;color:${dueColor}">${t.due_date}</span>
       </div>
+      ${(t.tekija||t.muistiinpanot)?`<div style="font-size:11px;color:var(--text2);margin-top:5px;line-height:1.4">${t.tekija?`👤 ${esc(t.tekija)} `:''} ${t.muistiinpanot?`<em>${esc(t.muistiinpanot)}</em>`:''}</div>`:''}
       <div class="task-card-actions">
         ${!done?`<button class="btn btn-ghost btn-sm" onclick="completeTask('${t.id}')" style="flex:1;justify-content:center">✓ Valmis</button>`:''}
         <button class="btn btn-ghost btn-sm" onclick="deleteTask('${t.id}')" style="color:var(--red)" title="Poista">✕</button>
@@ -1199,6 +1208,28 @@ async function deleteTask(taskId) {
 
 // ── Activities ────────────────────────────────────────────────────────────────
 function parseActs(p) { try { return JSON.parse(p.aktiviteetit||'[]'); } catch(_) { return []; } }
+async function initETJKeissi() {
+  const btn=document.getElementById('btn-etj-init');
+  if (!confirm('Lisätään ETJ+ keissi -kauppatehtävä (299 €, erääntyy 15.9.2026) kaikille Liidi-vaiheessa oleville tileille?')) return;
+  if (btn) { btn.disabled=true; btn.textContent='⏳ Lisätään…'; }
+  let added=0;
+  for (const p of allProspects) {
+    if (p.vaihe!=='Liidi') continue;
+    const acts=parseActs(p);
+    if (acts.some(a=>a.tyyppi==='kauppa'&&(a.aihe||a.teksti||'').includes('ETJ+'))) continue;
+    acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
+      tyyppi:'kauppa',tila:'Liidi',aihe:'ETJ+ keissi',arvo:299,tekija:null,muistiinpanot:null,
+      created_at:new Date().toISOString(),due_date:'2026-09-15',done:false});
+    p.aktiviteetit=JSON.stringify(acts);
+    const near=nearestTask(p); p.seuraava_toimenpide=near?.aihe||near?.tyyppi||null; p.seuraava_pvm=near?.due_date||null;
+    try { await saveCrmState(p); added++; } catch(e) { console.error(e); }
+    await new Promise(r=>setTimeout(r,80));
+  }
+  updateSummary(); applyFilters(); renderDashboard();
+  showToast(`ETJ+ keissi lisätty ${added} tilille ✓`,'success');
+  if (btn) { btn.disabled=false; btn.textContent='🚀 ETJ+ keissi kaikille'; }
+}
+
 function addActToProspect(p,tyyppi,teksti,tekija) {
   const acts=parseActs(p);
   acts.push({tyyppi,teksti,tekija:tekija||null,created_at:new Date().toISOString()});
