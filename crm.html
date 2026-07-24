@@ -419,9 +419,10 @@
             <input class="form-control" id="task-tekija" placeholder="Tekijä…">
             <input class="form-control" id="task-due" type="date">
             <textarea class="form-control" id="task-muistiinpanot" rows="2" placeholder="Muistiinpanot…" style="grid-column:1/-1;resize:vertical"></textarea>
+            <input type="hidden" id="task-edit-id">
             <div style="grid-column:1/-1;display:flex;gap:6px;justify-content:flex-end">
               <button class="btn btn-ghost btn-sm" onclick="closeTaskForm()">Peruuta</button>
-              <button class="btn btn-primary btn-sm" onclick="addTask()">+ Lisää</button>
+              <button class="btn btn-primary btn-sm" id="task-save-btn" onclick="saveTaskForm()">+ Lisää</button>
             </div>
           </div>
         </div>
@@ -670,7 +671,24 @@ async function loadData() {
   } catch(e) {
     showToast('Virhe: '+e.message,'error'); console.error(e); return;
   }
+  initVirtualKaupat();
   buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard();
+}
+
+function initVirtualKaupat() {
+  allProspects.forEach(p => {
+    const acts = parseActs(p);
+    if (acts.some(a => a.tyyppi === 'kauppa')) return;
+    let aihe, arvo;
+    if (p.kampanja === 'ETJ+') { aihe='ETJ+'; arvo=299; }
+    else if (p.kampanja?.startsWith('Talopakett')) { aihe=p.kampanja; arvo=7000; }
+    else return;
+    acts.push({id:'TKv_'+p.spara_id, tyyppi:'kauppa', tila:'Liidi', aihe, arvo,
+      tekija:null, muistiinpanot:p.signaali||null,
+      created_at:new Date().toISOString(), due_date:null, done:false});
+    p.aktiviteetit = JSON.stringify(acts);
+    if (!p.vaihe) p.vaihe = 'Liidi';
+  });
 }
 
 // ── Parse ─────────────────────────────────────────────────────────────────────
@@ -957,6 +975,8 @@ function closeTaskForm() {
   const arvo=document.getElementById('task-arvo'); if(arvo){arvo.value='';arvo.style.display='none';}
   const tekija=document.getElementById('task-tekija'); if(tekija) tekija.value='';
   const nota=document.getElementById('task-muistiinpanot'); if(nota) nota.value='';
+  const eid=document.getElementById('task-edit-id'); if(eid) eid.value='';
+  const sav=document.getElementById('task-save-btn'); if(sav) sav.textContent='+ Lisää';
 }
 function updateGtTilaOptions() {
   const tyyppi=document.getElementById('gt-type')?.value||'kauppa';
@@ -1100,6 +1120,56 @@ async function saveTehtavat() {
   catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 
+function editTask(taskId) {
+  if (!currentId) return;
+  const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return;
+  const t=parseActs(p).find(a=>a.id===taskId); if(!t) return;
+  openTaskForm(t.tyyppi);
+  document.getElementById('task-edit-id').value=taskId;
+  const sel=document.getElementById('task-tila'); if(sel) sel.value=t.tila||'';
+  const aihe=document.getElementById('task-aihe'); if(aihe) aihe.value=t.aihe||'';
+  const arvo=document.getElementById('task-arvo'); if(arvo) arvo.value=t.arvo??'';
+  const tek=document.getElementById('task-tekija'); if(tek) tek.value=t.tekija||'';
+  const due=document.getElementById('task-due'); if(due) due.value=t.due_date||'';
+  const nota=document.getElementById('task-muistiinpanot'); if(nota) nota.value=t.muistiinpanot||'';
+  const sav=document.getElementById('task-save-btn'); if(sav) sav.textContent='Tallenna';
+}
+
+async function saveTaskForm() {
+  const editId=document.getElementById('task-edit-id')?.value;
+  if (editId) await updateTaskEdit(editId); else await addTask();
+}
+
+async function updateTaskEdit(taskId) {
+  if (!currentId) return;
+  const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return;
+  const acts=parseActs(p); const task=acts.find(a=>a.id===taskId); if(!task) return;
+  const tyyppi=document.getElementById('task-type')?.value||task.tyyppi;
+  const tila=document.getElementById('task-tila')?.value||'';
+  const aihe=(document.getElementById('task-aihe')?.value||'').trim();
+  const arvoRaw=tyyppi==='kauppa'?(document.getElementById('task-arvo')?.value||''):'';
+  const arvo=arvoRaw!==''?parseFloat(arvoRaw):task.arvo;
+  const tekija=(document.getElementById('task-tekija')?.value||'').trim()||null;
+  const taskNote=(document.getElementById('task-muistiinpanot')?.value||'').trim()||null;
+  const prevTila=task.tila;
+  Object.assign(task,{tila,aihe,arvo,tekija,muistiinpanot:taskNote,
+    due_date:document.getElementById('task-due')?.value||task.due_date||null,
+    done:(TASK_DONE[tyyppi]||[]).includes(tila)});
+  if(tyyppi==='kauppa'&&tila&&tila!==prevTila){
+    const prev=p.vaihe; p.vaihe=tila;
+    if(prev!==tila) addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${tila}`,tekija);
+  }
+  p.aktiviteetit=JSON.stringify(acts);
+  const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
+  document.getElementById('e-toimenpide').value=p.seuraava_toimenpide||'';
+  document.getElementById('e-pvm').value=p.seuraava_pvm||'';
+  try {
+    await saveCrmState(p);
+    closeTaskForm(); renderTaskList(p); renderActivities(p); updateSummary(); applyFilters();
+    showToast('Tehtävä päivitetty ✓','success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+}
+
 async function addTask() {
   if (!currentId) return;
   const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return;
@@ -1160,7 +1230,7 @@ function renderTaskList(p) {
       </div>
       ${(t.tekija||t.muistiinpanot)?`<div style="font-size:11px;color:var(--text2);margin-top:5px;line-height:1.4">${t.tekija?`👤 ${esc(t.tekija)} `:''} ${t.muistiinpanot?`<em>${esc(t.muistiinpanot)}</em>`:''}</div>`:''}
       <div class="task-card-actions">
-        ${!done?`<button class="btn btn-ghost btn-sm" onclick="completeTask('${t.id}')" style="flex:1;justify-content:center">✓ Valmis</button>`:''}
+        <button class="btn btn-ghost btn-sm" onclick="editTask('${t.id}')" style="flex:1;justify-content:center">✏️ Muokkaa</button>
         <button class="btn btn-ghost btn-sm" onclick="deleteTask('${t.id}')" style="color:var(--red)" title="Poista">✕</button>
       </div>
     </div>`;
@@ -1211,27 +1281,30 @@ async function deleteTask(taskId) {
 function parseActs(p) { try { return JSON.parse(p.aktiviteetit||'[]'); } catch(_) { return []; } }
 async function initKaupat() {
   const btn=document.getElementById('btn-etj-init');
-  if (!confirm('Lisätään Kauppa-tehtävä kaikille tileille joilla ei vielä ole kauppaa?')) return;
-  if (btn) { btn.disabled=true; btn.textContent='⏳ Lisätään…'; }
-  let added=0;
-  for (const p of allProspects) {
+  const targets=allProspects.filter(p=>{
     const acts=parseActs(p);
-    if (acts.some(a=>a.tyyppi==='kauppa')) continue;
-    let aihe, arvo;
-    if (p.kampanja==='ETJ+') { aihe='ETJ+'; arvo=299; }
-    else if (p.kampanja?.startsWith('Talopakett')) { aihe=p.kampanja; arvo=7000; }
-    else { aihe=p.kampanja||'Projekti'; arvo=0; }
-    acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
-      tyyppi:'kauppa',tila:'Liidi',aihe,arvo,tekija:null,muistiinpanot:null,
-      created_at:new Date().toISOString(),due_date:null,done:false});
+    return acts.some(a=>a.tyyppi==='kauppa') && !p._crmRow;
+  });
+  if (!targets.length) { showToast('Kaikki kaupat jo tallennettu ✓','success'); return; }
+  if (!confirm(`Tallennetaan ${targets.length} kauppaa pilveen (1 API-kutsu)?`)) return;
+  if (btn) { btn.disabled=true; btn.textContent='⏳ Tallennetaan…'; }
+  const ts=new Date().toISOString();
+  const rows=targets.map(p=>{
+    const acts=parseActs(p).map(a=>
+      a.id?.startsWith('TKv_')?{...a,id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8)}:a
+    );
     p.aktiviteetit=JSON.stringify(acts);
-    p.vaihe='Liidi';
-    const near=nearestTask(p); p.seuraava_toimenpide=near?.aihe||near?.tyyppi||null; p.seuraava_pvm=near?.due_date||null;
-    try { await saveCrmState(p); added++; } catch(e) { console.error(e); }
-    await new Promise(r=>setTimeout(r,80));
-  }
-  updateSummary(); applyFilters(); renderDashboard();
-  showToast(`Kauppa lisätty ${added} tilille ✓`,'success');
+    const ov=p.tili_override&&Object.keys(p.tili_override).length?JSON.stringify(p.tili_override):'';
+    return [p.spara_id,p.vaihe||'',p.omistaja||'',p.seuraava_toimenpide||'',
+      p.seuraava_pvm||'',p.muistiinpanot||'',p.aktiviteetit,ts,p.crm_status||'Prospekti',ov];
+  });
+  try {
+    await sheetAppend(`${CRM_TAB}!A:J`,rows);
+    const crmRows=await sheetGet(`${CRM_TAB}!A:J`);
+    applyCrmState(crmRows);
+    updateSummary(); applyFilters(); renderDashboard();
+    showToast(`${rows.length} kauppaa tallennettu ✓`,'success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
   if (btn) { btn.disabled=false; btn.textContent='🤝 Alusta kaupat'; }
 }
 
@@ -1665,7 +1738,7 @@ async function saveNewTili() {
       ...blankCrm()
     };
     const kauppa = {id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
-      tyyppi:'kauppa',tila:'Liidi',aihe:'Projekti',arvo:0,tekija:null,muistiinpanot:null,
+      tyyppi:'kauppa',tila:'Liidi',aihe:'Projekti',arvo:0,tekija:null,muistiinpanot:p.signaali||null,
       created_at:new Date().toISOString(),due_date:null,done:false};
     p.aktiviteetit=JSON.stringify([kauppa]);
     p.vaihe='Liidi';
