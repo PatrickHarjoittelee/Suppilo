@@ -671,11 +671,13 @@ async function loadData() {
   } catch(e) {
     showToast('Virhe: '+e.message,'error'); console.error(e); return;
   }
-  initVirtualKaupat();
+  await initVirtualKaupat();
   buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard();
 }
 
-function initVirtualKaupat() {
+async function initVirtualKaupat() {
+  const ts = new Date().toISOString();
+  const newRows = [];
   allProspects.forEach(p => {
     const acts = parseActs(p);
     if (acts.some(a => a.tyyppi === 'kauppa')) return;
@@ -684,11 +686,23 @@ function initVirtualKaupat() {
     else if (p.kampanja?.startsWith('Talopakett')) { aihe=p.kampanja; arvo=7000; }
     else return;
     acts.push({id:'TKv_'+p.spara_id, tyyppi:'kauppa', tila:'Liidi', aihe, arvo,
-      tekija:null, muistiinpanot:p.signaali||null,
-      created_at:new Date().toISOString(), due_date:null, done:false});
+      tekija:null, muistiinpanot:p.signaali||null, created_at:ts, due_date:null, done:false});
     p.aktiviteetit = JSON.stringify(acts);
     if (!p.vaihe) p.vaihe = 'Liidi';
+    if (!p._crmRow) {
+      const ov = p.tili_override&&Object.keys(p.tili_override).length?JSON.stringify(p.tili_override):'';
+      newRows.push([p.spara_id, p.vaihe||'', p.omistaja||'', p.seuraava_toimenpide||'',
+        p.seuraava_pvm||'', p.muistiinpanot||'', p.aktiviteetit, ts,
+        p.crm_status||'Prospekti', ov]);
+    }
   });
+  if (newRows.length) {
+    try {
+      await sheetAppend(`${CRM_TAB}!A:J`, newRows);
+      const crmRows = await sheetGet(`${CRM_TAB}!A:J`);
+      applyCrmState(crmRows);
+    } catch(e) { console.error('initVirtualKaupat:', e); }
+  }
 }
 
 // ── Parse ─────────────────────────────────────────────────────────────────────
@@ -1201,9 +1215,12 @@ async function addTask() {
 function renderTaskList(p) {
   const today=new Date().toISOString().substring(0,10);
   const acts=parseActs(p);
-  const tasks=acts.filter(a=>a.due_date).map(normalizeTask).sort((a,b)=>{
+  const tasks=acts.filter(a=>a.due_date||a.tyyppi==='kauppa').map(normalizeTask).sort((a,b)=>{
     const da=taskIsDone(a), db=taskIsDone(b);
     if(da!==db) return da?1:-1;
+    if(!a.due_date&&!b.due_date) return 0;
+    if(!a.due_date) return -1;
+    if(!b.due_date) return 1;
     return a.due_date.localeCompare(b.due_date);
   });
   const el=document.getElementById('task-list'); if(!el) return;
@@ -1226,7 +1243,7 @@ function renderTaskList(p) {
         ${done
           ?`<span class="badge" style="background:rgba(76,175,80,.2);color:#81C784;font-size:10px">✓ ${esc(t.tila)}</span>`
           :`<select class="form-control task-tila-sel" onchange="updateTaskTila('${t.id}',this.value)">${tilaOpts}</select>`}
-        <span style="margin-left:auto;font-size:11px;font-weight:700;color:${dueColor}">${t.due_date}</span>
+        ${t.due_date?`<span style="margin-left:auto;font-size:11px;font-weight:700;color:${dueColor}">${t.due_date}</span>`:''}
       </div>
       ${(t.tekija||t.muistiinpanot)?`<div style="font-size:11px;color:var(--text2);margin-top:5px;line-height:1.4">${t.tekija?`👤 ${esc(t.tekija)} `:''} ${t.muistiinpanot?`<em>${esc(t.muistiinpanot)}</em>`:''}</div>`:''}
       <div class="task-card-actions">
