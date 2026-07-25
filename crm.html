@@ -348,8 +348,9 @@
   </div>
 
   <div class="tab-content active" id="tab-dashboard">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px" id="dash-kpis"></div>
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px">
-      <div class="dash-section-title">Myyntiputki – tilit vaiheittain</div>
+      <div class="dash-section-title">Myyntiputki – kaupat vaiheittain</div>
       <div class="pipeline-row" id="dash-pipeline"><div class="empty" style="padding:8px">Ladataan…</div></div>
     </div>
     <div class="dash-grid">
@@ -957,6 +958,19 @@ function changePage(d) { page+=d; renderTable(); }
 // ── Kanban ─────────────────────────────────────────────────────────────────────
 const VAIHEET=['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'];
 const V_COLORS={Liidi:'var(--blue)',Mahdollisuus:'var(--orange)',Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)',Hävitty:'var(--red)'};
+const VAIHE_TN={Liidi:.05,Mahdollisuus:.20,Tapaaminen:.40,Tarjous:.60,Sopimus:1,'Hävitty':0};
+const fmtEur=n=>Math.round(n).toLocaleString('fi-FI')+' €';
+function kauppaArvo(p){return parseActs(p).filter(a=>a.tyyppi==='kauppa').reduce((s,a)=>s+(Number(a.arvo)||0),0);}
+function kauppaStats(){
+  const st={}; VAIHEET.forEach(v=>st[v]={n:0,sum:0});
+  allProspects.forEach(p=>parseActs(p).forEach(a=>{
+    if(a.tyyppi!=='kauppa') return;
+    const tila=a.tila||'Liidi';
+    if(!st[tila]) return;
+    st[tila].n++; st[tila].sum+=Number(a.arvo)||0;
+  }));
+  return st;
+}
 const TASK_TILA={
   kauppa:    ['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'],
   soitto:    ['Uusi','Vastaamaton','Viesti vastaajaan','SMS-viesti','Tavoitettu'],
@@ -1010,14 +1024,30 @@ function renderKanban() {
   board.innerHTML='';
   VAIHEET.forEach(v => {
     const cards=src.filter(p=>p.vaihe===v);
+    const colSum=cards.reduce((s,p)=>s+kauppaArvo(p),0);
     const col=document.createElement('div'); col.className='kanban-col';
-    col.innerHTML=`<div class="kanban-header"><span class="kanban-title" style="color:${V_COLORS[v]}">${v}</span><span class="kanban-cnt">${cards.length}</span></div>
-      <div class="kanban-body">${cards.length?cards.map(p=>`<div class="kcard" onclick="openModal('${p.spara_id}')">
+    col.innerHTML=`<div class="kanban-header"><span class="kanban-title" style="color:${V_COLORS[v]}">${v}</span><span class="kanban-cnt">${cards.length}${colSum?' · '+fmtEur(colSum):''}</span></div>
+      <div class="kanban-body">${cards.length?cards.map(p=>{
+        const arvo=kauppaArvo(p);
+        return `<div class="kcard" onclick="openKauppa('${p.spara_id}')">
         <div class="kc-name"><span class="kc-prio dot-${p.prioriteetti||'B'}"></span>${esc(p.yritys_nimi)}</div>
-        <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${calcArvosana(p)!=null?`<br><span class="${arvosanaClass(calcArvosana(p))}">${calcArvosana(p)}</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
-      </div>`).join(''):'<div style="font-size:11px;color:var(--text2);text-align:center;padding:12px">–</div>'}</div>`;
+        <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--green);font-weight:700">${fmtEur(arvo)}</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
+      </div>`;}).join(''):'<div style="font-size:11px;color:var(--text2);text-align:center;padding:12px">–</div>'}</div>`;
     board.appendChild(col);
   });
+}
+
+function openKauppa(sid) {
+  openModal(sid);
+  document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
+  document.querySelector('[data-mt="tehtavat"]').classList.add('active');
+  document.getElementById('mt-tehtavat').classList.add('active');
+  const p=allProspects.find(x=>x.spara_id===sid); if(!p) return;
+  renderTaskList(p);
+  const kauppa=parseActs(p).find(a=>a.tyyppi==='kauppa'&&!taskIsDone(normalizeTask(a)))
+    ||parseActs(p).find(a=>a.tyyppi==='kauppa');
+  if (kauppa) editTask(kauppa.id);
 }
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
@@ -1534,14 +1564,33 @@ function renderDashboard() {
   const PCOL={'ETJ+':'var(--red)','Talopakettivalmistajat FIN':'var(--orange)',
     'Talopakettivalmistajat SWE':'var(--blue)','Muu Projekti':'var(--purple)'};
 
-  // Pipeline
+  // KPIs + pipeline euroineen ja todennäköisyyksineen
+  const st=kauppaStats();
+  const OPEN=['Liidi','Mahdollisuus','Tapaaminen','Tarjous'];
+  const openSum=OPEN.reduce((s,v)=>s+st[v].sum,0);
+  const openN=OPEN.reduce((s,v)=>s+st[v].n,0);
+  const weighted=OPEN.reduce((s,v)=>s+st[v].sum*VAIHE_TN[v],0);
+  const kpiEl=document.getElementById('dash-kpis');
+  if (kpiEl) {
+    const kpi=(label,val,color,sub)=>`<div class="card"><div class="card-label">${label}</div>
+      <div class="card-value" style="color:${color}">${val}</div>
+      ${sub?`<div style="font-size:10px;color:var(--text2);margin-top:2px">${sub}</div>`:''}</div>`;
+    kpiEl.innerHTML=
+      kpi('Avoin putki',fmtEur(openSum),'var(--blue)',openN+' avointa kauppaa')+
+      kpi('Painotettu ennuste',fmtEur(weighted),'var(--orange)','vaiheiden tn:llä painotettu')+
+      kpi('Sopimukset',fmtEur(st['Sopimus'].sum),'var(--green)',st['Sopimus'].n+' voitettua')+
+      kpi('Hävitty',fmtEur(st['Hävitty'].sum),'var(--red)',st['Hävitty'].n+' kauppaa');
+  }
   const plEl=document.getElementById('dash-pipeline');
   if (plEl) {
-    const cnt={};
-    VAIHEET.forEach(v=>cnt[v]=0);
-    allProspects.forEach(p=>{if(cnt[p.vaihe]!=null)cnt[p.vaihe]++;});
-    plEl.innerHTML=Object.entries(cnt).map(([v,n])=>
-      `<div class="pipeline-stage"><div class="pipeline-count" style="color:${VCOL[v]}">${n}</div><div class="pipeline-label">${v}</div></div>`).join('');
+    plEl.innerHTML=VAIHEET.map(v=>{
+      const s=st[v];
+      return `<div class="pipeline-stage"><div class="pipeline-count" style="color:${VCOL[v]}">${s.n}</div>
+        <div class="pipeline-label">${v}</div>
+        <div style="font-size:11px;font-weight:700;margin-top:4px">${fmtEur(s.sum)}</div>
+        <div style="font-size:10px;color:var(--text2)">tn ${Math.round(VAIHE_TN[v]*100)} % → ${fmtEur(s.sum*VAIHE_TN[v])}</div>
+      </div>`;
+    }).join('');
   }
 
   // Upcoming actions (next 30 days)
