@@ -1622,27 +1622,45 @@ function _str(v) {
 }
 
 function _prhName(res) {
-  const top = _str(res.name) || _str(res.companyName);
-  if (top) return top;
-  const arr = (res.names || []).filter(n => !n.endDate).sort((a,b) => (a.order||0)-(b.order||0));
-  return _str((arr.find(n => n.language==='FI') || arr[0] || {}).name);
+  // names[]: {name, type, endDate, ...} — type "1" on virallinen nimi, endDate=null jos voimassa
+  const arr = (res.names || []).filter(n => n && _str(n.name) && !n.endDate);
+  const primary = arr.find(n => n.type==='1' || n.type===1) || arr[0];
+  if (primary) return _str(primary.name);
+  const any = (res.names || []).find(n => n && _str(n.name));
+  return any ? _str(any.name) : (_str(res.name) || _str(res.companyName));
+}
+
+// companyForms[]/businessLines[]/mainBusinessLine: {descriptions:[{languageCode,description}], endDate}
+// languageCode "1"=FI, "2"=SV, "3"=EN
+function _prhDesc(entries) {
+  const list = Array.isArray(entries) ? entries : (entries ? [entries] : []);
+  const active = list.filter(e => e && !e.endDate);
+  const item = active[0] || list[0];
+  if (!item) return '';
+  const descs = item.descriptions || [];
+  const fi = descs.find(d => _str(d.languageCode)==='1') || descs[0];
+  return _str(fi && fi.description) || _str(item.name) || _str(item.type);
+}
+
+// addresses[].postOffices[]: {city, languageCode} — kaupunki ei ole osoiterivin suora kenttä
+function _prhCity(addr) {
+  const offices = addr.postOffices || [];
+  const fi = offices.find(o => _str(o.languageCode)==='1') || offices[0];
+  return _str(fi && fi.city) || _str(addr.city) || _str(addr.postOffice) || _str(addr.municipality);
 }
 
 function _prhToTiliForm(res) {
-  const addrs  = (res.addresses || []).filter(a => !a.endDate);
-  const addr   = addrs.find(a => a.type === 1) || addrs[0] || {};
-  const blines = (res.businessLines || []).filter(b => !b.endDate);
-  const bline  = blines.find(b => b.language==='FI') || blines[0] || {};
-  const cityStr = _str(addr.city) || _str(addr.postOffice) || _str(addr.municipality);
-  const webs = (res.contactDetails || []).filter(d => d.type === 'Url' && !d.endDate);
+  const addrs = (res.addresses || []).filter(a => !a.endDate);
+  const addr  = addrs.find(a => a.type === 2) || addrs.find(a => a.type === 1) || addrs[0] || {};
+  const webs  = (res.contactDetails || []).filter(d => d.type === 'Url' && !d.endDate);
   return {
     tf_name:         _prhName(res),
     tf_ytunnus:      _str(res.businessId),
-    tf_toimiala:     _str(bline.name) || _str(bline.code),
-    tf_yhtiömuoto:   _str(res.companyForm) || _str(res.legalForm) || '',
+    tf_toimiala:     _prhDesc(res.mainBusinessLine || res.businessLines),
+    tf_yhtiömuoto:   _prhDesc(res.companyForms),
     tf_osoite:       _str(addr.street),
     tf_postinumero:  _str(addr.postCode),
-    tf_kaupunki:     cityStr,
+    tf_kaupunki:     _prhCity(addr),
     tf_rekisteroity: _str(res.registrationDate),
     tf_www:          _str((webs[0]||{}).value),
   };
@@ -1652,7 +1670,9 @@ async function _prhFetch(url) {
   const r = await fetch(url);
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const data = await r.json();
-  return data.companies || data.results || [];
+  const items = data.companies || data.results || [];
+  if (items[0]) console.debug('[PRH v3 company]', JSON.stringify(items[0]).substring(0, 1500));
+  return items;
 }
 
 async function prhFetchByBusinessId(id) {
@@ -1674,11 +1694,11 @@ function showYtjSuggestions(context, results) {
   const el = document.getElementById(context + '-ytj-dropdown');
   if (!el || !results.length) { if (el) el.style.display = 'none'; return; }
   el.innerHTML = results.map((r, i) => {
-    const name  = _prhName(r) || _str(r.businessId) || '–';
+    const name  = _prhName(r) || '(nimeä ei löytynyt)';
     const id    = _str(r.businessId);
-    const form  = _str(r.companyForm) || _str(r.legalForm);
+    const form  = _prhDesc(r.companyForms);
     const addrs = (r.addresses||[]).filter(a => !a.endDate);
-    const city  = _str((addrs[0]||{}).city) || _str((addrs[0]||{}).postOffice) || '';
+    const city  = _prhCity(addrs[0] || {});
     const meta  = [id, form, city].filter(Boolean).join(' · ');
     return `<div class="ytj-dropdown-item" onmousedown="selectYtjSuggestion('${context}',${i})">
       <div class="ytj-item-name">${esc(name)}</div>
