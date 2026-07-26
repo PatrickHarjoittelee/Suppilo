@@ -433,6 +433,9 @@
             <option value="Kumppani">Kumppani</option>
           </select>
           <button class="btn btn-ghost btn-sm" onclick="saveTiliStatus()">Tallenna</button>
+          <span style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px">Projekti</span>
+          <select class="form-control" id="tili-projekti" style="padding:3px 8px;font-size:12px;min-width:150px"></select>
+          <button class="btn btn-ghost btn-sm" id="tili-projekti-btn" onclick="saveTiliProjekti()">Tallenna</button>
           <div style="flex:1;min-width:0"></div>
           <button class="btn btn-ghost btn-sm" onclick="toggleTiliEdit()" id="tili-edit-btn">✏️ Muokkaa</button>
         </div>
@@ -1296,6 +1299,15 @@ function openModal(sid) {
   document.getElementById('e-toimenpide').value=p.seuraava_toimenpide||'';
   document.getElementById('e-pvm').value=p.seuraava_pvm||'';
   document.getElementById('tili-status').value=p.crm_status||'';
+  const pjSel=document.getElementById('tili-projekti');
+  if (pjSel) {
+    const nimet=[...new Set([...allProjektitNimet(), p.kampanja].filter(Boolean))];
+    pjSel.innerHTML=nimet.map(n=>`<option${n===p.kampanja?' selected':''}>${esc(n)}</option>`).join('');
+    pjSel.disabled = !p._rowIndex;
+    pjSel.title = p._rowIndex ? '' : 'Perusdataa (ETJ+/Talopaketit) ei voi siirtää toiseen projektiin täältä';
+  }
+  const pjBtn=document.getElementById('tili-projekti-btn');
+  if (pjBtn) pjBtn.disabled = !p._rowIndex;
   document.getElementById('mt-info-edit').style.display='none';
   document.getElementById('info-grid').style.display='';
   document.getElementById('tili-edit-btn').textContent='✏️ Muokkaa';
@@ -1338,6 +1350,21 @@ async function saveTiliStatus() {
   p.crm_status=document.getElementById('tili-status')?.value||'';
   try { await saveCrmState(p); showToast('Status tallennettu ✓','success'); updateSummary(); applyFilters(); }
   catch(e) { showToast('Virhe: '+e.message,'error'); }
+}
+
+async function saveTiliProjekti() {
+  if (!currentId) return;
+  const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return;
+  if (!p._rowIndex) { showToast('Perusdataa (ETJ+/Talopaketit) ei voi siirtää toiseen projektiin täältä','error'); return; }
+  const nimi=document.getElementById('tili-projekti')?.value||'';
+  if (!nimi || nimi===p.kampanja) return;
+  try {
+    await sheetPut(`${MAIN_TAB}!B${p._rowIndex}`, [[nimi]]);
+    p.kampanja=nimi;
+    openModal(p.spara_id);
+    updateSummary(); applyFilters(); renderDashboard(); renderKanban(); applyYhFilters(); populateProjektiSelects();
+    showToast('Projekti vaihdettu: '+nimi,'success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 
 function soitaJaLogi(numero, nimike) {
