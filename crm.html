@@ -137,8 +137,8 @@
     .kcard{position:relative;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:9px 26px 9px 11px;cursor:grab;transition:border-color .2s,opacity .15s;}
     .kcard:hover{border-color:var(--accent);}
     .kcard.dragging{opacity:.4;}
-    .kc-del{position:absolute;top:6px;right:6px;width:18px;height:18px;border:none;background:transparent;color:var(--text2);cursor:pointer;font-size:12px;line-height:1;border-radius:4px;}
-    .kc-del:hover{color:var(--red);background:var(--bg4);}
+    .kc-del{position:absolute;top:5px;right:5px;width:20px;height:20px;border:none;background:transparent;color:var(--text2);cursor:pointer;font-size:13px;line-height:1;border-radius:4px;opacity:.7;}
+    .kc-del:hover{color:var(--red);background:var(--bg4);opacity:1;}
     .kc-name{font-size:12px;font-weight:600;margin-bottom:3px;} .kc-meta{font-size:11px;color:var(--text2);line-height:1.5;}
     .kc-prio{display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:4px;vertical-align:middle;}
     .dot-A{background:var(--red);} .dot-B{background:var(--orange);}
@@ -1035,7 +1035,7 @@ function kanbanCardHtml(k) {
   const {p,task}=k;
   const arvo=Number(task.arvo)||0;
   return `<div class="kcard" draggable="true" data-sid="${p.spara_id}" data-task-id="${task.id}" onclick="openKauppa('${p.spara_id}','${task.id}')">
-        <button class="kc-del" onclick="event.stopPropagation();deleteKauppaFromKanban('${p.spara_id}','${task.id}')" title="Poista kauppa">✕</button>
+        <button class="kc-del" onclick="event.stopPropagation();deleteKauppaFromKanban('${p.spara_id}','${task.id}')" title="Poista kauppa">🗑️</button>
         <div class="kc-name"><span class="kc-prio dot-${p.prioriteetti||'B'}"></span>${esc(p.yritys_nimi)} – ${esc(task.aihe||'–')}</div>
         <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--green);font-weight:700">${fmtEur(arvo)}</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
       </div>`;
