@@ -243,10 +243,12 @@
     .s-Asiakas{background:rgba(76,175,80,.2);color:#81C784;}
 
     /* Contacts */
-    .yh-item{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:7px;}
+    .yh-item{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:7px;cursor:pointer;transition:border-color .15s;}
+    .yh-item:hover{border-color:var(--accent);}
     .yh-item-name{font-weight:600;font-size:13px;}
-    .yh-item-meta{font-size:11px;color:var(--text2);margin-top:4px;display:flex;flex-wrap:wrap;gap:12px;}
     .yh-add-form{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-top:10px;}
+    .yh-link-card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;cursor:pointer;transition:border-color .15s;}
+    .yh-link-card:hover{border-color:var(--accent);}
     .source-badge{display:inline-block;font-size:9px;background:var(--bg4);color:var(--text2);padding:1px 6px;border-radius:8px;vertical-align:middle;margin-left:5px;}
   </style>
 </head>
@@ -296,6 +298,7 @@
   <div class="tab active" data-tab="dashboard">Dashboard</div>
   <div class="tab" data-tab="kanban">Kanban</div>
   <div class="tab" data-tab="lista">Tilit</div>
+  <div class="tab" data-tab="yhteyshenkilot">Yhteyshenkilöt</div>
 </div>
 
 <main>
@@ -349,6 +352,39 @@
       </select>
     </div>
     <div class="kanban" id="kanban-board"></div>
+  </div>
+
+  <div class="tab-content" id="tab-yhteyshenkilot">
+    <div class="toolbar">
+      <input type="text" id="yh-haku" placeholder="Hae nimeä, tiliä, puhelinta, sähköpostia…">
+      <select id="yh-f-kampanja">
+        <option value="">Kaikki projektit</option>
+        <option>ETJ+</option><option>Talopakettivalmistajat FIN</option><option>Talopakettivalmistajat SWE</option>
+        <option>Muu Projekti</option>
+      </select>
+      <div class="spacer"></div>
+      <span class="result-count" id="yh-result-count"></span>
+    </div>
+    <div class="table-wrap">
+      <table id="tbl-yhteyshenkilot">
+        <thead><tr>
+          <th data-col="nimi">Nimi <span class="sa">↕</span></th>
+          <th data-col="titteli">Titteli <span class="sa">↕</span></th>
+          <th data-col="_tili_nimi">Tili <span class="sa">↕</span></th>
+          <th data-col="puhelin">Puhelin</th>
+          <th data-col="sahkoposti">Sähköposti</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="tbody-yhteyshenkilot">
+          <tr><td colspan="6" class="loading"><div class="spinner"></div><br>Kirjaudu sisään ladataksesi data…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <button id="yh-btn-prev" onclick="changeYhPage(-1)">← Edellinen</button>
+      <span id="yh-page-info"></span>
+      <button id="yh-btn-next" onclick="changeYhPage(1)">Seuraava →</button>
+    </div>
   </div>
 
   <div class="tab-content active" id="tab-dashboard">
@@ -531,6 +567,8 @@ let allProspects = [], filteredRows = [], currentId = null;
 let allContacts = [];
 let page = 0, sortCol = 'pisteet', sortAsc = false;
 const PAGE_SIZE = 60;
+let yhPage = 0, yhSortCol = 'nimi', yhSortAsc = true, yhFilteredRows = [], currentYhId = null;
+const YH_PAGE_SIZE = 60;
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 window.addEventListener('load', () => {
@@ -677,7 +715,7 @@ async function loadData() {
     showToast('Virhe: '+e.message,'error'); console.error(e); return;
   }
   await initVirtualKaupat();
-  buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard();
+  buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard(); applyYhFilters();
 }
 
 async function initVirtualKaupat() {
@@ -959,6 +997,72 @@ function renderTable() {
 }
 function changePage(d) { page+=d; renderTable(); }
 
+// ── Yhteyshenkilöt (list) ────────────────────────────────────────────────────
+['yh-haku','yh-f-kampanja'].forEach(id =>
+  document.getElementById(id)?.addEventListener('input', () => { yhPage=0; applyYhFilters(); }));
+
+function tiliNimi(sid) { return allProspects.find(x=>x.spara_id===sid)?.yritys_nimi || ''; }
+
+function applyYhFilters() {
+  const haku=(document.getElementById('yh-haku')?.value||'').toLowerCase();
+  const komp=document.getElementById('yh-f-kampanja')?.value||'';
+  yhFilteredRows = allContacts.filter(c => {
+    const p=allProspects.find(x=>x.spara_id===c.tili_id);
+    if (komp && (!p || p.kampanja!==komp)) return false;
+    if (haku) {
+      const hay=[c.nimi,c.titteli,c.puhelin,c.sahkoposti,p?.yritys_nimi].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(haku)) return false;
+    }
+    return true;
+  });
+  yhFilteredRows.sort((a,b) => {
+    const va=(yhSortCol==='_tili_nimi'?tiliNimi(a.tili_id):a[yhSortCol])||'';
+    const vb=(yhSortCol==='_tili_nimi'?tiliNimi(b.tili_id):b[yhSortCol])||'';
+    return va<vb ? (yhSortAsc?-1:1) : va>vb ? (yhSortAsc?1:-1) : 0;
+  });
+  const cntEl=document.getElementById('yh-result-count'); if (cntEl) cntEl.textContent=yhFilteredRows.length+' löytyi';
+  renderYhTable();
+}
+
+document.querySelectorAll('#tbl-yhteyshenkilot th[data-col]').forEach(th => {
+  th.addEventListener('click', () => {
+    yhSortAsc = yhSortCol===th.dataset.col ? !yhSortAsc : true;
+    yhSortCol = th.dataset.col;
+    document.querySelectorAll('#tbl-yhteyshenkilot th').forEach(t => { t.classList.remove('sorted'); t.querySelector('.sa')&&(t.querySelector('.sa').textContent='↕'); });
+    th.classList.add('sorted');
+    if (th.querySelector('.sa')) th.querySelector('.sa').textContent = yhSortAsc?'↑':'↓';
+    applyYhFilters();
+  });
+});
+
+function renderYhTable() {
+  const tbody=document.getElementById('tbody-yhteyshenkilot');
+  const rows=yhFilteredRows.slice(yhPage*YH_PAGE_SIZE,(yhPage+1)*YH_PAGE_SIZE);
+  if (!rows.length) {
+    tbody.innerHTML='<tr><td colspan="6" class="empty">Ei tuloksia</td></tr>';
+    document.getElementById('yh-page-info').textContent='';
+    document.getElementById('yh-btn-prev').disabled=true;
+    document.getElementById('yh-btn-next').disabled=true;
+    return;
+  }
+  tbody.innerHTML = rows.map(c=>{
+    const p=allProspects.find(x=>x.spara_id===c.tili_id);
+    return `<tr onclick="openYhModal('${c.id}')">
+      <td><strong>${esc(c.nimi)}</strong></td>
+      <td style="color:var(--text2)">${esc(c.titteli)}</td>
+      <td style="color:var(--text2);font-size:11px">${p?esc(p.yritys_nimi):'–'}</td>
+      <td style="color:var(--text2);font-size:11px">${esc(c.puhelin)}</td>
+      <td style="color:var(--text2);font-size:11px">${esc(c.sahkoposti)}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openYhModal('${c.id}')">Avaa</button></td>
+    </tr>`;
+  }).join('');
+  const total=yhFilteredRows.length, pages=Math.ceil(total/YH_PAGE_SIZE);
+  document.getElementById('yh-page-info').textContent=`${yhPage+1} / ${pages} (${total})`;
+  document.getElementById('yh-btn-prev').disabled=yhPage===0;
+  document.getElementById('yh-btn-next').disabled=yhPage>=pages-1;
+}
+function changeYhPage(d) { yhPage+=d; renderYhTable(); }
+
 // ── Kanban ─────────────────────────────────────────────────────────────────────
 const VAIHEET=['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'];
 const V_COLORS={Liidi:'var(--blue)',Mahdollisuus:'var(--orange)',Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)',Hävitty:'var(--red)'};
@@ -1133,6 +1237,7 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
   t.classList.add('active'); document.getElementById('tab-'+t.dataset.tab).classList.add('active');
   if (t.dataset.tab==='kanban')    renderKanban();
   if (t.dataset.tab==='dashboard') renderDashboard();
+  if (t.dataset.tab==='yhteyshenkilot') { yhPage=0; applyYhFilters(); }
 }));
 document.querySelectorAll('.mtab').forEach(t=>t.addEventListener('click',()=>{
   document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
@@ -1712,39 +1817,17 @@ function renderContactsInTiedot(p) {
   const div=document.getElementById('mt-info-contacts'); if(!div) return;
   const contacts=allContacts.filter(c=>c.tili_id===p.spara_id);
   let html=`<div class="cs-title">Yhteyshenkilöt</div>`;
-  contacts.forEach(c=>{
-    html+=`<div class="yh-item" id="yh-${c.id}-wrap">
-      <div id="yh-${c.id}-meta">
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <div class="yh-item-name">${esc(c.nimi)}</div>
-          <div style="display:flex;gap:4px">
-            <button class="btn btn-ghost btn-sm" onclick="toggleEditContact('${c.id}')">Muokkaa</button>
-            <button class="btn btn-danger btn-sm" onclick="confirmDeleteContact('${c.id}')">Poista</button>
-          </div>
-        </div>
-        <div class="yh-item-meta">
-          ${c.titteli?`<span>${esc(c.titteli)}</span>`:''}
-          ${c.puhelin?`<span>📞 <a href="tel:${c.puhelin.replace(/\s/g,'')}" style="color:var(--blue)">${esc(c.puhelin)}</a> <button class="btn btn-ghost btn-sm" onclick="soitaJaLogi(${JSON.stringify(c.puhelin)},${JSON.stringify(c.nimi)})">Soita</button></span>`:''}
-          ${c.sahkoposti?`<span>✉️ <a href="mailto:${esc(c.sahkoposti)}" style="color:var(--blue)">${esc(c.sahkoposti)}</a></span>`:''}
-          ${c.linkedin?`<span>🔗 <a href="${esc(c.linkedin)}" target="_blank" rel="noopener" style="color:var(--blue)">LinkedIn</a></span>`:''}
-        </div>
-      </div>
-      <div id="yh-${c.id}-form" style="display:none">
-        <div class="form-grid" style="margin-top:6px">
-          <div class="form-group"><label>Nimi *</label><input class="form-control" id="yh-${c.id}-nimi" value="${esc(c.nimi)}"></div>
-          <div class="form-group"><label>Titteli</label><input class="form-control" id="yh-${c.id}-titteli" value="${esc(c.titteli||'')}"></div>
-          <div class="form-group"><label>Puhelin</label><input class="form-control" id="yh-${c.id}-puhelin" value="${esc(c.puhelin||'')}"></div>
-          <div class="form-group"><label>Sähköposti</label><input class="form-control" id="yh-${c.id}-sahkoposti" value="${esc(c.sahkoposti||'')}"></div>
-          <div class="form-group full"><label>LinkedIn</label><input class="form-control" id="yh-${c.id}-linkedin" value="${esc(c.linkedin||'')}"></div>
-        </div>
-        <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px">
-          <button class="btn btn-ghost btn-sm" onclick="toggleEditContact('${c.id}')">Peruuta</button>
-          <button class="btn btn-primary btn-sm" onclick="saveEditContact('${c.id}')">Tallenna</button>
-        </div>
-      </div>
-    </div>`;
-  });
   if (!contacts.length) html+='<div class="empty" style="padding:10px;font-size:12px">Ei yhteyshenkilöitä</div>';
+  html += contacts.map(c=>`
+    <div class="yh-item" onclick="openYhModal('${c.id}')">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <div>
+          <div class="yh-item-name">${esc(c.nimi)}</div>
+          ${c.titteli?`<div style="font-size:11px;color:var(--text2);margin-top:2px">${esc(c.titteli)}</div>`:''}
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openYhModal('${c.id}')">Avaa →</button>
+      </div>
+    </div>`).join('');
   div.innerHTML=html+`
     <div class="yh-add-form">
       <div style="font-size:10px;color:var(--text2);margin-bottom:8px;font-weight:600;letter-spacing:.5px;text-transform:uppercase">Lisää yhteyshenkilö</div>
@@ -1777,33 +1860,8 @@ async function saveNewContact() {
     await sheetAppend(`${YH_TAB}!A:H`,[row]);
     allContacts.push({...Object.fromEntries(YH_COLS.map((k,i)=>[k,row[i]])), _rowIndex:colA.length+1});
     const p=allProspects.find(x=>x.spara_id===currentId); if(p) renderContactsInTiedot(p);
+    applyYhFilters();
     showToast('Yhteyshenkilö lisätty: '+nimi,'success');
-  } catch(e) { showToast('Virhe: '+e.message,'error'); }
-}
-
-function toggleEditContact(cid) {
-  const form=document.getElementById(`yh-${cid}-form`);
-  const meta=document.getElementById(`yh-${cid}-meta`);
-  if (!form||!meta) return;
-  const show=form.style.display==='none';
-  form.style.display=show?'':'none';
-  meta.style.display=show?'none':'';
-}
-
-async function saveEditContact(cid) {
-  const c=allContacts.find(x=>x.id===cid); if(!c) return;
-  const nimi=(document.getElementById(`yh-${cid}-nimi`)?.value||'').trim();
-  if (!nimi) { showToast('Nimi on pakollinen','error'); return; }
-  const titteli=document.getElementById(`yh-${cid}-titteli`)?.value.trim()||'';
-  const puhelin=document.getElementById(`yh-${cid}-puhelin`)?.value.trim()||'';
-  const sahkoposti=document.getElementById(`yh-${cid}-sahkoposti`)?.value.trim()||'';
-  const linkedin=document.getElementById(`yh-${cid}-linkedin`)?.value.trim()||'';
-  const row=[c.id,c.tili_id,nimi,titteli,puhelin,sahkoposti,linkedin,c.created_at||''];
-  try {
-    await sheetPut(`${YH_TAB}!A${c._rowIndex}:H${c._rowIndex}`,[row]);
-    Object.assign(c,{nimi,titteli,puhelin,sahkoposti,linkedin});
-    const p=allProspects.find(x=>x.spara_id===currentId); if(p) renderContactsInTiedot(p);
-    showToast('Tallennettu ✓','success');
   } catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 
@@ -1814,7 +1872,143 @@ async function confirmDeleteContact(cid) {
     await sheetPut(`${YH_TAB}!A${c._rowIndex}:H${c._rowIndex}`,[['','','','','','','','']]);
     allContacts.splice(allContacts.indexOf(c),1);
     const p=allProspects.find(x=>x.spara_id===currentId); if(p) renderContactsInTiedot(p);
+    if (currentYhId===cid) closeYhModal();
+    applyYhFilters();
     showToast('Poistettu','success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+}
+
+// ── Yhteyshenkilö-kortti (modal) ─────────────────────────────────────────────
+function openYhModal(cid) {
+  currentYhId=cid;
+  const c=allContacts.find(x=>x.id===cid); if (!c) return;
+  const p=allProspects.find(x=>x.spara_id===c.tili_id);
+  document.getElementById('yhmodal-title').textContent=c.nimi;
+  const f=(label,val,full)=>{ if (val==null||val==='') return ''; return `<div class="info-block${full?' full':''}"><div class="info-label">${label}</div><div class="info-value">${val}</div></div>`; };
+  const tel=(t,nim)=>t?`<a href="tel:${t.replace(/\s/g,'')}">${esc(t)}</a><button class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:11px" onclick="soitaJaLogiFromYh(${JSON.stringify(t)},${JSON.stringify(nim||'')})">📞 Soita</button>`:null;
+  const mail=m=>m?`<a href="mailto:${esc(m)}">${esc(m)}</a>`:null;
+
+  let html=`<div class="info-grid">
+    ${f('Titteli',c.titteli)}
+    ${f('Puhelin',tel(c.puhelin,c.nimi))}
+    ${f('Sähköposti',mail(c.sahkoposti))}
+    ${f('LinkedIn',c.linkedin?`<a href="${esc(c.linkedin)}" target="_blank" rel="noopener">${esc(c.linkedin)}</a>`:null)}
+  </div>`;
+
+  html+=`<div class="cs-title" style="margin-top:16px">Tili</div>`;
+  if (p) {
+    html+=`<div class="yh-link-card" onclick="openTiliFromYh('${p.spara_id}')">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <div><strong>${esc(p.yritys_nimi)}</strong><div style="color:var(--text2);font-size:11px;margin-top:2px">${p.segmentti?esc(p.segmentti)+' · ':''}${esc(p.kaupunki)}</div></div>
+        ${kampBadge(p.kampanja)}
+      </div>
+    </div>`;
+  } else {
+    html+='<div class="empty" style="padding:10px;font-size:12px">Ei liitettyä tiliä</div>';
+  }
+
+  html+=`<div class="cs-title" style="margin-top:16px">Tehtävät</div>`;
+  if (p) {
+    const acts=parseActs(p).map(normalizeTask);
+    const open=acts.filter(a=>!taskIsDone(a));
+    const near=nearestTask(p);
+    html+=`<div class="yh-link-card" onclick="openTiliTasksFromYh('${p.spara_id}')">
+      <div style="font-size:12px">${open.length?`${open.length} avointa tehtävää`:'Ei avoimia tehtäviä'}</div>
+      ${near?`<div style="font-size:11px;color:var(--text2);margin-top:4px">Seuraavaksi: ${esc(near.aihe||near.tyyppi)} · ${esc(near.due_date)}</div>`:''}
+    </div>`;
+  } else {
+    html+='<div class="empty" style="padding:10px;font-size:12px">–</div>';
+  }
+
+  html+=`<div class="cs-title" style="margin-top:16px">Historia</div>`;
+  if (p) {
+    const hist=parseActs(p).filter(a=>!a.due_date||a.done).slice(-3).reverse();
+    html+=hist.length
+      ? hist.map(a=>`<div class="act-item" style="margin-bottom:6px">
+          <div class="act-meta">${actIcon(a.tyyppi)} ${esc(a.tyyppi)} · ${fmtDT(a.created_at)}</div>
+          <div class="act-text">${esc(a.teksti||a.aihe||'')}</div>
+        </div>`).join('')
+      : '<div class="empty" style="padding:10px;font-size:12px">Ei merkintöjä</div>';
+    html+=`<div class="yh-link-card" style="text-align:center;font-size:12px;color:var(--blue);margin-top:4px" onclick="openTiliHistoryFromYh('${p.spara_id}')">Näytä koko historia →</div>`;
+  }
+
+  html+=`<div style="margin-top:18px;border-top:1px solid var(--border);padding-top:12px">
+    <button class="btn btn-danger btn-sm" onclick="confirmDeleteContact('${c.id}')">🗑️ Poista yhteyshenkilö</button>
+  </div>`;
+
+  document.getElementById('yhmodal-view').innerHTML=html;
+  document.getElementById('yhmodal-view').style.display='';
+  document.getElementById('yhmodal-edit').style.display='none';
+  document.getElementById('yhmodal-overlay').classList.remove('hidden');
+}
+function closeYhModal() { document.getElementById('yhmodal-overlay').classList.add('hidden'); currentYhId=null; }
+function closeYhModalMaybe(e) { if (e.target===document.getElementById('yhmodal-overlay')) closeYhModal(); }
+
+function openTiliFromYh(sid) { closeYhModal(); openModal(sid); }
+
+function openTiliTasksFromYh(sid) {
+  closeYhModal(); openModal(sid);
+  document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
+  document.querySelector('[data-mt="tehtavat"]').classList.add('active');
+  document.getElementById('mt-tehtavat').classList.add('active');
+  const p=allProspects.find(x=>x.spara_id===sid); if (p) renderTaskList(p);
+}
+
+function openTiliHistoryFromYh(sid) {
+  closeYhModal(); openModal(sid);
+  document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
+  document.querySelector('[data-mt="historia"]').classList.add('active');
+  document.getElementById('mt-historia').classList.add('active');
+}
+
+function soitaJaLogiFromYh(numero, nimike) {
+  const c=allContacts.find(x=>x.id===currentYhId); if (!c) return;
+  closeYhModal();
+  openModal(c.tili_id);
+  soitaJaLogi(numero, nimike);
+}
+
+function toggleYhEdit() {
+  const view=document.getElementById('yhmodal-view');
+  const edit=document.getElementById('yhmodal-edit');
+  const showEdit=edit.style.display==='none';
+  if (showEdit) {
+    const c=allContacts.find(x=>x.id===currentYhId); if (!c) return;
+    edit.innerHTML=`
+      <div class="form-grid">
+        <div class="form-group full"><label>Nimi *</label><input class="form-control" id="yhe-nimi" value="${esc(c.nimi)}"></div>
+        <div class="form-group"><label>Titteli</label><input class="form-control" id="yhe-titteli" value="${esc(c.titteli||'')}"></div>
+        <div class="form-group"><label>Puhelin</label><input class="form-control" id="yhe-puhelin" value="${esc(c.puhelin||'')}"></div>
+        <div class="form-group"><label>Sähköposti</label><input class="form-control" id="yhe-sahkoposti" value="${esc(c.sahkoposti||'')}"></div>
+        <div class="form-group full"><label>LinkedIn</label><input class="form-control" id="yhe-linkedin" value="${esc(c.linkedin||'')}"></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:10px">
+        <button class="btn btn-ghost btn-sm" onclick="toggleYhEdit()">Peruuta</button>
+        <button class="btn btn-primary btn-sm" onclick="saveYhEdit()">Tallenna</button>
+      </div>`;
+  }
+  view.style.display=showEdit?'none':'';
+  edit.style.display=showEdit?'':'none';
+}
+
+async function saveYhEdit() {
+  const c=allContacts.find(x=>x.id===currentYhId); if (!c) return;
+  const nimi=(document.getElementById('yhe-nimi')?.value||'').trim();
+  if (!nimi) { showToast('Nimi on pakollinen','error'); return; }
+  const titteli=document.getElementById('yhe-titteli')?.value.trim()||'';
+  const puhelin=document.getElementById('yhe-puhelin')?.value.trim()||'';
+  const sahkoposti=document.getElementById('yhe-sahkoposti')?.value.trim()||'';
+  const linkedin=document.getElementById('yhe-linkedin')?.value.trim()||'';
+  const row=[c.id,c.tili_id,nimi,titteli,puhelin,sahkoposti,linkedin,c.created_at||''];
+  try {
+    await sheetPut(`${YH_TAB}!A${c._rowIndex}:H${c._rowIndex}`,[row]);
+    Object.assign(c,{nimi,titteli,puhelin,sahkoposti,linkedin});
+    openYhModal(c.id);
+    const p=allProspects.find(x=>x.spara_id===c.tili_id); if (p && currentId===p.spara_id) renderContactsInTiedot(p);
+    applyYhFilters();
+    showToast('Tallennettu ✓','success');
   } catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 
@@ -1960,6 +2154,7 @@ async function saveGlobalContact() {
     await sheetAppend(`${YH_TAB}!A:H`,[row]);
     allContacts.push({...Object.fromEntries(YH_COLS.map((k,i)=>[k,row[i]])),_rowIndex:colA.length+1});
     closeGlobalContact();
+    applyYhFilters();
     showToast('Yhteystieto lisätty: '+nimi,'success');
   } catch(e){showToast('Virhe: '+e.message,'error');}
 }
@@ -2051,6 +2246,23 @@ async function saveGlobalTask() {
         <button class="btn btn-ghost" onclick="closeGlobalTask()">Peruuta</button>
         <button class="btn btn-primary" onclick="saveGlobalTask()">Lisää</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Yhteyshenkilö-kortti (modal) -->
+<div class="modal-overlay hidden" id="yhmodal-overlay" onclick="closeYhModalMaybe(event)">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-title" id="yhmodal-title">Yhteyshenkilö</div>
+      <div style="display:flex;align-items:center;gap:4px">
+        <button class="modal-close" onclick="toggleYhEdit()" title="Muokkaa">✏️</button>
+        <button class="modal-close" onclick="closeYhModal()">✕</button>
+      </div>
+    </div>
+    <div class="modal-body" style="padding:16px">
+      <div id="yhmodal-view"></div>
+      <div id="yhmodal-edit" style="display:none"></div>
     </div>
   </div>
 </div>
