@@ -132,9 +132,13 @@
     .kanban-col{flex:0 0 220px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column;max-height:calc(100vh - 280px);}
     .kanban-header{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
     .kanban-title{font-size:12px;font-weight:600;} .kanban-cnt{font-size:11px;color:var(--text2);background:var(--bg3);padding:1px 7px;border-radius:10px;}
-    .kanban-body{overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px;flex:1;}
-    .kcard{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:9px 11px;cursor:pointer;transition:border-color .2s;}
+    .kanban-body{overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px;flex:1;transition:background-color .15s,outline-color .15s;outline:2px dashed transparent;outline-offset:-2px;}
+    .kanban-body.drop-hover{background:var(--bg3);outline-color:var(--accent);}
+    .kcard{position:relative;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:9px 26px 9px 11px;cursor:grab;transition:border-color .2s,opacity .15s;}
     .kcard:hover{border-color:var(--accent);}
+    .kcard.dragging{opacity:.4;}
+    .kc-del{position:absolute;top:6px;right:6px;width:18px;height:18px;border:none;background:transparent;color:var(--text2);cursor:pointer;font-size:12px;line-height:1;border-radius:4px;}
+    .kc-del:hover{color:var(--red);background:var(--bg4);}
     .kc-name{font-size:12px;font-weight:600;margin-bottom:3px;} .kc-meta{font-size:11px;color:var(--text2);line-height:1.5;}
     .kc-prio{display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:4px;vertical-align:middle;}
     .dot-A{background:var(--red);} .dot-B{background:var(--orange);}
@@ -960,7 +964,6 @@ const VAIHEET=['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty
 const V_COLORS={Liidi:'var(--blue)',Mahdollisuus:'var(--orange)',Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)',Hävitty:'var(--red)'};
 const VAIHE_TN={Liidi:.05,Mahdollisuus:.20,Tapaaminen:.40,Tarjous:.60,Sopimus:1,'Hävitty':0};
 const fmtEur=n=>Math.round(n).toLocaleString('fi-FI')+' €';
-function kauppaArvo(p){return parseActs(p).filter(a=>a.tyyppi==='kauppa').reduce((s,a)=>s+(Number(a.arvo)||0),0);}
 function kauppaStats(){
   const st={}; VAIHEET.forEach(v=>st[v]={n:0,sum:0});
   allProspects.forEach(p=>parseActs(p).forEach(a=>{
@@ -1017,27 +1020,99 @@ function taskIsDone(t){return t.done||(TASK_DONE[t.tyyppi]||[]).includes(t.tila)
 function normalizeTask(a){return{...a,aihe:a.aihe||a.teksti||'',tila:a.tila||(a.tyyppi==='kauppa'?'Tarjous':'Uusi'),tyyppi:TASK_TILA[a.tyyppi]?a.tyyppi:'muu'};}
 function nearestTask(p){return parseActs(p).map(normalizeTask).filter(a=>a.due_date&&!taskIsDone(a)).sort((a,b)=>a.due_date.localeCompare(b.due_date))[0];}
 
+function getAllKaupat(filterKampanja) {
+  const out=[];
+  allProspects.forEach(p=>{
+    if (filterKampanja && p.kampanja!==filterKampanja) return;
+    parseActs(p).forEach(a=>{
+      if (a.tyyppi==='kauppa') out.push({p, task:normalizeTask(a)});
+    });
+  });
+  return out;
+}
+
+function kanbanCardHtml(k) {
+  const {p,task}=k;
+  const arvo=Number(task.arvo)||0;
+  return `<div class="kcard" draggable="true" data-sid="${p.spara_id}" data-task-id="${task.id}" onclick="openKauppa('${p.spara_id}','${task.id}')">
+        <button class="kc-del" onclick="event.stopPropagation();deleteKauppaFromKanban('${p.spara_id}','${task.id}')" title="Poista kauppa">✕</button>
+        <div class="kc-name"><span class="kc-prio dot-${p.prioriteetti||'B'}"></span>${esc(p.yritys_nimi)} – ${esc(task.aihe||'–')}</div>
+        <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--green);font-weight:700">${fmtEur(arvo)}</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
+      </div>`;
+}
+
 function renderKanban() {
   const kf=document.getElementById('k-kampanja').value;
-  const src=kf?allProspects.filter(p=>p.kampanja===kf):allProspects;
+  const kaupat=getAllKaupat(kf);
   const board=document.getElementById('kanban-board');
   board.innerHTML='';
   VAIHEET.forEach(v => {
-    const cards=src.filter(p=>p.vaihe===v);
-    const colSum=cards.reduce((s,p)=>s+kauppaArvo(p),0);
+    const cards=kaupat.filter(k=>k.task.tila===v);
+    const colSum=cards.reduce((s,k)=>s+(Number(k.task.arvo)||0),0);
     const col=document.createElement('div'); col.className='kanban-col';
     col.innerHTML=`<div class="kanban-header"><span class="kanban-title" style="color:${V_COLORS[v]}">${v}</span><span class="kanban-cnt">${cards.length}${colSum?' · '+fmtEur(colSum):''}</span></div>
-      <div class="kanban-body">${cards.length?cards.map(p=>{
-        const arvo=kauppaArvo(p);
-        return `<div class="kcard" onclick="openKauppa('${p.spara_id}')">
-        <div class="kc-name"><span class="kc-prio dot-${p.prioriteetti||'B'}"></span>${esc(p.yritys_nimi)}</div>
-        <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--green);font-weight:700">${fmtEur(arvo)}</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
-      </div>`;}).join(''):'<div style="font-size:11px;color:var(--text2);text-align:center;padding:12px">–</div>'}</div>`;
+      <div class="kanban-body" data-vaihe="${v}">${cards.length?cards.map(kanbanCardHtml).join(''):'<div style="font-size:11px;color:var(--text2);text-align:center;padding:12px">–</div>'}</div>`;
     board.appendChild(col);
+  });
+  attachKanbanDnD();
+}
+
+let dragKauppa=null;
+function attachKanbanDnD() {
+  document.querySelectorAll('.kcard').forEach(card=>{
+    card.addEventListener('dragstart', ()=>{
+      dragKauppa={sid:card.dataset.sid, taskId:card.dataset.taskId};
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', ()=>card.classList.remove('dragging'));
+  });
+  document.querySelectorAll('.kanban-body').forEach(body=>{
+    body.addEventListener('dragover', e=>{ e.preventDefault(); body.classList.add('drop-hover'); });
+    body.addEventListener('dragleave', ()=>body.classList.remove('drop-hover'));
+    body.addEventListener('drop', e=>{
+      e.preventDefault();
+      body.classList.remove('drop-hover');
+      if (!dragKauppa) return;
+      const {sid,taskId}=dragKauppa; dragKauppa=null;
+      moveKauppaVaihe(sid, taskId, body.dataset.vaihe);
+    });
   });
 }
 
-function openKauppa(sid) {
+async function moveKauppaVaihe(sid, taskId, newVaihe) {
+  const p=allProspects.find(x=>x.spara_id===sid); if(!p) return;
+  const acts=parseActs(p); const task=acts.find(a=>a.id===taskId); if(!task) return;
+  if (task.tila===newVaihe) return;
+  const prev=task.tila||'–';
+  task.tila=newVaihe;
+  task.done=(TASK_DONE.kauppa||[]).includes(newVaihe);
+  p.aktiviteetit=JSON.stringify(acts);
+  addActToProspect(p,'vaihe_muutos',`${task.aihe||'Kauppa'}: ${prev} → ${newVaihe}`,task.tekija);
+  p.vaihe=newVaihe;
+  const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
+  try {
+    await saveCrmState(p);
+    renderKanban(); updateSummary(); applyFilters(); renderDashboard();
+    showToast('Vaihe päivitetty ✓','success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); renderKanban(); }
+}
+
+async function deleteKauppaFromKanban(sid, taskId) {
+  const p=allProspects.find(x=>x.spara_id===sid); if(!p) return;
+  const acts=parseActs(p); const task=acts.find(a=>a.id===taskId); if(!task) return;
+  if (!confirm(`Poistetaanko kauppa "${task.aihe||'–'}" (${p.yritys_nimi})?`)) return;
+  acts.splice(acts.findIndex(a=>a.id===taskId),1);
+  p.aktiviteetit=JSON.stringify(acts);
+  const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
+  try {
+    await saveCrmState(p);
+    renderKanban(); updateSummary(); applyFilters(); renderDashboard();
+    if (currentId===sid) { renderTaskList(p); renderActivities(p); }
+    showToast('Kauppa poistettu','success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+}
+
+function openKauppa(sid, taskId) {
   openModal(sid);
   document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
@@ -1045,7 +1120,8 @@ function openKauppa(sid) {
   document.getElementById('mt-tehtavat').classList.add('active');
   const p=allProspects.find(x=>x.spara_id===sid); if(!p) return;
   renderTaskList(p);
-  const kauppa=parseActs(p).find(a=>a.tyyppi==='kauppa'&&!taskIsDone(normalizeTask(a)))
+  let kauppa=taskId?parseActs(p).find(a=>a.id===taskId):null;
+  if (!kauppa) kauppa=parseActs(p).find(a=>a.tyyppi==='kauppa'&&!taskIsDone(normalizeTask(a)))
     ||parseActs(p).find(a=>a.tyyppi==='kauppa');
   if (kauppa) editTask(kauppa.id);
 }
