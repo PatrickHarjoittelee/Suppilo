@@ -2169,7 +2169,22 @@ async function saveMyProfile() {
   } catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 
-function allProjektitNimet() { return [...BASE_PROJEKTIT, ...customProjektit.map(p=>p.nimi)]; }
+let _projektitOrphanCache = [];
+
+// Kampanja-arvot joita esiintyy tileillä mutta joita ei ole koskaan lisätty
+// Projektit-välilehdelle (esim. suoraan Sheetsiin tuotu data, kuten HubSpot-tuonti).
+function orphanProjektitNimet() {
+  const known = new Set([...BASE_PROJEKTIT, ...customProjektit.map(p=>p.nimi)]);
+  const seen = new Set(), out = [];
+  allProspects.forEach(p => {
+    const k = p.kampanja;
+    if (!k || known.has(k) || seen.has(k)) return;
+    seen.add(k); out.push(k);
+  });
+  return out.sort((a,b)=>a.localeCompare(b,'fi'));
+}
+
+function allProjektitNimet() { return [...BASE_PROJEKTIT, ...customProjektit.map(p=>p.nimi), ...orphanProjektitNimet()]; }
 
 function populateProjektiSelects() {
   const nimet=allProjektitNimet();
@@ -2221,6 +2236,26 @@ function renderProjektitList() {
       </div>
     </div>`;
   });
+  _projektitOrphanCache = orphanProjektitNimet();
+  _projektitOrphanCache.forEach((nimi, i) => {
+    const n=allProspects.filter(p=>p.kampanja===nimi).length;
+    const key='orph'+i;
+    html+=`<div class="yh-item" style="cursor:default">
+      <div id="pj-${key}-view">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div><div class="yh-item-name">${esc(nimi)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${n} tiliä · tuotu datasta, ei rekisteröity</div></div>
+          <button class="btn btn-ghost btn-sm" onclick="toggleProjektiEdit('${key}')">Muokkaa</button>
+        </div>
+      </div>
+      <div id="pj-${key}-form" style="display:none;margin-top:6px">
+        <div style="display:flex;gap:6px">
+          <input class="form-control" id="pj-${key}-nimi" value="${esc(nimi)}">
+          <button class="btn btn-ghost btn-sm" onclick="toggleProjektiEdit('${key}')">Peruuta</button>
+          <button class="btn btn-primary btn-sm" onclick="saveOrphanProjektiRename(${i})">Tallenna</button>
+        </div>
+      </div>
+    </div>`;
+  });
   div.innerHTML = html || '<div class="empty" style="padding:10px;font-size:12px">Ei projekteja</div>';
 }
 
@@ -2250,26 +2285,46 @@ async function addProjekti() {
   } catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 
+async function renameProjekti(oldNimi, newNimi, trackedPj) {
+  if (allProjektitNimet().some(n=>n.toLowerCase()===newNimi.toLowerCase())) { showToast('Projekti on jo olemassa','error'); return; }
+  const affected=allProspects.filter(p=>p.kampanja===oldNimi && p._rowIndex);
+  try {
+    if (trackedPj) {
+      await sheetPut(`${PROJEKTIT_TAB}!B${trackedPj._rowIndex}`, [[newNimi]]);
+      trackedPj.nimi=newNimi;
+    } else if (!BASE_PROJEKTIT.includes(newNimi) && !customProjektit.some(p=>p.nimi===newNimi)) {
+      const id='PJ'+Date.now();
+      const row=[id,newNimi,new Date().toISOString()];
+      const colA=await sheetGet(`${PROJEKTIT_TAB}!A:A`);
+      await sheetAppend(`${PROJEKTIT_TAB}!A:C`,[row]);
+      customProjektit.push({id,nimi:newNimi,created_at:row[2],_rowIndex:colA.length+1});
+    }
+    if (affected.length) {
+      await sheetBatchUpdate(affected.map(p=>({range:`${MAIN_TAB}!B${p._rowIndex}`, values:[[newNimi]]})));
+      affected.forEach(p=>p.kampanja=newNimi);
+    }
+    renderProjektitList();
+    populateProjektiSelects();
+    buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard(); renderKanban(); applyYhFilters();
+    showToast(`Projekti nimetty uudelleen: ${newNimi} (${affected.length} tiliä)`,'success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+}
+
 async function saveProjektiRename(id) {
   const pj=customProjektit.find(x=>x.id===id); if(!pj) return;
   const nimi=(document.getElementById(`pj-${id}-nimi`)?.value||'').trim();
   if (!nimi) { showToast('Nimi on pakollinen','error'); return; }
   if (nimi===pj.nimi) { toggleProjektiEdit(id); return; }
-  if (allProjektitNimet().some(n=>n.toLowerCase()===nimi.toLowerCase())) { showToast('Projekti on jo olemassa','error'); return; }
-  const oldNimi=pj.nimi;
-  const affected=allProspects.filter(p=>p.kampanja===oldNimi && p._rowIndex);
-  try {
-    await sheetPut(`${PROJEKTIT_TAB}!B${pj._rowIndex}`, [[nimi]]);
-    if (affected.length) {
-      await sheetBatchUpdate(affected.map(p=>({range:`${MAIN_TAB}!B${p._rowIndex}`, values:[[nimi]]})));
-      affected.forEach(p=>p.kampanja=nimi);
-    }
-    pj.nimi=nimi;
-    renderProjektitList();
-    populateProjektiSelects();
-    buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard(); renderKanban(); applyYhFilters();
-    showToast(`Projekti nimetty uudelleen: ${nimi}`,'success');
-  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+  await renameProjekti(pj.nimi, nimi, pj);
+}
+
+async function saveOrphanProjektiRename(i) {
+  const oldNimi=_projektitOrphanCache[i]; if(!oldNimi) return;
+  const key='orph'+i;
+  const nimi=(document.getElementById(`pj-${key}-nimi`)?.value||'').trim();
+  if (!nimi) { showToast('Nimi on pakollinen','error'); return; }
+  if (nimi===oldNimi) { toggleProjektiEdit(key); return; }
+  await renameProjekti(oldNimi, nimi, null);
 }
 
 async function deleteProjekti(id) {
