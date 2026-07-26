@@ -134,11 +134,9 @@
     .kanban-title{font-size:12px;font-weight:600;} .kanban-cnt{font-size:11px;color:var(--text2);background:var(--bg3);padding:1px 7px;border-radius:10px;}
     .kanban-body{overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px;flex:1;transition:background-color .15s,outline-color .15s;outline:2px dashed transparent;outline-offset:-2px;}
     .kanban-body.drop-hover{background:var(--bg3);outline-color:var(--accent);}
-    .kcard{position:relative;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:9px 26px 9px 11px;cursor:grab;transition:border-color .2s,opacity .15s;}
+    .kcard{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:9px 11px;cursor:grab;transition:border-color .2s,opacity .15s;}
     .kcard:hover{border-color:var(--accent);}
     .kcard.dragging{opacity:.4;}
-    .kc-del{position:absolute;top:5px;right:5px;width:20px;height:20px;border:none;background:transparent;color:var(--text2);cursor:pointer;font-size:13px;line-height:1;border-radius:4px;opacity:.7;}
-    .kc-del:hover{color:var(--red);background:var(--bg4);opacity:1;}
     .kc-name{font-size:12px;font-weight:600;margin-bottom:3px;} .kc-meta{font-size:11px;color:var(--text2);line-height:1.5;}
     .kc-prio{display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:4px;vertical-align:middle;}
     .dot-A{background:var(--red);} .dot-B{background:var(--orange);}
@@ -198,7 +196,6 @@
     .task-card-foot{display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
     .task-card-actions{display:flex;gap:4px;margin-top:8px;}
     .task-tila-sel{padding:2px 6px!important;font-size:11px!important;min-width:0!important;}
-    .contacts-section{margin-top:18px;border-top:1px solid var(--border);padding-top:14px;}
     .cs-title{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:8px;}
 
     /* Toast */
@@ -422,6 +419,7 @@
         <div class="mtab active" data-mt="info">Tiedot</div>
         <div class="mtab" data-mt="tehtavat">Tehtävät</div>
         <div class="mtab" data-mt="historia">Historia</div>
+        <div class="mtab" data-mt="yhteyshenkilot">Yhteyshenkilöt</div>
       </div>
       <div class="mtab-content active" id="mt-info">
         <div id="tili-status-bar" style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg3);border-bottom:1px solid var(--border);flex-wrap:wrap">
@@ -437,7 +435,6 @@
         </div>
         <div id="mt-info-edit" style="display:none;padding:12px;border-bottom:1px solid var(--border)"></div>
         <div class="info-grid" id="info-grid"></div>
-        <div class="contacts-section" id="mt-info-contacts"></div>
       </div>
       <div class="mtab-content" id="mt-tehtavat">
         <input type="hidden" id="e-toimenpide">
@@ -461,7 +458,9 @@
             <input class="form-control" id="task-due" type="date">
             <textarea class="form-control" id="task-muistiinpanot" rows="2" placeholder="Muistiinpanot…" style="grid-column:1/-1;resize:vertical"></textarea>
             <input type="hidden" id="task-edit-id">
-            <div style="grid-column:1/-1;display:flex;gap:6px;justify-content:flex-end">
+            <div style="grid-column:1/-1;display:flex;gap:6px;align-items:center">
+              <button class="btn btn-ghost btn-sm" id="task-del-btn" onclick="deleteTaskFromForm()" style="display:none;color:var(--red)" title="Poista tehtävä">🗑️</button>
+              <div style="flex:1"></div>
               <button class="btn btn-ghost btn-sm" onclick="closeTaskForm()">Peruuta</button>
               <button class="btn btn-primary btn-sm" id="task-save-btn" onclick="saveTaskForm()">+ Lisää</button>
             </div>
@@ -500,6 +499,9 @@
             </div>
           </div>
         </div>
+      </div>
+      <div class="mtab-content" id="mt-yhteyshenkilot">
+        <div id="mt-info-contacts"></div>
       </div>
     </div>
   </div>
@@ -1100,6 +1102,7 @@ function openTaskForm(tyyppi) {
   document.querySelectorAll('.task-type-btn').forEach(b=>b.classList.toggle('active',b.dataset.type===tyyppi));
   const form=document.getElementById('task-add-form');
   form.style.display='';
+  const delBtn=document.getElementById('task-del-btn'); if(delBtn) delBtn.style.display='none';
   form.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 function closeTaskForm() {
@@ -1112,6 +1115,7 @@ function closeTaskForm() {
   const nota=document.getElementById('task-muistiinpanot'); if(nota) nota.value='';
   const eid=document.getElementById('task-edit-id'); if(eid) eid.value='';
   const sav=document.getElementById('task-save-btn'); if(sav) sav.textContent='+ Lisää';
+  const delBtn=document.getElementById('task-del-btn'); if(delBtn) delBtn.style.display='none';
 }
 function updateGtTilaOptions() {
   const tyyppi=document.getElementById('gt-type')?.value||'kauppa';
@@ -1139,7 +1143,6 @@ function kanbanCardHtml(k) {
   const {p,task}=k;
   const arvo=Number(task.arvo)||0;
   return `<div class="kcard" draggable="true" data-sid="${p.spara_id}" data-task-id="${task.id}" onclick="openKauppa('${p.spara_id}','${task.id}')">
-        <button class="kc-del" onclick="event.stopPropagation();deleteKauppaFromKanban('${p.spara_id}','${task.id}')" title="Poista kauppa">🗑️</button>
         <div class="kc-name"><span class="kc-prio dot-${p.prioriteetti||'B'}"></span>${esc(p.yritys_nimi)} – ${esc(task.aihe||'–')}</div>
         <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--green);font-weight:700">${fmtEur(arvo)}</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
       </div>`;
@@ -1199,21 +1202,6 @@ async function moveKauppaVaihe(sid, taskId, newVaihe) {
     renderKanban(); updateSummary(); applyFilters(); renderDashboard();
     showToast('Vaihe päivitetty ✓','success');
   } catch(e) { showToast('Virhe: '+e.message,'error'); renderKanban(); }
-}
-
-async function deleteKauppaFromKanban(sid, taskId) {
-  const p=allProspects.find(x=>x.spara_id===sid); if(!p) return;
-  const acts=parseActs(p); const task=acts.find(a=>a.id===taskId); if(!task) return;
-  if (!confirm(`Poistetaanko kauppa "${task.aihe||'–'}" (${p.yritys_nimi})?`)) return;
-  acts.splice(acts.findIndex(a=>a.id===taskId),1);
-  p.aktiviteetit=JSON.stringify(acts);
-  const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
-  try {
-    await saveCrmState(p);
-    renderKanban(); updateSummary(); applyFilters(); renderDashboard();
-    if (currentId===sid) { renderTaskList(p); renderActivities(p); }
-    showToast('Kauppa poistettu','success');
-  } catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 
 function openKauppa(sid, taskId) {
@@ -1358,6 +1346,12 @@ function editTask(taskId) {
   const due=document.getElementById('task-due'); if(due) due.value=t.due_date||'';
   const nota=document.getElementById('task-muistiinpanot'); if(nota) nota.value=t.muistiinpanot||'';
   const sav=document.getElementById('task-save-btn'); if(sav) sav.textContent='Tallenna';
+  const delBtn=document.getElementById('task-del-btn'); if(delBtn) delBtn.style.display='';
+}
+
+function deleteTaskFromForm() {
+  const id=document.getElementById('task-edit-id')?.value;
+  if (id) deleteTask(id);
 }
 
 async function saveTaskForm() {
@@ -1501,7 +1495,11 @@ async function deleteTask(taskId) {
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
   document.getElementById('e-toimenpide').value=p.seuraava_toimenpide||'';
   document.getElementById('e-pvm').value=p.seuraava_pvm||'';
-  try{await saveCrmState(p);renderTaskList(p);renderActivities(p);updateSummary();applyFilters();showToast('Poistettu','success');}
+  try{
+    await saveCrmState(p);
+    if (document.getElementById('task-edit-id')?.value===taskId) closeTaskForm();
+    renderTaskList(p);renderActivities(p);updateSummary();applyFilters();showToast('Poistettu','success');
+  }
   catch(e){showToast('Virhe: '+e.message,'error');}
 }
 
