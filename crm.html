@@ -278,6 +278,7 @@
         <button class="qa-item" onclick="openGlobalTask();closeQuickAdd()">📋 Uusi tehtävä</button>
       </div>
     </div>
+    <button class="btn btn-ghost btn-sm" onclick="openSettings()" title="Asetukset">⚙️ Asetukset</button>
     <button class="btn btn-ghost btn-sm" onclick="logout()">Kirjaudu ulos</button>
   </div>
 </header>
@@ -531,6 +532,7 @@
       <!-- Form fields -->
       <div class="form-grid">
         <div class="form-group full"><label>Yrityksen nimi *</label><input class="form-control" id="tf_name" placeholder="Yrityksen nimi"></div>
+        <div class="form-group full"><label>Projekti</label><select class="form-control" id="tf_kampanja"></select></div>
         <div class="form-group"><label>Y-tunnus</label><input class="form-control" id="tf_ytunnus" placeholder="1234567-8"></div>
         <div class="form-group"><label>Toimiala</label><input class="form-control" id="tf_toimiala"></div>
         <div class="form-group"><label>Yhtiömuoto</label><input class="form-control" id="tf_yhtiömuoto"></div>
@@ -563,6 +565,11 @@ const MAIN_TAB  = 'Tilit';
 const TILIT_COLS = ['id','name','y_tunnus','toimiala','yhtiömuoto','osoite','postinumero','kaupunki','yhteyshenkilö','sahkoposti','rekisteroity','lisatiedot','created_at','www'];
 const YH_TAB  = 'Yhteyshenkilöt';
 const YH_COLS = ['id','tili_id','nimi','titteli','puhelin','sahkoposti','linkedin','created_at'];
+const USERS_TAB = 'Käyttäjät';
+const USERS_COLS = ['email','nimi','puhelin','sahkoposti','updated_at'];
+const PROJEKTIT_TAB = 'Projektit';
+const PROJEKTIT_COLS = ['id','nimi','created_at'];
+const BASE_PROJEKTIT = ['ETJ+','Talopakettivalmistajat FIN','Talopakettivalmistajat SWE','Muu Projekti'];
 
 let accessToken = null, tokenClient = null;
 let allProspects = [], filteredRows = [], currentId = null;
@@ -571,6 +578,9 @@ let page = 0, sortCol = 'pisteet', sortAsc = false;
 const PAGE_SIZE = 60;
 let yhPage = 0, yhSortCol = 'nimi', yhSortAsc = true, yhFilteredRows = [], currentYhId = null;
 const YH_PAGE_SIZE = 60;
+let currentUserEmail = null;
+let currentUser = { email:'', nimi:'', puhelin:'', sahkoposti:'', updated_at:'', _rowIndex:null };
+let customProjektit = [];
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 window.addEventListener('load', () => {
@@ -588,7 +598,7 @@ window.addEventListener('load', () => {
         try {
           const ti = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${accessToken}`);
           const j = await ti.json();
-          // user email display removed
+          currentUserEmail = j.email || null;
         } catch(_) {}
         await loadData();
       },
@@ -635,6 +645,9 @@ async function sheetAppend(range, values) {
   });
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
 }
+async function sheetBatchUpdate(data) {
+  await apiPost('/values:batchUpdate', { valueInputOption:'USER_ENTERED', data });
+}
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 async function loadData() {
@@ -650,6 +663,8 @@ async function loadData() {
     };
     if (!tabNames.includes(CRM_TAB)) await addSheet(CRM_TAB, CRM_COLS);
     if (!tabNames.includes(YH_TAB))  await addSheet(YH_TAB,  YH_COLS);
+    if (!tabNames.includes(USERS_TAB)) await addSheet(USERS_TAB, USERS_COLS);
+    if (!tabNames.includes(PROJEKTIT_TAB)) await addSheet(PROJEKTIT_TAB, PROJEKTIT_COLS);
     const PROSP = 'Prospektirekisteri';
     if (tabNames.includes(PROSP)) {
       if (tabNames.includes(MAIN_TAB)) {
@@ -713,11 +728,22 @@ async function loadData() {
         ...Object.fromEntries(YH_COLS.map((k,j)=>[k,r[j]||''])), _rowIndex:i+2
       }));
     }
+    const usersRows = await sheetGet(`${USERS_TAB}!A:E`);
+    const usersData = usersRows.slice(1);
+    const myIdx = usersData.findIndex(r=>(r[0]||'').toLowerCase()===(currentUserEmail||'').toLowerCase());
+    if (myIdx>=0) {
+      const r=usersData[myIdx];
+      currentUser = { email:r[0]||'', nimi:r[1]||'', puhelin:r[2]||'', sahkoposti:r[3]||'', updated_at:r[4]||'', _rowIndex:myIdx+2 };
+    } else {
+      currentUser = { email:currentUserEmail||'', nimi:'', puhelin:'', sahkoposti:'', updated_at:'', _rowIndex:null };
+    }
+    const projRows = await sheetGet(`${PROJEKTIT_TAB}!A:C`);
+    customProjektit = projRows.slice(1).filter(r=>r[0]).map((r,i)=>({id:r[0],nimi:r[1]||'',created_at:r[2]||'',_rowIndex:i+2}));
   } catch(e) {
     showToast('Virhe: '+e.message,'error'); console.error(e); return;
   }
   await initVirtualKaupat();
-  buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard(); applyYhFilters();
+  buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard(); applyYhFilters(); populateProjektiSelects();
 }
 
 async function initVirtualKaupat() {
@@ -784,7 +810,7 @@ function parseProspects(rows) {
       if (kampanja.startsWith('Talopakett')) {
         p.sija = parseInt(cv(c,2)||'0') || null;
         p.liikevaihto_meur = cn(c,9);
-      } else if (kampanja === 'Muu Projekti') {
+      } else if (kampanja !== 'ETJ+') {
         p._isTili = true;
         p._rowIndex = idx + 1;
       }
@@ -2018,6 +2044,8 @@ function openAddTili() {
   ['tf_name','tf_ytunnus','tf_toimiala','tf_yhtiömuoto','tf_osoite','tf_postinumero',
    'tf_kaupunki','tf_www','tf_yhteyshenkilö','tf_sahkoposti','tf_rekisteroity','tf_lisatiedot']
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  const kSel=document.getElementById('tf_kampanja');
+  if (kSel) kSel.value='Muu Projekti';
   document.getElementById('addtili-modal').classList.remove('hidden');
 }
 function closeAddTili() { document.getElementById('addtili-modal').classList.add('hidden'); }
@@ -2026,6 +2054,7 @@ function closeTiliMaybe(e) { if (e.target===document.getElementById('addtili-mod
 async function saveNewTili() {
   const name = document.getElementById('tf_name')?.value.trim();
   if (!name) { showToast('Yrityksen nimi on pakollinen', 'error'); return; }
+  const kampanja = document.getElementById('tf_kampanja')?.value || 'Muu Projekti';
   const maxId = allProspects
     .map(p => p.spara_id)
     .filter(sid => /^ID\d+$/.test(sid))
@@ -2044,7 +2073,7 @@ async function saveNewTili() {
   const www            = document.getElementById('tf_www')?.value.trim()||'';
   const y_tunnus       = document.getElementById('tf_ytunnus')?.value.trim()||'';
   const row = [
-    id, 'Muu Projekti', '',
+    id, kampanja, '',
     segmentti, name, yhtiömuoto,
     osoite, kaupunkiVal, y_tunnus,
     '', '', '',
@@ -2059,7 +2088,7 @@ async function saveNewTili() {
     await sheetAppend(`${MAIN_TAB}!A:AA`, [row]);
     const rowIndex = colA.length + 1;
     const p = {
-      spara_id:id, kampanja:'Muu Projekti', prioriteetti:null,
+      spara_id:id, kampanja, prioriteetti:null,
       segmentti, yritys_nimi:name, juridinen_yhtio:yhtiömuoto,
       osoite, kaupunki:kaupunkiVal, y_tunnus,
       liikevaihto_meur:null, kulutusarvio_mwh:null, pisteet:null,
@@ -2072,7 +2101,7 @@ async function saveNewTili() {
       ...blankCrm()
     };
     const kauppa = {id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
-      tyyppi:'kauppa',tila:'Liidi',aihe:'Projekti',arvo:0,tekija:null,muistiinpanot:p.signaali||null,
+      tyyppi:'kauppa',tila:'Liidi',aihe:kampanja,arvo:0,tekija:null,muistiinpanot:p.signaali||null,
       created_at:new Date().toISOString(),due_date:null,done:false};
     p.aktiviteetit=JSON.stringify([kauppa]);
     p.vaihe='Liidi';
@@ -2084,6 +2113,155 @@ async function saveNewTili() {
   } catch(e) {
     showToast('Virhe: ' + e.message, 'error');
   }
+}
+
+// ── Asetukset ─────────────────────────────────────────────────────────────────
+function openSettings() {
+  document.getElementById('set-email').value = currentUser.email || currentUserEmail || '';
+  document.getElementById('set-nimi').value = currentUser.nimi || '';
+  document.getElementById('set-puhelin').value = currentUser.puhelin || '';
+  document.getElementById('set-sahkoposti').value = currentUser.sahkoposti || '';
+  const pjInput=document.getElementById('pj-uusi-nimi'); if (pjInput) pjInput.value='';
+  renderProjektitList();
+  document.getElementById('settings-modal').classList.remove('hidden');
+}
+function closeSettings() { document.getElementById('settings-modal').classList.add('hidden'); }
+function closeSettingsMaybe(e) { if (e.target===document.getElementById('settings-modal')) closeSettings(); }
+
+async function saveMyProfile() {
+  const nimi=(document.getElementById('set-nimi')?.value||'').trim();
+  const puhelin=(document.getElementById('set-puhelin')?.value||'').trim();
+  const sahkoposti=(document.getElementById('set-sahkoposti')?.value||'').trim();
+  const email=currentUser.email||currentUserEmail||'';
+  const row=[email, nimi, puhelin, sahkoposti, new Date().toISOString()];
+  try {
+    if (currentUser._rowIndex) {
+      await sheetPut(`${USERS_TAB}!A${currentUser._rowIndex}:E${currentUser._rowIndex}`, [row]);
+    } else {
+      const colA = await sheetGet(`${USERS_TAB}!A:A`);
+      await sheetAppend(`${USERS_TAB}!A:E`, [row]);
+      currentUser._rowIndex = colA.length+1;
+    }
+    Object.assign(currentUser, { email, nimi, puhelin, sahkoposti, updated_at:row[4] });
+    showToast('Omat tiedot tallennettu ✓','success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+}
+
+function allProjektitNimet() { return [...BASE_PROJEKTIT, ...customProjektit.map(p=>p.nimi)]; }
+
+function populateProjektiSelects() {
+  const nimet=allProjektitNimet();
+  const opts=nimet.map(n=>`<option>${esc(n)}</option>`).join('');
+  ['f-kampanja','k-kampanja','yh-f-kampanja'].forEach(id=>{
+    const sel=document.getElementById(id); if(!sel) return;
+    const prev=sel.value;
+    sel.innerHTML='<option value="">Kaikki projektit</option>'+opts;
+    if (nimet.includes(prev)) sel.value=prev;
+  });
+  const tfSel=document.getElementById('tf_kampanja');
+  if (tfSel) {
+    const prev=tfSel.value||'Muu Projekti';
+    tfSel.innerHTML=opts;
+    tfSel.value=nimet.includes(prev)?prev:'Muu Projekti';
+  }
+}
+
+function renderProjektitList() {
+  const div=document.getElementById('settings-projektit-list'); if(!div) return;
+  let html='';
+  BASE_PROJEKTIT.forEach(nimi=>{
+    const n=allProspects.filter(p=>p.kampanja===nimi).length;
+    html+=`<div class="yh-item" style="cursor:default">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <div><div class="yh-item-name">${esc(nimi)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${n} tiliä</div></div>
+        <span class="source-badge">Perus</span>
+      </div>
+    </div>`;
+  });
+  customProjektit.forEach(pj=>{
+    const n=allProspects.filter(p=>p.kampanja===pj.nimi).length;
+    html+=`<div class="yh-item" style="cursor:default">
+      <div id="pj-${pj.id}-view">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div><div class="yh-item-name">${esc(pj.nimi)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${n} tiliä</div></div>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-ghost btn-sm" onclick="toggleProjektiEdit('${pj.id}')">Muokkaa</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteProjekti('${pj.id}')">Poista</button>
+          </div>
+        </div>
+      </div>
+      <div id="pj-${pj.id}-form" style="display:none;margin-top:6px">
+        <div style="display:flex;gap:6px">
+          <input class="form-control" id="pj-${pj.id}-nimi" value="${esc(pj.nimi)}">
+          <button class="btn btn-ghost btn-sm" onclick="toggleProjektiEdit('${pj.id}')">Peruuta</button>
+          <button class="btn btn-primary btn-sm" onclick="saveProjektiRename('${pj.id}')">Tallenna</button>
+        </div>
+      </div>
+    </div>`;
+  });
+  div.innerHTML = html || '<div class="empty" style="padding:10px;font-size:12px">Ei projekteja</div>';
+}
+
+function toggleProjektiEdit(id) {
+  const view=document.getElementById(`pj-${id}-view`);
+  const form=document.getElementById(`pj-${id}-form`);
+  if (!view||!form) return;
+  const show=form.style.display==='none';
+  form.style.display=show?'':'none';
+  view.style.display=show?'none':'';
+}
+
+async function addProjekti() {
+  const nimi=(document.getElementById('pj-uusi-nimi')?.value||'').trim();
+  if (!nimi) { showToast('Projektin nimi on pakollinen','error'); return; }
+  if (allProjektitNimet().some(n=>n.toLowerCase()===nimi.toLowerCase())) { showToast('Projekti on jo olemassa','error'); return; }
+  const id='PJ'+Date.now();
+  const row=[id,nimi,new Date().toISOString()];
+  try {
+    const colA=await sheetGet(`${PROJEKTIT_TAB}!A:A`);
+    await sheetAppend(`${PROJEKTIT_TAB}!A:C`,[row]);
+    customProjektit.push({id,nimi,created_at:row[2],_rowIndex:colA.length+1});
+    document.getElementById('pj-uusi-nimi').value='';
+    renderProjektitList();
+    populateProjektiSelects();
+    showToast('Projekti lisätty: '+nimi,'success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+}
+
+async function saveProjektiRename(id) {
+  const pj=customProjektit.find(x=>x.id===id); if(!pj) return;
+  const nimi=(document.getElementById(`pj-${id}-nimi`)?.value||'').trim();
+  if (!nimi) { showToast('Nimi on pakollinen','error'); return; }
+  if (nimi===pj.nimi) { toggleProjektiEdit(id); return; }
+  if (allProjektitNimet().some(n=>n.toLowerCase()===nimi.toLowerCase())) { showToast('Projekti on jo olemassa','error'); return; }
+  const oldNimi=pj.nimi;
+  const affected=allProspects.filter(p=>p.kampanja===oldNimi && p._rowIndex);
+  try {
+    await sheetPut(`${PROJEKTIT_TAB}!B${pj._rowIndex}`, [[nimi]]);
+    if (affected.length) {
+      await sheetBatchUpdate(affected.map(p=>({range:`${MAIN_TAB}!B${p._rowIndex}`, values:[[nimi]]})));
+      affected.forEach(p=>p.kampanja=nimi);
+    }
+    pj.nimi=nimi;
+    renderProjektitList();
+    populateProjektiSelects();
+    buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard(); renderKanban(); applyYhFilters();
+    showToast(`Projekti nimetty uudelleen: ${nimi}`,'success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+}
+
+async function deleteProjekti(id) {
+  const pj=customProjektit.find(x=>x.id===id); if(!pj) return;
+  const inUse=allProspects.filter(p=>p.kampanja===pj.nimi).length;
+  if (inUse>0) { showToast(`Projektia käyttää ${inUse} tiliä — vaihda ne toiseen projektiin ensin`,'error'); return; }
+  if (!confirm(`Poistetaanko projekti "${pj.nimi}"?`)) return;
+  try {
+    await sheetPut(`${PROJEKTIT_TAB}!A${pj._rowIndex}:C${pj._rowIndex}`,[['','','']]);
+    customProjektit.splice(customProjektit.indexOf(pj),1);
+    renderProjektitList();
+    populateProjektiSelects();
+    showToast('Projekti poistettu','success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -2261,6 +2439,39 @@ async function saveGlobalTask() {
     <div class="modal-body" style="padding:16px">
       <div id="yhmodal-view"></div>
       <div id="yhmodal-edit" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div class="modal-overlay hidden" id="settings-modal" onclick="closeSettingsMaybe(event)">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <div class="modal-title">Asetukset</div>
+      <button class="modal-close" onclick="closeSettings()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="cs-title">Omat tiedot</div>
+      <div class="form-grid">
+        <div class="form-group full"><label>Sähköposti (kirjautuminen)</label><input class="form-control" id="set-email" disabled></div>
+        <div class="form-group"><label>Nimi</label><input class="form-control" id="set-nimi" placeholder="Etunimi Sukunimi"></div>
+        <div class="form-group"><label>Puhelin</label><input class="form-control" id="set-puhelin" placeholder="+358 40…" type="tel"></div>
+        <div class="form-group full"><label>Sähköposti (yhteystieto)</label><input class="form-control" id="set-sahkoposti" placeholder="nimi@sparaenergia.com" type="email"></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-primary btn-sm" onclick="saveMyProfile()">Tallenna</button>
+      </div>
+
+      <div class="cs-title" style="margin-top:22px">Projektit</div>
+      <div id="settings-projektit-list"></div>
+      <div class="yh-add-form">
+        <div class="form-grid">
+          <div class="form-group full"><label>Uusi projekti</label><input class="form-control" id="pj-uusi-nimi" placeholder="Projektin nimi"></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:8px">
+          <button class="btn btn-primary btn-sm" onclick="addProjekti()">+ Lisää projekti</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
