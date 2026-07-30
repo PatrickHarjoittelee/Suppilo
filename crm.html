@@ -576,7 +576,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-30.1';
+const BUILD_ID = '2026-07-30.2';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
 });
@@ -674,22 +674,57 @@ function microsoftClientId() {
   return (localStorage.getItem('suppilo.microsoftClientId') || '').trim();
 }
 
-function loadMsalScript() {
-  if (window.msal) return Promise.resolve();
+const MSAL_CDN_URLS = [
+  'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.39.0/lib/msal-browser.min.js',
+  'https://unpkg.com/@azure/msal-browser@2.39.0/lib/msal-browser.min.js',
+  'https://alcdn.msauth.net/browser/2.39.0/js/msal-browser.min.js'
+];
+
+function loadScriptFromUrl(url, timeoutMs) {
   return new Promise((resolve,reject)=>{
-    const existing=document.querySelector('script[data-msal]');
-    if (existing) {
-      existing.addEventListener('load',resolve,{once:true});
-      existing.addEventListener('error',()=>reject(new Error('Microsoft-kirjautumiskirjastoa ei voitu ladata')),{once:true});
-      return;
-    }
     const s=document.createElement('script');
-    s.src='https://alcdn.msauth.net/browser/2.39.0/js/msal-browser.min.js';
+    let done=false;
+    const timer=setTimeout(()=>{
+      if (done) return;
+      done=true;
+      s.remove();
+      reject(new Error('aikakatkaisu ('+timeoutMs/1000+'s)'));
+    }, timeoutMs);
+    s.src=url;
     s.dataset.msal='true';
-    s.onload=resolve;
-    s.onerror=()=>reject(new Error('Microsoft-kirjautumiskirjastoa ei voitu ladata'));
+    s.onload=()=>{ if(done) return; done=true; clearTimeout(timer); resolve(); };
+    s.onerror=()=>{ if(done) return; done=true; clearTimeout(timer); s.remove(); reject(new Error('lataus epäonnistui')); };
     document.head.appendChild(s);
   });
+}
+
+// Kokeillaan useampaa CDN:ää peräkkäin — jos yksi on estetty verkossa
+// (esim. yritysympäristön palomuuri/DNS-suodatus), toinen usein toimii.
+// Kunkin yrityksen aikakatkaisu on lyhyt jotta jumiutunut lataus ei jätä
+// käyttäjää odottamaan yleistä 45s-aikakatkaisua asti tietämättä miksi.
+async function loadMsalScript() {
+  if (window.msal) return;
+  const existing=document.querySelector('script[data-msal]');
+  if (existing) {
+    await new Promise((resolve,reject)=>{
+      existing.addEventListener('load',resolve,{once:true});
+      existing.addEventListener('error',()=>reject(new Error('Microsoft-kirjautumiskirjastoa ei voitu ladata')),{once:true});
+    });
+    return;
+  }
+  const errors=[];
+  for (const url of MSAL_CDN_URLS) {
+    console.log('loadMsalScript: kokeillaan', url);
+    try {
+      await loadScriptFromUrl(url, 12000);
+      console.log('loadMsalScript: onnistui', url);
+      return;
+    } catch(e) {
+      console.warn('loadMsalScript: epäonnistui', url, e.message);
+      errors.push(url+': '+e.message);
+    }
+  }
+  throw new Error('Microsoft-kirjautumiskirjastoa ei voitu ladata mistään lähteestä — verkko saattaa estää nämä osoitteet ('+errors.join(' / ')+')');
 }
 
 async function initMicrosoft() {
