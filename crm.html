@@ -576,7 +576,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-30.2';
+const BUILD_ID = '2026-07-30.3';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
 });
@@ -607,7 +607,7 @@ const YH_PAGE_SIZE = 60;
 let currentUserEmail = null;
 let currentUser = { email:'', nimi:'', puhelin:'', sahkoposti:'', updated_at:'', _rowIndex:null };
 let customProjektit = [];
-let msalInstance = null, microsoftAccount = null, emailDraftContext = null;
+let msalInstance = null, microsoftAccount = null, emailDraftContext = null, msalInstanceKey = null;
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 let _emailConsentRetried = false;
@@ -674,6 +674,14 @@ function microsoftClientId() {
   return (localStorage.getItem('suppilo.microsoftClientId') || '').trim();
 }
 
+// Azure AD hylkää /common-päätepisteen sovelluksilta jotka on rekisteröity
+// yhden organisaation (single-tenant) sovellukseksi (AADSTS50194) — siksi
+// tarvitaan organisaatiokohtainen tenant-tunnus. Verifioitu verkkotunnus
+// (esim. sparaenergia.com) kelpaa Azuressa samaan tapaan kuin tenant-GUID.
+function microsoftTenant() {
+  return (localStorage.getItem('suppilo.microsoftTenant') || '').trim() || 'sparaenergia.com';
+}
+
 const MSAL_CDN_URLS = [
   'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.39.0/lib/msal-browser.min.js',
   'https://unpkg.com/@azure/msal-browser@2.39.0/lib/msal-browser.min.js',
@@ -730,17 +738,20 @@ async function loadMsalScript() {
 async function initMicrosoft() {
   const clientId=microsoftClientId();
   if (!clientId) throw new Error('Lisää Microsoft-sovelluksen Client ID Asetuksissa');
+  const tenant=microsoftTenant();
+  const key=clientId+'|'+tenant;
   await loadMsalScript();
-  if (!msalInstance || msalInstance.getConfiguration().auth.clientId!==clientId) {
+  if (!msalInstance || msalInstanceKey!==key) {
     msalInstance=new msal.PublicClientApplication({
       auth:{
         clientId,
-        authority:'https://login.microsoftonline.com/common',
+        authority:'https://login.microsoftonline.com/'+tenant,
         redirectUri:window.location.origin+window.location.pathname
       },
       cache:{cacheLocation:'sessionStorage',storeAuthStateInCookie:false}
     });
     await msalInstance.initialize?.();
+    msalInstanceKey=key;
   }
   microsoftAccount=msalInstance.getActiveAccount() || msalInstance.getAllAccounts()[0] || null;
   if (microsoftAccount) msalInstance.setActiveAccount(microsoftAccount);
@@ -2510,6 +2521,7 @@ function openSettings() {
   document.getElementById('set-puhelin').value = currentUser.puhelin || '';
   document.getElementById('set-sahkoposti').value = currentUser.sahkoposti || '';
   document.getElementById('set-ms-client-id').value = microsoftClientId();
+  document.getElementById('set-ms-tenant').value = microsoftTenant();
   const redirEl=document.getElementById('ms-redirect-uri');
   if (redirEl) redirEl.value = window.location.origin + window.location.pathname;
   initMicrosoft().then(updateMicrosoftStatus).catch(()=>updateMicrosoftStatus());
@@ -2545,9 +2557,12 @@ async function saveMyProfile() {
 
 function saveMicrosoftSettings() {
   const clientId=(document.getElementById('set-ms-client-id')?.value||'').trim();
+  const tenant=(document.getElementById('set-ms-tenant')?.value||'').trim();
   if (clientId) localStorage.setItem('suppilo.microsoftClientId',clientId);
   else localStorage.removeItem('suppilo.microsoftClientId');
-  msalInstance=null; microsoftAccount=null;
+  if (tenant) localStorage.setItem('suppilo.microsoftTenant',tenant);
+  else localStorage.removeItem('suppilo.microsoftTenant');
+  msalInstance=null; microsoftAccount=null; msalInstanceKey=null;
   updateMicrosoftStatus();
   // Esiladataan MSAL-kirjasto ja -instanssi heti, jotta "Yhdistä Outlook"
   // -klikkaus voi avata popupin viiveettä eikä selain ehdi tulkita sitä
@@ -2937,10 +2952,10 @@ async function saveGlobalTask() {
       <div class="ms-setup-guide">
         <div style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Käyttöönotto (kerran per organisaatio)</div>
         <ol style="font-size:12px;line-height:1.7;margin:0 0 10px 18px;padding:0">
-          <li>Avaa Microsoft Entra ja luo <strong>uusi sovellusrekisteröinti</strong> (alustaksi <em>Single-page application</em>).</li>
+          <li>Avaa Microsoft Entra ja luo <strong>uusi sovellusrekisteröinti</strong> (alustaksi <em>Single-page application</em>, tilityyppi <em>vain tämä organisaatio</em>).</li>
           <li>Liitä alla näkyvä <strong>Redirect URI</strong> sovellukseen täsmälleen sellaisenaan.</li>
           <li>Lisää API-oikeudet: Microsoft Graph → Delegated → <code>Mail.Send</code> + <code>Mail.Read</code>, ja myönnä admin-suostumus koko organisaatiolle.</li>
-          <li>Kopioi sovelluksen <strong>Application (client) ID</strong> Overview-sivulta alla olevaan kenttään.</li>
+          <li>Kopioi sovelluksen <strong>Application (client) ID</strong> Overview-sivulta ja tarkista <strong>organisaation verkkotunnus</strong> alla oleviin kenttiin.</li>
         </ol>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
           <a class="btn btn-outlook btn-sm" href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener">🔗 Avaa Microsoft Entra – Sovellusrekisteröinnit</a>
@@ -2957,6 +2972,15 @@ async function saveGlobalTask() {
         <div class="form-group full">
           <label>Microsoft-sovelluksen Client ID</label>
           <input class="form-control" id="set-ms-client-id" placeholder="00000000-0000-0000-0000-000000000000">
+        </div>
+        <div class="form-group full">
+          <label>Organisaation verkkotunnus (tenant)</label>
+          <input class="form-control" id="set-ms-tenant" placeholder="sparaenergia.com">
+          <div style="font-size:11px;color:var(--text2);margin-top:4px">
+            Täytetty valmiiksi oletuksena. Muuta vain jos kirjautuminen antaa virheen <code>AADSTS50194</code>
+            tai <code>AADSTS90002</code> — silloin tähän tarvitaan sovelluksen todellinen tenant-tunnus
+            (Entra → sovellusrekisteröinti → Overview → "Directory (tenant) ID").
+          </div>
         </div>
       </div>
       <div class="integration-status" style="margin-top:8px">
