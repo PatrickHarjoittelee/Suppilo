@@ -570,7 +570,7 @@
 <script>
 const CLIENT_ID = '305442089079-umco1cv64ei5i8vu9pfefo4dm4fp3kj4.apps.googleusercontent.com';
 const SHEET_ID  = '1NpkHd0nTpWvaOP6GrwyFo1-P2_dohUn6BdTV-rmT0og';
-const SCOPE     = 'https://www.googleapis.com/auth/spreadsheets';
+const SCOPE     = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email';
 const CRM_TAB   = 'CRM-tila';
 const CRM_COLS  = ['spara_id','vaihe','omistaja','seuraava_toimenpide','seuraava_pvm','muistiinpanot','aktiviteetit','updated_at','status','tili_override'];
 const MAIN_TAB  = 'Tilit';
@@ -610,10 +610,11 @@ window.addEventListener('load', () => {
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('app').style.display = 'block';
         try {
-          const ti = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${accessToken}`);
-          const j = await ti.json();
-          currentUserEmail = j.email || null;
-        } catch(_) {}
+          const ui = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: auth() });
+          const j = await ui.json();
+          currentUserEmail = (j.email || '').trim().toLowerCase() || null;
+          if (!currentUserEmail) console.error('Google userinfo ei palauttanut sähköpostia:', j);
+        } catch(e) { console.error('Google userinfo -haku epäonnistui:', e); }
         if (microsoftClientId()) initMicrosoft().catch(()=>{});
         await loadData();
       },
@@ -683,7 +684,17 @@ async function connectMicrosoft() {
     updateMicrosoftStatus();
     showToast('Outlook yhdistetty ✓','success');
   } catch(e) {
-    if (e.errorCode!=='user_cancelled') showToast('Outlook-yhteys epäonnistui: '+e.message,'error');
+    console.error('Microsoft-kirjautuminen epäonnistui:', e);
+    if (e.errorCode==='user_cancelled') return;
+    if (e.errorCode==='popup_window_error' || e.errorCode==='empty_window_error') {
+      showToast('Selain esti ponnahdusikkunan — salli ponnahdusikkunat tälle sivulle ja yritä uudelleen','error');
+    } else if (e.errorCode==='invalid_client' || /AADSTS700016/.test(e.message||'')) {
+      showToast('Client ID on väärä tai sovellusta ei löydy Entrasta','error');
+    } else if (/AADSTS50011/.test(e.message||'')) {
+      showToast('Redirect URI ei täsmää Entra-rekisteröintiin — tarkista Asetuksista kopioitu arvo','error');
+    } else {
+      showToast('Outlook-yhteys epäonnistui: '+(e.errorCode||e.message||'tuntematon virhe'),'error');
+    }
   }
 }
 
@@ -952,7 +963,7 @@ async function loadData() {
     }
     const usersRows = await sheetGet(`${USERS_TAB}!A:E`);
     const usersData = usersRows.slice(1);
-    const myIdx = usersData.findIndex(r=>(r[0]||'').toLowerCase()===(currentUserEmail||'').toLowerCase());
+    const myIdx = usersData.findIndex(r=>(r[0]||'').trim().toLowerCase()===(currentUserEmail||'').trim().toLowerCase());
     if (myIdx>=0) {
       const r=usersData[myIdx];
       currentUser = { email:r[0]||'', nimi:r[1]||'', puhelin:r[2]||'', sahkoposti:r[3]||'', updated_at:r[4]||'', _rowIndex:myIdx+2 };
@@ -2407,6 +2418,7 @@ async function saveMyProfile() {
   const puhelin=(document.getElementById('set-puhelin')?.value||'').trim();
   const sahkoposti=(document.getElementById('set-sahkoposti')?.value||'').trim();
   const email=currentUser.email||currentUserEmail||'';
+  if (!email) { showToast('Google-sähköpostia ei saatu — kirjaudu ulos ja sisään uudelleen','error'); return; }
   const row=[email, nimi, puhelin, sahkoposti, new Date().toISOString()];
   try {
     if (currentUser._rowIndex) {
@@ -2427,6 +2439,10 @@ function saveMicrosoftSettings() {
   else localStorage.removeItem('suppilo.microsoftClientId');
   msalInstance=null; microsoftAccount=null;
   updateMicrosoftStatus();
+  // Esiladataan MSAL-kirjasto ja -instanssi heti, jotta "Yhdistä Outlook"
+  // -klikkaus voi avata popupin viiveettä eikä selain ehdi tulkita sitä
+  // ei-käyttäjälähtöiseksi ja estää sitä.
+  if (clientId) initMicrosoft().then(updateMicrosoftStatus).catch(e=>console.error('MSAL-esilataus epäonnistui:',e));
   showToast('Outlook-asetus tallennettu ✓','success');
 }
 
