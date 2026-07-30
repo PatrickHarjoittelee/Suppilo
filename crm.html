@@ -580,7 +580,7 @@ const USERS_COLS = ['email','nimi','puhelin','sahkoposti','updated_at'];
 const PROJEKTIT_TAB = 'Projektit';
 const PROJEKTIT_COLS = ['id','nimi','created_at'];
 const BASE_PROJEKTIT = ['ETJ+','Talopakettivalmistajat FIN','Talopakettivalmistajat SWE','Muu Projekti'];
-const MS_GRAPH_SCOPES = ['Mail.Send'];
+const MS_GRAPH_SCOPES = ['Mail.Send','Mail.Read'];
 
 let accessToken = null, tokenClient = null;
 let allProspects = [], filteredRows = [], currentId = null;
@@ -612,6 +612,7 @@ window.addEventListener('load', () => {
           const j = await ti.json();
           currentUserEmail = j.email || null;
         } catch(_) {}
+        if (microsoftClientId()) initMicrosoft().catch(()=>{});
         await loadData();
       },
     });
@@ -778,6 +779,59 @@ async function sendOutlookEmail() {
     showToast('Lähetys epäonnistui: '+e.message,'error');
   } finally {
     btn.disabled=false; btn.textContent='Lähetä Outlookista';
+  }
+}
+
+// Hakee VAIN kontaktilta saapuneet viestit (ei omia lähetettyjä — ne on jo
+// kirjattu lähetyshetkellä sendOutlookEmail:ssa, joten kaksinkertaista
+// kirjausta ei synny). Uudet viestit tallennetaan graphId:llä varustettuna
+// aktiviteettina, jotta sama viesti ei tallennu uudelleen seuraavalla synkillä.
+async function fetchIncomingEmails(address, token) {
+  const safeAddr=address.replace(/'/g,"''");
+  const url='https://graph.microsoft.com/v1.0/me/messages'
+    +`?$filter=${encodeURIComponent(`from/emailAddress/address eq '${safeAddr}'`)}`
+    +'&$select=id,subject,bodyPreview,receivedDateTime,webLink'
+    +'&$orderby=receivedDateTime desc&$top=20';
+  const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  const data=await r.json();
+  return data.value||[];
+}
+
+async function syncContactEmails(contactId, opts) {
+  const silent=!!(opts&&opts.silent);
+  const c=allContacts.find(x=>x.id===contactId); if (!c||!c.sahkoposti) return;
+  const p=allProspects.find(x=>x.spara_id===c.tili_id); if (!p) return;
+  if (!microsoftAccount) { if (!silent) showToast('Yhdistä Outlook-tili Asetuksista ensin','error'); return; }
+  const statusEl=document.getElementById('yh-email-sync-status');
+  if (statusEl) statusEl.textContent='Tarkistetaan…';
+  try {
+    const token=await microsoftAccessToken();
+    const msgs=await fetchIncomingEmails(c.sahkoposti.trim(), token);
+    const acts=parseActs(p);
+    const known=new Set(acts.filter(a=>a.graphId).map(a=>a.graphId));
+    const uusi=msgs.filter(m=>!known.has(m.id))
+      .sort((a,b)=>new Date(a.receivedDateTime)-new Date(b.receivedDateTime));
+    uusi.forEach(m=>{
+      acts.push({
+        tyyppi:'sahkoposti',
+        teksti:`Saapunut: "${m.subject||'(ei aihetta)'}" — ${m.bodyPreview||''}`.trim(),
+        tekija:null,
+        created_at:m.receivedDateTime||new Date().toISOString(),
+        graphId:m.id,
+        graphLink:m.webLink||null
+      });
+    });
+    if (uusi.length) {
+      p.aktiviteetit=JSON.stringify(acts);
+      await saveCrmState(p);
+      if (currentId===p.spara_id) renderActivities(p);
+    }
+    if (statusEl) statusEl.textContent='Viimeksi tarkistettu: '+fmtDT(new Date().toISOString());
+    if (!silent) showToast(uusi.length?`${uusi.length} uutta viestiä löytyi ✓`:'Ei uusia viestejä','success');
+  } catch(e) {
+    if (statusEl) statusEl.textContent='Tarkistus epäonnistui';
+    if (!silent) showToast('Sähköpostien haku epäonnistui: '+e.message,'error');
   }
 }
 
@@ -2167,7 +2221,9 @@ function openYhModal(cid) {
   }
 
   html+=`<div style="margin-top:18px;border-top:1px solid var(--border);padding-top:12px">
-    ${c.sahkoposti?`<button class="btn btn-outlook btn-sm" onclick="openEmailComposer('${c.id}')">✉️ Lähetä sähköposti</button>`:''}
+    ${c.sahkoposti?`<button class="btn btn-outlook btn-sm" onclick="openEmailComposer('${c.id}')">✉️ Lähetä sähköposti</button>
+    <button class="btn btn-ghost btn-sm" onclick="syncContactEmails('${c.id}')">🔄 Tarkista sähköpostit</button>
+    <div id="yh-email-sync-status" style="font-size:11px;color:var(--text2);margin-top:6px">${microsoftAccount?'':'Yhdistä Outlook-tili Asetuksista nähdäksesi saapuneet viestit'}</div>`:''}
     <button class="btn btn-danger btn-sm" onclick="confirmDeleteContact('${c.id}')">🗑️ Poista yhteyshenkilö</button>
   </div>`;
 
@@ -2175,6 +2231,7 @@ function openYhModal(cid) {
   document.getElementById('yhmodal-view').style.display='';
   document.getElementById('yhmodal-edit').style.display='none';
   document.getElementById('yhmodal-overlay').classList.remove('hidden');
+  if (c.sahkoposti && microsoftAccount) syncContactEmails(cid, {silent:true});
 }
 function closeYhModal() { document.getElementById('yhmodal-overlay').classList.add('hidden'); currentYhId=null; }
 function closeYhModalMaybe(e) { if (e.target===document.getElementById('yhmodal-overlay')) closeYhModal(); }
@@ -2755,7 +2812,12 @@ async function saveGlobalTask() {
         <button class="btn btn-ghost btn-sm" id="ms-disconnect-btn" style="display:none" onclick="disconnectMicrosoft()">Katkaise</button>
       </div>
       <div style="font-size:11px;color:var(--text2);line-height:1.5;margin-top:7px">
-        Suppilo pyytää vain sähköpostin lähetysoikeuden (Mail.Send). Client ID ei ole salasana.
+        Suppilo pyytää lähetysoikeuden (Mail.Send) ja lukuoikeuden (Mail.Read).
+        Microsoft myöntää Mail.Read-oikeuden koko postilaatikkoosi, mutta
+        Suppilon koodi hakee sillä ainoastaan CRM:ssä tunnistettujen
+        yhteyshenkilöiden lähettämiä viestejä — ei muuta postia selaa tai
+        tallenna. Client ID ei ole salasana. Salasanaasi ei koskaan syötetä
+        Suppiloon — kirjautuminen tapahtuu Microsoftin omassa ikkunassa.
       </div>
 
       <div class="cs-title" style="margin-top:22px">Projektit</div>
