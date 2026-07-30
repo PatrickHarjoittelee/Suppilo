@@ -83,6 +83,10 @@
     .email-preview { min-height:220px;resize:vertical;line-height:1.5; }
     .ms-setup-guide { background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px; }
     .ms-setup-guide code { background:var(--bg4);padding:1px 5px;border-radius:4px;font-size:11px; }
+    .ms-connect-feedback { margin-top:8px;padding:9px 12px;border-radius:var(--radius);font-size:12px;line-height:1.5;background:var(--bg3);border:1px solid var(--border);color:var(--text2); }
+    .ms-connect-feedback.ms-pending { border-color:var(--orange);color:var(--orange); }
+    .ms-connect-feedback.ms-success { border-color:var(--green);color:var(--green); }
+    .ms-connect-feedback.ms-error { border-color:var(--red);color:var(--red); }
 
     /* Summary */
     .summary-bar { display:flex;gap:12px;flex-wrap:wrap;padding:14px 24px;background:var(--bg2);border-bottom:1px solid var(--border); }
@@ -699,26 +703,58 @@ async function initMicrosoft() {
   return msalInstance;
 }
 
+function setMsFeedback(text, state) {
+  const el=document.getElementById('ms-connect-feedback');
+  if (!el) return;
+  if (!text) { el.style.display='none'; el.textContent=''; return; }
+  el.textContent=text;
+  el.className='ms-connect-feedback'+(state?' ms-'+state:'');
+  el.style.display='';
+}
+
 async function connectMicrosoft() {
+  const btn=document.getElementById('ms-connect-btn');
+  console.log('connectMicrosoft: käynnistetty, clientId=', microsoftClientId());
+  if (btn) { btn.disabled=true; btn.textContent='Yhdistetään…'; }
+  setMsFeedback('Yhdistetään… hyväksy kirjautuminen avautuvassa Microsoft-ikkunassa. Jos ikkunaa ei näy, tarkista onko selain estänyt sen (kuvake osoiterivillä) tai jäikö se toisen ikkunan taakse.', 'pending');
+  const timeoutId=setTimeout(()=>{
+    console.warn('connectMicrosoft: ei vastausta 45 sekunnissa');
+    setMsFeedback('✕ Ei vastausta 45 sekunnissa. Yleisin syy: selain esti ponnahdusikkunan hiljaa. Salli ponnahdusikkunat tälle sivulle ja yritä uudelleen.', 'error');
+    if (btn) { btn.disabled=false; btn.textContent='Yhdistä Outlook'; }
+  }, 45000);
   try {
     const app=await initMicrosoft();
+    console.log('connectMicrosoft: MSAL alustettu, avataan loginPopup');
     const result=await app.loginPopup({scopes:MS_GRAPH_SCOPES,prompt:'select_account'});
+    clearTimeout(timeoutId);
     microsoftAccount=result.account;
     app.setActiveAccount(microsoftAccount);
     updateMicrosoftStatus();
+    console.log('connectMicrosoft: onnistui', microsoftAccount);
+    setMsFeedback('✓ Yhdistetty: '+(microsoftAccount.username||microsoftAccount.name||'Microsoft-tili'), 'success');
     showToast('Outlook yhdistetty ✓','success');
   } catch(e) {
-    console.error('Microsoft-kirjautuminen epäonnistui:', e);
-    if (e.errorCode==='user_cancelled') return;
+    clearTimeout(timeoutId);
+    console.error('connectMicrosoft: epäonnistui', e);
+    if (e.errorCode==='user_cancelled') { setMsFeedback('Kirjautuminen peruttu.', ''); return; }
+    let msg;
     if (e.errorCode==='popup_window_error' || e.errorCode==='empty_window_error') {
-      showToast('Selain esti ponnahdusikkunan — salli ponnahdusikkunat tälle sivulle ja yritä uudelleen','error');
+      msg='✕ Selain esti ponnahdusikkunan. Salli ponnahdusikkunat tälle sivulle (yleensä kuvake osoiterivin oikeassa reunassa) ja yritä uudelleen.';
     } else if (e.errorCode==='invalid_client' || /AADSTS700016/.test(e.message||'')) {
-      showToast('Client ID on väärä tai sovellusta ei löydy Entrasta','error');
+      msg='✕ Client ID on väärä tai sovellusta ei löydy Entrasta. Tarkista Client ID Entran Overview-sivulta.';
     } else if (/AADSTS50011/.test(e.message||'')) {
-      showToast('Redirect URI ei täsmää Entra-rekisteröintiin — tarkista Asetuksista kopioitu arvo','error');
+      msg='✕ Redirect URI ei täsmää Entra-rekisteröintiin. Vertaa yllä näkyvää Redirect URI:a Entran sovelluksen Authentication-asetuksiin.';
+    } else if (/AADSTS65001/.test(e.message||'')) {
+      msg='✕ Oikeuksia (Mail.Send/Mail.Read) ei ole hyväksytty. Käy Entran sovelluksen API-oikeuksissa ja myönnä admin-suostumus.';
+    } else if (/AADSTS90561|AADSTS9002326/.test(e.message||'')) {
+      msg='✕ Sovellus ei ole rekisteröity Single-page application (SPA) -tyyppisenä Entrassa — tarkista Authentication-välilehden alusta.';
     } else {
-      showToast('Outlook-yhteys epäonnistui: '+(e.errorCode||e.message||'tuntematon virhe'),'error');
+      msg='✕ Outlook-yhteys epäonnistui: '+(e.errorCode?e.errorCode+' — ':'')+(e.message||'tuntematon virhe');
     }
+    setMsFeedback(msg, 'error');
+    showToast('Outlook-yhteys epäonnistui','error');
+  } finally {
+    if (btn) { btn.disabled=false; btn.textContent='Yhdistä Outlook'; }
   }
 }
 
@@ -728,6 +764,7 @@ async function disconnectMicrosoft() {
   catch(_) {}
   microsoftAccount=null;
   updateMicrosoftStatus();
+  setMsFeedback('', '');
 }
 
 function updateMicrosoftStatus() {
@@ -2886,6 +2923,7 @@ async function saveGlobalTask() {
         <button class="btn btn-outlook btn-sm" id="ms-connect-btn" onclick="connectMicrosoft()">Yhdistä Outlook</button>
         <button class="btn btn-ghost btn-sm" id="ms-disconnect-btn" style="display:none" onclick="disconnectMicrosoft()">Katkaise</button>
       </div>
+      <div id="ms-connect-feedback" class="ms-connect-feedback" style="display:none"></div>
       <div style="font-size:11px;color:var(--text2);line-height:1.5;margin-top:7px">
         Suppilo pyytää lähetysoikeuden (Mail.Send) ja lukuoikeuden (Mail.Read).
         Microsoft myöntää Mail.Read-oikeuden koko postilaatikkoosi, mutta
