@@ -82,9 +82,9 @@
     .integration-dot.connected { background:var(--green); }
     .email-toolbar { display:flex;gap:4px;margin-bottom:6px; }
     .email-toolbar button { min-width:30px; }
-    .email-body-html img { max-width:100%;height:auto;cursor:pointer; }
+    .email-body-html img { max-width:100%;height:auto;cursor:pointer;-webkit-user-drag:none;user-drag:none; }
     .img-resize-frame { position:fixed;border:2px solid var(--accent);box-sizing:border-box;pointer-events:none;z-index:2100; }
-    .img-resize-handle { position:absolute;width:12px;height:12px;right:-7px;bottom:-7px;background:var(--accent);border:2px solid #fff;border-radius:50%;cursor:nwse-resize;pointer-events:auto; }
+    .img-resize-handle { position:absolute;width:16px;height:16px;right:-9px;bottom:-9px;background:var(--accent);border:2px solid #fff;border-radius:50%;cursor:nwse-resize;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none; }
     .img-resize-label { position:absolute;top:-24px;left:0;background:var(--accent);color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;white-space:nowrap; }
     .emoji-picker { position:fixed;z-index:2000;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);width:224px; }
     .emoji-picker.hidden { display:none; }
@@ -592,7 +592,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-30.9';
+const BUILD_ID = '2026-07-30.10';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -1096,13 +1096,18 @@ let _imgResize=null;
 function selectEditableImage(img) {
   if (_imgResize && _imgResize.img===img) return;
   deselectEditableImage();
+  // Kuvat ovat selaimessa oletuksena draggable=true (natiivi "raahaa kuva
+  // ulos" -toiminto) — ilman tätä hiiren painallus kahvan reunalla saattaa
+  // käynnistää natiivin raahauksen tavallisten liikkumistapahtumien sijaan,
+  // jolloin koon muokkaus ei reagoi mihinkään.
+  img.draggable=false;
   const frame=document.createElement('div');
   frame.className='img-resize-frame';
   frame.innerHTML='<div class="img-resize-handle"></div><div class="img-resize-label"></div>';
   document.body.appendChild(frame);
   _imgResize={img, frame};
   positionImgResizeFrame();
-  frame.querySelector('.img-resize-handle').addEventListener('mousedown', startImgResizeDrag);
+  frame.querySelector('.img-resize-handle').addEventListener('pointerdown', startImgResizeDrag);
 }
 function deselectEditableImage() {
   if (!_imgResize) return;
@@ -1124,13 +1129,23 @@ function updateImgResizeLabel() {
   const label=_imgResize.frame.querySelector('.img-resize-label');
   if (label) label.textContent=`${w} px (${pct}%)`;
 }
+// Pointer Capture varmistaa että kahva saa liike-/nostotapahtumat läpi koko
+// vedon ajan riippumatta mihin hiiri fyysisesti liikkuu — kestävämpi kuin
+// pelkkä document-tason mousemove-kuuntelu pienelle kahvalle.
 function startImgResizeDrag(ev) {
   ev.preventDefault(); ev.stopPropagation();
   if (!_imgResize) return;
+  const handle=ev.currentTarget;
   _imgResize.startX=ev.clientX;
   _imgResize.startW=_imgResize.img.getBoundingClientRect().width;
-  document.addEventListener('mousemove', onImgResizeDrag);
-  document.addEventListener('mouseup', endImgResizeDrag);
+  // maxWidth ohitetaan eksplisiittisesti tästä eteenpäin tälle kuvalle —
+  // muuten .email-body-html img { max-width:100% } -sääntö estäisi kasvattamisen
+  // yli kentän leveyden vaikka style.width asetettaisiin suuremmaksi.
+  _imgResize.img.style.maxWidth='none';
+  try { handle.setPointerCapture(ev.pointerId); } catch(_) {}
+  handle.addEventListener('pointermove', onImgResizeDrag);
+  handle.addEventListener('pointerup', endImgResizeDrag);
+  handle.addEventListener('pointercancel', endImgResizeDrag);
 }
 function onImgResizeDrag(ev) {
   if (!_imgResize) return;
@@ -1143,9 +1158,12 @@ function onImgResizeDrag(ev) {
   _imgResize.img.style.height='auto';
   positionImgResizeFrame();
 }
-function endImgResizeDrag() {
-  document.removeEventListener('mousemove', onImgResizeDrag);
-  document.removeEventListener('mouseup', endImgResizeDrag);
+function endImgResizeDrag(ev) {
+  const handle=ev.currentTarget;
+  handle.removeEventListener('pointermove', onImgResizeDrag);
+  handle.removeEventListener('pointerup', endImgResizeDrag);
+  handle.removeEventListener('pointercancel', endImgResizeDrag);
+  try { handle.releasePointerCapture(ev.pointerId); } catch(_) {}
 }
 document.addEventListener('click', ev=>{
   const img=ev.target.closest ? ev.target.closest('.email-body-html img') : null;
