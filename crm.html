@@ -80,7 +80,13 @@
     .integration-status { display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);font-size:12px;color:var(--text2); }
     .integration-dot { width:8px;height:8px;border-radius:50%;background:var(--text2);flex-shrink:0; }
     .integration-dot.connected { background:var(--green); }
-    .email-preview { min-height:220px;resize:vertical;line-height:1.5; }
+    .email-toolbar { display:flex;gap:4px;margin-bottom:6px; }
+    .email-toolbar button { min-width:30px; }
+    .email-body-html { min-height:220px;max-height:420px;overflow-y:auto;line-height:1.5;cursor:text; }
+    .email-body-html:focus { border-color:var(--accent); }
+    .email-attachment-chip { display:inline-flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:4px 8px;font-size:11px;margin:4px 6px 0 0; }
+    .email-attachment-chip button { background:none;border:none;color:var(--text2);cursor:pointer;font-size:12px;padding:0; }
+    .email-attachment-chip button:hover { color:var(--red); }
     .ms-setup-guide { background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px; }
     .ms-setup-guide code { background:var(--bg4);padding:1px 5px;border-radius:4px;font-size:11px; }
     .ms-connect-feedback { margin-top:8px;padding:9px 12px;border-radius:var(--radius);font-size:12px;line-height:1.5;background:var(--bg3);border:1px solid var(--border);color:var(--text2); }
@@ -479,6 +485,7 @@
             <div style="grid-column:1/-1;display:flex;gap:6px;align-items:center">
               <button class="btn btn-ghost btn-sm" id="task-del-btn" onclick="deleteTaskFromForm()" style="display:none;color:var(--red)" title="Poista tehtävä">🗑️</button>
               <div style="flex:1"></div>
+              <button class="btn btn-outlook btn-sm" id="task-email-btn" style="display:none" onclick="openEmailComposerFromTask()">✉️ Kirjoita ja lähetä</button>
               <button class="btn btn-ghost btn-sm" onclick="closeTaskForm()">Peruuta</button>
               <button class="btn btn-primary btn-sm" id="task-save-btn" onclick="saveTaskForm()">+ Lisää</button>
             </div>
@@ -576,7 +583,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-30.4';
+const BUILD_ID = '2026-07-30.5';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
 });
@@ -608,6 +615,7 @@ let currentUserEmail = null;
 let currentUser = { email:'', nimi:'', puhelin:'', sahkoposti:'', updated_at:'', _rowIndex:null };
 let customProjektit = [];
 let msalInstance = null, microsoftAccount = null, emailDraftContext = null, msalInstanceKey = null;
+let emailAttachments = [];
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 let _emailConsentRetried = false;
@@ -852,55 +860,170 @@ async function microsoftAccessToken() {
   }
 }
 
-function openEmailComposer(contactId) {
-  const c=allContacts.find(x=>x.id===contactId); if(!c) return;
-  const p=allProspects.find(x=>x.spara_id===c.tili_id); if(!p) return;
-  if (!c.sahkoposti) { showToast('Yhteyshenkilöltä puuttuu sähköpostiosoite','error'); return; }
-  emailDraftContext={contactId,tiliId:p.spara_id};
-  document.getElementById('email-to').value=c.sahkoposti;
-  document.getElementById('email-subject').value=`${p.yritys_nimi} – yhteydenotto`;
+// opts: {contactId} — avattu yhteyshenkilökortilta (vastaanottaja kiinteä), tai
+// {tiliId, taskId, contactId?, subject?} — avattu tilin Tehtävät-lomakkeelta
+// (taskId asetettu jos muokataan olemassa olevaa sähköposti-tikettiä).
+function openEmailComposer(opts) {
+  if (typeof opts==='string') opts={contactId:opts};
+  opts=opts||{};
+  let c=opts.contactId ? allContacts.find(x=>x.id===opts.contactId) : null;
+  const p=c ? allProspects.find(x=>x.spara_id===c.tili_id)
+            : allProspects.find(x=>x.spara_id===opts.tiliId);
+  if (!p) return;
+  const withEmail=allContacts.filter(x=>x.tili_id===p.spara_id && x.sahkoposti);
+  if (opts.contactId && !c) { showToast('Yhteyshenkilöltä puuttuu sähköpostiosoite','error'); return; }
+  if (!c && withEmail.length===1) c=withEmail[0];
+
+  emailDraftContext={contactId:c?c.id:null, tiliId:p.spara_id, taskId:opts.taskId||null};
+
+  const pickerWrap=document.getElementById('email-to-picker-wrap');
+  const picker=document.getElementById('email-to-contact');
+  if (!opts.contactId && withEmail.length) {
+    picker.innerHTML='<option value="">— valitse yhteyshenkilö —</option>'+
+      withEmail.map(x=>`<option value="${x.id}"${c&&x.id===c.id?' selected':''}>${esc(x.nimi)} (${esc(x.sahkoposti)})</option>`).join('');
+    pickerWrap.style.display='';
+  } else {
+    pickerWrap.style.display='none';
+  }
+
+  document.getElementById('email-to').value=c?c.sahkoposti:'';
+  document.getElementById('email-subject').value=opts.subject||`${p.yritys_nimi} – yhteydenotto`;
   const sender=currentUser.nimi||'';
-  document.getElementById('email-body').value=`Hei ${c.nimi.split(/\s+/)[0]},\n\n\n\nYstävällisin terveisin\n${sender}`;
+  const greetName=c?c.nimi.split(/\s+/)[0]:'';
+  document.getElementById('email-body-html').innerHTML=
+    `<p>Hei${greetName?' '+esc(greetName)+',':','}</p><p><br></p><p>Ystävällisin terveisin<br>${esc(sender)}</p>`;
+  emailAttachments=[];
+  renderEmailAttachments();
   document.getElementById('email-send-btn').disabled=false;
   document.getElementById('email-modal').classList.remove('hidden');
+}
+
+// Avaa saman lomakkeen tilin Tehtävät-välilehden "✉️ Sähköposti"-tyypin
+// kautta — yhdistää tehtävän luonnin oikeaan Outlook-lähetykseen sen sijaan
+// että tehtävä jäisi pelkäksi käsin päivitettäväksi tilamerkinnäksi.
+function openEmailComposerFromTask() {
+  if (!currentId) return;
+  const p=allProspects.find(x=>x.spara_id===currentId); if (!p) return;
+  const editId=document.getElementById('task-edit-id')?.value||null;
+  const existing=editId?parseActs(p).find(a=>a.id===editId):null;
+  const subject=(document.getElementById('task-aihe')?.value||'').trim();
+  openEmailComposer({tiliId:currentId, taskId:editId||null, contactId:existing?.contactId||null, subject:subject||undefined});
+}
+
+function pickEmailToContact(contactId) {
+  if (!emailDraftContext) return;
+  const c=allContacts.find(x=>x.id===contactId);
+  emailDraftContext.contactId=c?c.id:null;
+  document.getElementById('email-to').value=c?c.sahkoposti:'';
 }
 
 function closeEmailComposer() {
   document.getElementById('email-modal').classList.add('hidden');
   emailDraftContext=null;
+  emailAttachments=[];
+  renderEmailAttachments();
 }
 function closeEmailComposerMaybe(e) { if(e.target===document.getElementById('email-modal')) closeEmailComposer(); }
+
+function emailFormat(cmd) {
+  document.getElementById('email-body-html').focus();
+  document.execCommand(cmd,false,null);
+}
+function emailInsertLink() {
+  const url=(prompt('Linkin osoite (https://…)')||'').trim();
+  if (!url) return;
+  document.getElementById('email-body-html').focus();
+  document.execCommand('createLink',false,url);
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');
+    reader.onerror=()=>reject(reader.error||new Error('Tiedoston luku epäonnistui'));
+    reader.readAsDataURL(file);
+  });
+}
+
+// Graphin /sendMail-rajapinta hyväksyy liitteet suoraan pyynnön mukana vain
+// pieninä (base64 kasvattaa kokoa ~1.37x) — isommat vaatisivat erillisen
+// upload session -mekanismin, jota ei ole toteutettu.
+const EMAIL_ATTACHMENT_MAX_TOTAL = 3*1024*1024;
+
+async function addEmailAttachments(fileList) {
+  const files=[...fileList];
+  const input=document.getElementById('email-attachment-input'); if(input) input.value='';
+  for (const file of files) {
+    const currentTotal=emailAttachments.reduce((s,a)=>s+a.size,0);
+    if (currentTotal+file.size>EMAIL_ATTACHMENT_MAX_TOTAL) {
+      showToast(`Liite "${file.name}" ohitettu — liitteiden yhteiskoko ylittäisi 3 Mt:n rajan`,'error');
+      continue;
+    }
+    try {
+      const contentBytes=await fileToBase64(file);
+      emailAttachments.push({name:file.name, contentType:file.type||'application/octet-stream', size:file.size, contentBytes});
+    } catch(e) { showToast('Liitteen "'+file.name+'" lukeminen epäonnistui','error'); }
+  }
+  renderEmailAttachments();
+}
+function removeEmailAttachment(i) { emailAttachments.splice(i,1); renderEmailAttachments(); }
+function renderEmailAttachments() {
+  const wrap=document.getElementById('email-attachments'); if (!wrap) return;
+  wrap.innerHTML=emailAttachments.map((a,i)=>
+    `<span class="email-attachment-chip">📎 ${esc(a.name)} <span style="color:var(--text2)">(${(a.size/1024).toFixed(0)} kt)</span> <button type="button" onclick="removeEmailAttachment(${i})" title="Poista">✕</button></span>`
+  ).join('');
+}
 
 async function sendOutlookEmail() {
   if (!emailDraftContext) return;
   const to=document.getElementById('email-to').value.trim();
   const subject=document.getElementById('email-subject').value.trim();
-  const body=document.getElementById('email-body').value.trim();
-  if (!to||!subject||!body) { showToast('Vastaanottaja, aihe ja viesti ovat pakollisia','error'); return; }
+  const bodyEl=document.getElementById('email-body-html');
+  const bodyHtml=(bodyEl.innerHTML||'').trim();
+  const bodyEmpty=!bodyEl.textContent.trim() && !bodyEl.querySelector('img,a');
+  if (!to||!subject||bodyEmpty) { showToast('Vastaanottaja, aihe ja viesti ovat pakollisia','error'); return; }
   const btn=document.getElementById('email-send-btn');
   if (!confirm(`Lähetetäänkö sähköposti Outlook-tililtä osoitteeseen ${to}?`)) return;
   btn.disabled=true; btn.textContent='Lähetetään…';
   try {
     const token=await microsoftAccessToken();
+    const message={
+      subject,
+      body:{contentType:'HTML',content:bodyHtml},
+      toRecipients:[{emailAddress:{address:to}}]
+    };
+    if (emailAttachments.length) {
+      message.attachments=emailAttachments.map(a=>({
+        '@odata.type':'#microsoft.graph.fileAttachment',
+        name:a.name, contentType:a.contentType, contentBytes:a.contentBytes
+      }));
+    }
     const response=await fetch('https://graph.microsoft.com/v1.0/me/sendMail',{
       method:'POST',
       headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
-      body:JSON.stringify({
-        message:{
-          subject,
-          body:{contentType:'Text',content:body},
-          toRecipients:[{emailAddress:{address:to}}]
-        },
-        saveToSentItems:true
-      })
+      body:JSON.stringify({message, saveToSentItems:true})
     });
     if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+
     const p=allProspects.find(x=>x.spara_id===emailDraftContext.tiliId);
     if (p) {
-      addActToProspect(p,'sahkoposti',`Lähetetty: ${subject} → ${to}`,currentUser.nimi||currentUserEmail);
+      const acts=parseActs(p);
+      const teksti=`Lähetetty: ${subject} → ${to}`;
+      const tekija=currentUser.nimi||currentUserEmail||null;
+      let task=emailDraftContext.taskId ? acts.find(a=>a.id===emailDraftContext.taskId) : null;
+      if (task) {
+        Object.assign(task,{tila:'Toimitettu',done:true,aihe:subject,teksti,
+          contactId:emailDraftContext.contactId||task.contactId||null});
+      } else {
+        acts.push({id:'TK'+Date.now(),tyyppi:'sahkoposti',tila:'Toimitettu',done:true,
+          aihe:subject,teksti,tekija,muistiinpanot:null,created_at:new Date().toISOString(),
+          due_date:null,contactId:emailDraftContext.contactId||null});
+      }
+      p.aktiviteetit=JSON.stringify(acts);
       await saveCrmState(p);
-      renderActivities(p);
+      if (currentId===p.spara_id) { renderActivities(p); renderTaskList(p); }
     }
+    closeTaskForm();
     closeEmailComposer();
     updateMicrosoftStatus();
     showToast('Sähköposti lähetetty Outlookista ✓','success');
@@ -1485,6 +1608,7 @@ function openTaskForm(tyyppi) {
   const form=document.getElementById('task-add-form');
   form.style.display='';
   const delBtn=document.getElementById('task-del-btn'); if(delBtn) delBtn.style.display='none';
+  const emailBtn=document.getElementById('task-email-btn'); if(emailBtn) emailBtn.style.display=tyyppi==='sahkoposti'?'':'none';
   form.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 function closeTaskForm() {
@@ -1498,6 +1622,7 @@ function closeTaskForm() {
   const eid=document.getElementById('task-edit-id'); if(eid) eid.value='';
   const sav=document.getElementById('task-save-btn'); if(sav) sav.textContent='+ Lisää';
   const delBtn=document.getElementById('task-del-btn'); if(delBtn) delBtn.style.display='none';
+  const emailBtn=document.getElementById('task-email-btn'); if(emailBtn) emailBtn.style.display='none';
 }
 function updateGtTilaOptions() {
   const tyyppi=document.getElementById('gt-type')?.value||'kauppa';
@@ -1826,7 +1951,7 @@ async function addTask() {
 function renderTaskList(p) {
   const today=new Date().toISOString().substring(0,10);
   const acts=parseActs(p);
-  const tasks=acts.filter(a=>a.due_date||a.tyyppi==='kauppa').map(normalizeTask).sort((a,b)=>{
+  const tasks=acts.filter(a=>a.due_date||a.tyyppi==='kauppa'||(a.tyyppi==='sahkoposti'&&a.id)).map(normalizeTask).sort((a,b)=>{
     const da=taskIsDone(a), db=taskIsDone(b);
     if(da!==db) return da?1:-1;
     if(!a.due_date&&!b.due_date) return 0;
@@ -3023,16 +3148,35 @@ async function saveGlobalTask() {
 
 <!-- Outlook email composer -->
 <div class="modal-overlay hidden" id="email-modal" onclick="closeEmailComposerMaybe(event)">
-  <div class="modal" style="max-width:680px">
+  <div class="modal" style="max-width:720px">
     <div class="modal-header">
       <div class="modal-title">Uusi Outlook-sähköposti</div>
       <button class="modal-close" onclick="closeEmailComposer()">✕</button>
     </div>
     <div class="modal-body">
       <div class="form-grid">
+        <div class="form-group full" id="email-to-picker-wrap" style="display:none">
+          <label>Yhteyshenkilö</label>
+          <select class="form-control" id="email-to-contact" onchange="pickEmailToContact(this.value)"></select>
+        </div>
         <div class="form-group full"><label>Vastaanottaja</label><input class="form-control" id="email-to" type="email"></div>
         <div class="form-group full"><label>Aihe</label><input class="form-control" id="email-subject"></div>
-        <div class="form-group full"><label>Viesti</label><textarea class="form-control email-preview" id="email-body"></textarea></div>
+        <div class="form-group full">
+          <label>Viesti</label>
+          <div class="email-toolbar">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('bold')" title="Lihavointi"><b>B</b></button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('italic')" title="Kursiivi"><i>I</i></button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('underline')" title="Alleviivaus"><u>U</u></button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('insertUnorderedList')" title="Luettelo">• Lista</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertLink()" title="Lisää linkki">🔗 Linkki</button>
+          </div>
+          <div class="form-control email-body-html" id="email-body-html" contenteditable="true"></div>
+        </div>
+        <div class="form-group full">
+          <label>Liitteet <span style="font-weight:400;color:var(--text2)">(yhteensä enintään 3 Mt)</span></label>
+          <input class="form-control" type="file" id="email-attachment-input" multiple onchange="addEmailAttachments(this.files)">
+          <div id="email-attachments"></div>
+        </div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
         <button class="btn btn-ghost" onclick="closeEmailComposer()">Peruuta</button>
