@@ -583,7 +583,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-30.5';
+const BUILD_ID = '2026-07-30.6';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
 });
@@ -598,7 +598,9 @@ const TILIT_COLS = ['id','name','y_tunnus','toimiala','yhtiömuoto','osoite','po
 const YH_TAB  = 'Yhteyshenkilöt';
 const YH_COLS = ['id','tili_id','nimi','titteli','puhelin','sahkoposti','linkedin','created_at'];
 const USERS_TAB = 'Käyttäjät';
-const USERS_COLS = ['email','nimi','puhelin','sahkoposti','updated_at'];
+const USERS_COLS = ['email','nimi','puhelin','sahkoposti','updated_at','allekirjoitus'];
+const TEMPLATES_TAB = 'Sähköpostimallit';
+const TEMPLATES_COLS = ['id','nimi','aihe','sisalto','created_at'];
 const PROJEKTIT_TAB = 'Projektit';
 const PROJEKTIT_COLS = ['id','nimi','created_at'];
 const BASE_PROJEKTIT = ['ETJ+','Talopakettivalmistajat FIN','Talopakettivalmistajat SWE','Muu Projekti'];
@@ -612,8 +614,9 @@ const PAGE_SIZE = 60;
 let yhPage = 0, yhSortCol = 'nimi', yhSortAsc = true, yhFilteredRows = [], currentYhId = null;
 const YH_PAGE_SIZE = 60;
 let currentUserEmail = null;
-let currentUser = { email:'', nimi:'', puhelin:'', sahkoposti:'', updated_at:'', _rowIndex:null };
+let currentUser = { email:'', nimi:'', puhelin:'', sahkoposti:'', updated_at:'', allekirjoitus:'', _rowIndex:null };
 let customProjektit = [];
+let emailTemplates = [];
 let msalInstance = null, microsoftAccount = null, emailDraftContext = null, msalInstanceKey = null;
 let emailAttachments = [];
 
@@ -891,11 +894,40 @@ function openEmailComposer(opts) {
   const sender=currentUser.nimi||'';
   const greetName=c?c.nimi.split(/\s+/)[0]:'';
   document.getElementById('email-body-html').innerHTML=
-    `<p>Hei${greetName?' '+esc(greetName)+',':','}</p><p><br></p><p>Ystävällisin terveisin<br>${esc(sender)}</p>`;
+    `<p>Hei${greetName?' '+esc(greetName)+',':','}</p><p><br></p><p>Ystävällisin terveisin<br>${esc(sender)}</p>${signatureHtml()}`;
+
+  const tplWrap=document.getElementById('email-template-wrap');
+  const tplPicker=document.getElementById('email-template-picker');
+  if (emailTemplates.length) {
+    tplPicker.innerHTML='<option value="">— ei mallia —</option>'+
+      emailTemplates.map(t=>`<option value="${t.id}">${esc(t.nimi)}</option>`).join('');
+    tplWrap.style.display='';
+  } else {
+    tplWrap.style.display='none';
+  }
+
   emailAttachments=[];
   renderEmailAttachments();
   document.getElementById('email-send-btn').disabled=false;
   document.getElementById('email-modal').classList.remove('hidden');
+}
+
+// {{etunimi}}/{{nimi}}/{{yritys}}/{{tekija}} korvataan mallia valittaessa —
+// esc() varmistaa ettei yhteystiedon nimi voi rikkoa mallin HTML-rakennetta.
+function applyEmailTemplate(templateId) {
+  if (!templateId) return;
+  const t=emailTemplates.find(x=>x.id===templateId); if (!t) return;
+  const c=emailDraftContext?.contactId ? allContacts.find(x=>x.id===emailDraftContext.contactId) : null;
+  const p=emailDraftContext ? allProspects.find(x=>x.spara_id===emailDraftContext.tiliId) : null;
+  const vars={
+    etunimi: c?c.nimi.split(/\s+/)[0]:'',
+    nimi: c?c.nimi:'',
+    yritys: p?p.yritys_nimi:'',
+    tekija: currentUser.nimi||''
+  };
+  const fill=s=>(s||'').replace(/\{\{(\w+)\}\}/g,(m,k)=>k in vars?esc(vars[k]):m);
+  if (t.aihe) document.getElementById('email-subject').value=fill(t.aihe);
+  document.getElementById('email-body-html').innerHTML=fill(t.sisalto)+signatureHtml();
 }
 
 // Avaa saman lomakkeen tilin Tehtävät-välilehden "✉️ Sähköposti"-tyypin
@@ -925,15 +957,23 @@ function closeEmailComposer() {
 }
 function closeEmailComposerMaybe(e) { if(e.target===document.getElementById('email-modal')) closeEmailComposer(); }
 
-function emailFormat(cmd) {
-  document.getElementById('email-body-html').focus();
+// targetId oletuksena varsinainen viestikenttä, mutta samaa työkaluriviä
+// käytetään myös Asetusten allekirjoitus- ja mallipohjakentissä.
+function emailFormat(cmd, targetId) {
+  const el=document.getElementById(targetId||'email-body-html'); if (!el) return;
+  el.focus();
   document.execCommand(cmd,false,null);
 }
-function emailInsertLink() {
+function emailInsertLink(targetId) {
   const url=(prompt('Linkin osoite (https://…)')||'').trim();
   if (!url) return;
-  document.getElementById('email-body-html').focus();
+  const el=document.getElementById(targetId||'email-body-html'); if (!el) return;
+  el.focus();
   document.execCommand('createLink',false,url);
+}
+
+function signatureHtml() {
+  return currentUser.allekirjoitus ? `<p><br></p>${currentUser.allekirjoitus}` : '';
 }
 
 function fileToBase64(file) {
@@ -1142,6 +1182,7 @@ async function loadData() {
     if (!tabNames.includes(YH_TAB))  await addSheet(YH_TAB,  YH_COLS);
     if (!tabNames.includes(USERS_TAB)) await addSheet(USERS_TAB, USERS_COLS);
     if (!tabNames.includes(PROJEKTIT_TAB)) await addSheet(PROJEKTIT_TAB, PROJEKTIT_COLS);
+    if (!tabNames.includes(TEMPLATES_TAB)) await addSheet(TEMPLATES_TAB, TEMPLATES_COLS);
     const PROSP = 'Prospektirekisteri';
     if (tabNames.includes(PROSP)) {
       if (tabNames.includes(MAIN_TAB)) {
@@ -1205,19 +1246,21 @@ async function loadData() {
         ...Object.fromEntries(YH_COLS.map((k,j)=>[k,r[j]||''])), _rowIndex:i+2
       }));
     }
-    const usersRows = await sheetGet(`${USERS_TAB}!A:E`);
+    const usersRows = await sheetGet(`${USERS_TAB}!A:F`);
     const usersData = usersRows.slice(1);
     const myIdx = usersData.findIndex(r=>(r[0]||'').trim().toLowerCase()===(currentUserEmail||'').trim().toLowerCase());
     console.log('Käyttäjät-haku: currentUserEmail=', currentUserEmail, 'rivejä=', usersData.length, 'löytyi indeksistä=', myIdx, 'kaikki sähköpostit=', usersData.map(r=>r[0]));
     if (myIdx>=0) {
       const r=usersData[myIdx];
-      currentUser = { email:r[0]||'', nimi:r[1]||'', puhelin:r[2]||'', sahkoposti:r[3]||'', updated_at:r[4]||'', _rowIndex:myIdx+2 };
+      currentUser = { email:r[0]||'', nimi:r[1]||'', puhelin:r[2]||'', sahkoposti:r[3]||'', updated_at:r[4]||'', allekirjoitus:r[5]||'', _rowIndex:myIdx+2 };
     } else {
-      currentUser = { email:currentUserEmail||'', nimi:'', puhelin:'', sahkoposti:'', updated_at:'', _rowIndex:null };
+      currentUser = { email:currentUserEmail||'', nimi:'', puhelin:'', sahkoposti:'', updated_at:'', allekirjoitus:'', _rowIndex:null };
     }
     console.log('currentUser asetettu:', currentUser);
     const projRows = await sheetGet(`${PROJEKTIT_TAB}!A:C`);
     customProjektit = projRows.slice(1).filter(r=>r[0]).map((r,i)=>({id:r[0],nimi:r[1]||'',created_at:r[2]||'',_rowIndex:i+2}));
+    const tplRows = await sheetGet(`${TEMPLATES_TAB}!A:E`);
+    emailTemplates = tplRows.slice(1).filter(r=>r[0]).map((r,i)=>({id:r[0],nimi:r[1]||'',aihe:r[2]||'',sisalto:r[3]||'',created_at:r[4]||'',_rowIndex:i+2}));
   } catch(e) {
     showToast('Virhe: '+e.message,'error'); console.error(e); return;
   }
@@ -2650,6 +2693,7 @@ function openSettings() {
   document.getElementById('set-nimi').value = currentUser.nimi || '';
   document.getElementById('set-puhelin').value = currentUser.puhelin || '';
   document.getElementById('set-sahkoposti').value = currentUser.sahkoposti || '';
+  const sigEl=document.getElementById('set-allekirjoitus'); if (sigEl) sigEl.innerHTML = currentUser.allekirjoitus || '';
   document.getElementById('set-ms-client-id').value = microsoftClientId();
   document.getElementById('set-ms-tenant').value = microsoftTenant();
   const redirEl=document.getElementById('ms-redirect-uri');
@@ -2657,6 +2701,10 @@ function openSettings() {
   initMicrosoft().then(updateMicrosoftStatus).catch(()=>updateMicrosoftStatus());
   const pjInput=document.getElementById('pj-uusi-nimi'); if (pjInput) pjInput.value='';
   renderProjektitList();
+  const tplNimi=document.getElementById('tpl-uusi-nimi'); if (tplNimi) tplNimi.value='';
+  const tplAihe=document.getElementById('tpl-uusi-aihe'); if (tplAihe) tplAihe.value='';
+  const tplSisalto=document.getElementById('tpl-uusi-sisalto'); if (tplSisalto) tplSisalto.innerHTML='';
+  renderTemplatesList();
   document.getElementById('settings-modal').classList.remove('hidden');
 }
 function closeSettings() { document.getElementById('settings-modal').classList.add('hidden'); }
@@ -2666,21 +2714,22 @@ async function saveMyProfile() {
   const nimi=(document.getElementById('set-nimi')?.value||'').trim();
   const puhelin=(document.getElementById('set-puhelin')?.value||'').trim();
   const sahkoposti=(document.getElementById('set-sahkoposti')?.value||'').trim();
+  const allekirjoitus=(document.getElementById('set-allekirjoitus')?.innerHTML||'').trim();
   const email=currentUser.email||currentUserEmail||'';
   if (!email) { showToast('Google-sähköpostia ei saatu — kirjaudu ulos ja sisään uudelleen','error'); return; }
-  const row=[email, nimi, puhelin, sahkoposti, new Date().toISOString()];
+  const row=[email, nimi, puhelin, sahkoposti, new Date().toISOString(), allekirjoitus];
   console.log('saveMyProfile: tallennetaan rivi', row, '_rowIndex=', currentUser._rowIndex);
   try {
     if (currentUser._rowIndex) {
-      await sheetPut(`${USERS_TAB}!A${currentUser._rowIndex}:E${currentUser._rowIndex}`, [row]);
+      await sheetPut(`${USERS_TAB}!A${currentUser._rowIndex}:F${currentUser._rowIndex}`, [row]);
       console.log('saveMyProfile: päivitetty olemassa oleva rivi', currentUser._rowIndex);
     } else {
       const colA = await sheetGet(`${USERS_TAB}!A:A`);
-      await sheetAppend(`${USERS_TAB}!A:E`, [row]);
+      await sheetAppend(`${USERS_TAB}!A:F`, [row]);
       currentUser._rowIndex = colA.length+1;
       console.log('saveMyProfile: lisätty uusi rivi', currentUser._rowIndex);
     }
-    Object.assign(currentUser, { email, nimi, puhelin, sahkoposti, updated_at:row[4] });
+    Object.assign(currentUser, { email, nimi, puhelin, sahkoposti, allekirjoitus, updated_at:row[4] });
     showToast('Omat tiedot tallennettu ✓','success');
   } catch(e) { console.error('saveMyProfile epäonnistui:', e); showToast('Virhe: '+e.message,'error'); }
 }
@@ -2880,6 +2929,91 @@ async function deleteProjekti(id) {
   } catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 
+// ── Sähköpostimallit ─────────────────────────────────────────────────────────
+function renderTemplatesList() {
+  const div=document.getElementById('settings-templates-list'); if (!div) return;
+  if (!emailTemplates.length) { div.innerHTML='<div class="empty" style="padding:10px;font-size:12px">Ei malleja</div>'; return; }
+  div.innerHTML=emailTemplates.map(t=>`
+    <div class="yh-item" style="cursor:default">
+      <div id="tpl-${t.id}-view">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div class="yh-item-name">${esc(t.nimi)}</div>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-ghost btn-sm" onclick="toggleTemplateEdit('${t.id}')">Muokkaa</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteEmailTemplate('${t.id}')">Poista</button>
+          </div>
+        </div>
+        ${t.aihe?`<div style="font-size:11px;color:var(--text2);margin-top:2px">${esc(t.aihe)}</div>`:''}
+      </div>
+      <div id="tpl-${t.id}-form" style="display:none;margin-top:8px">
+        <div class="form-grid">
+          <div class="form-group full"><input class="form-control" id="tpl-${t.id}-nimi" value="${esc(t.nimi)}" placeholder="Nimi"></div>
+          <div class="form-group full"><input class="form-control" id="tpl-${t.id}-aihe" value="${esc(t.aihe)}" placeholder="Aihe"></div>
+          <div class="form-group full">
+            <div class="email-toolbar">
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('bold','tpl-${t.id}-sisalto')"><b>B</b></button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('italic','tpl-${t.id}-sisalto')"><i>I</i></button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('underline','tpl-${t.id}-sisalto')"><u>U</u></button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertLink('tpl-${t.id}-sisalto')">🔗 Linkki</button>
+            </div>
+            <div class="form-control email-body-html" id="tpl-${t.id}-sisalto" contenteditable="true" style="min-height:90px">${t.sisalto}</div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:6px">
+          <button class="btn btn-ghost btn-sm" onclick="toggleTemplateEdit('${t.id}')">Peruuta</button>
+          <button class="btn btn-primary btn-sm" onclick="saveEmailTemplateEdit('${t.id}')">Tallenna</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+function toggleTemplateEdit(id) {
+  const view=document.getElementById(`tpl-${id}-view`), form=document.getElementById(`tpl-${id}-form`);
+  if (!view||!form) return;
+  const show=form.style.display==='none';
+  form.style.display=show?'':'none'; view.style.display=show?'none':'';
+}
+async function addEmailTemplate() {
+  const nimi=(document.getElementById('tpl-uusi-nimi')?.value||'').trim();
+  const aihe=(document.getElementById('tpl-uusi-aihe')?.value||'').trim();
+  const sisalto=(document.getElementById('tpl-uusi-sisalto')?.innerHTML||'').trim();
+  if (!nimi) { showToast('Mallin nimi on pakollinen','error'); return; }
+  const id='TPL'+Date.now();
+  const row=[id,nimi,aihe,sisalto,new Date().toISOString()];
+  try {
+    const colA=await sheetGet(`${TEMPLATES_TAB}!A:A`);
+    await sheetAppend(`${TEMPLATES_TAB}!A:E`,[row]);
+    emailTemplates.push({id,nimi,aihe,sisalto,created_at:row[4],_rowIndex:colA.length+1});
+    document.getElementById('tpl-uusi-nimi').value='';
+    document.getElementById('tpl-uusi-aihe').value='';
+    document.getElementById('tpl-uusi-sisalto').innerHTML='';
+    renderTemplatesList();
+    showToast('Malli lisätty: '+nimi,'success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+}
+async function saveEmailTemplateEdit(id) {
+  const t=emailTemplates.find(x=>x.id===id); if (!t) return;
+  const nimi=(document.getElementById(`tpl-${id}-nimi`)?.value||'').trim();
+  const aihe=(document.getElementById(`tpl-${id}-aihe`)?.value||'').trim();
+  const sisalto=(document.getElementById(`tpl-${id}-sisalto`)?.innerHTML||'').trim();
+  if (!nimi) { showToast('Nimi on pakollinen','error'); return; }
+  try {
+    await sheetPut(`${TEMPLATES_TAB}!B${t._rowIndex}:D${t._rowIndex}`,[[nimi,aihe,sisalto]]);
+    Object.assign(t,{nimi,aihe,sisalto});
+    renderTemplatesList();
+    showToast('Malli päivitetty ✓','success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+}
+async function deleteEmailTemplate(id) {
+  const t=emailTemplates.find(x=>x.id===id); if (!t) return;
+  if (!confirm(`Poistetaanko malli "${t.nimi}"?`)) return;
+  try {
+    await sheetPut(`${TEMPLATES_TAB}!A${t._rowIndex}:E${t._rowIndex}`,[['','','','','']]);
+    emailTemplates.splice(emailTemplates.indexOf(t),1);
+    renderTemplatesList();
+    showToast('Malli poistettu','success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function updateSummary() {
   document.getElementById('s-total').textContent  = allProspects.length;
@@ -3073,6 +3207,22 @@ async function saveGlobalTask() {
         <div class="form-group"><label>Nimi</label><input class="form-control" id="set-nimi" placeholder="Etunimi Sukunimi"></div>
         <div class="form-group"><label>Puhelin</label><input class="form-control" id="set-puhelin" placeholder="+358 40…" type="tel"></div>
         <div class="form-group full"><label>Sähköposti (yhteystieto)</label><input class="form-control" id="set-sahkoposti" placeholder="nimi@sparaenergia.com" type="email"></div>
+        <div class="form-group full">
+          <label>Sähköpostin allekirjoitus (HTML)</label>
+          <div class="email-toolbar">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('bold','set-allekirjoitus')" title="Lihavointi"><b>B</b></button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('italic','set-allekirjoitus')" title="Kursiivi"><i>I</i></button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('underline','set-allekirjoitus')" title="Alleviivaus"><u>U</u></button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertLink('set-allekirjoitus')" title="Lisää linkki">🔗 Linkki</button>
+          </div>
+          <div class="form-control email-body-html" id="set-allekirjoitus" contenteditable="true" style="min-height:90px"></div>
+          <div style="font-size:11px;color:var(--text2);margin-top:4px;line-height:1.5">
+            Microsoft ei tarjoa rajapintaa jolla Outlookin allekirjoituksen voisi hakea automaattisesti
+            CRM:ään — liitä se tähän kertaalleen käsin niin logot yms. tulevat mukaan: avaa Outlookin
+            asetuksista oma allekirjoituksesi, kopioi koko sisältö (Ctrl+A → Ctrl+C) ja liitä yllä olevaan
+            kenttään (Ctrl+V). Lisätään automaattisesti jokaisen Suppilosta lähetetyn sähköpostin loppuun.
+          </div>
+        </div>
       </div>
       <div style="display:flex;justify-content:flex-end;margin-top:8px">
         <button class="btn btn-primary btn-sm" onclick="saveMyProfile()">Tallenna</button>
@@ -3132,6 +3282,32 @@ async function saveGlobalTask() {
         Suppiloon — kirjautuminen tapahtuu Microsoftin omassa ikkunassa.
       </div>
 
+      <div class="cs-title" style="margin-top:22px">Sähköpostimallit</div>
+      <div id="settings-templates-list"></div>
+      <div class="yh-add-form">
+        <div class="form-grid">
+          <div class="form-group full"><label>Mallin nimi</label><input class="form-control" id="tpl-uusi-nimi" placeholder="Esim. Ensikontakti"></div>
+          <div class="form-group full"><label>Aihe</label><input class="form-control" id="tpl-uusi-aihe" placeholder="Voi käyttää: {{etunimi}} {{nimi}} {{yritys}} {{tekija}}"></div>
+          <div class="form-group full">
+            <label>Sisältö</label>
+            <div class="email-toolbar">
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('bold','tpl-uusi-sisalto')"><b>B</b></button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('italic','tpl-uusi-sisalto')"><i>I</i></button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('underline','tpl-uusi-sisalto')"><u>U</u></button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertLink('tpl-uusi-sisalto')">🔗 Linkki</button>
+            </div>
+            <div class="form-control email-body-html" id="tpl-uusi-sisalto" contenteditable="true" style="min-height:90px"></div>
+            <div style="font-size:11px;color:var(--text2);margin-top:4px">
+              Merkinnät <code>{{etunimi}}</code>, <code>{{nimi}}</code>, <code>{{yritys}}</code>, <code>{{tekija}}</code>
+              korvautuvat automaattisesti kun malli valitaan sähköpostin kirjoitusikkunassa.
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:8px">
+          <button class="btn btn-primary btn-sm" onclick="addEmailTemplate()">+ Lisää malli</button>
+        </div>
+      </div>
+
       <div class="cs-title" style="margin-top:22px">Projektit</div>
       <div id="settings-projektit-list"></div>
       <div class="yh-add-form">
@@ -3160,6 +3336,10 @@ async function saveGlobalTask() {
           <select class="form-control" id="email-to-contact" onchange="pickEmailToContact(this.value)"></select>
         </div>
         <div class="form-group full"><label>Vastaanottaja</label><input class="form-control" id="email-to" type="email"></div>
+        <div class="form-group full" id="email-template-wrap" style="display:none">
+          <label>Malli</label>
+          <select class="form-control" id="email-template-picker" onchange="applyEmailTemplate(this.value)"></select>
+        </div>
         <div class="form-group full"><label>Aihe</label><input class="form-control" id="email-subject"></div>
         <div class="form-group full">
           <label>Viesti</label>
