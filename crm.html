@@ -81,6 +81,8 @@
     .integration-dot { width:8px;height:8px;border-radius:50%;background:var(--text2);flex-shrink:0; }
     .integration-dot.connected { background:var(--green); }
     .email-preview { min-height:220px;resize:vertical;line-height:1.5; }
+    .ms-setup-guide { background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px; }
+    .ms-setup-guide code { background:var(--bg4);padding:1px 5px;border-radius:4px;font-size:11px; }
 
     /* Summary */
     .summary-bar { display:flex;gap:12px;flex-wrap:wrap;padding:14px 24px;background:var(--bg2);border-bottom:1px solid var(--border); }
@@ -2390,6 +2392,8 @@ function openSettings() {
   document.getElementById('set-puhelin').value = currentUser.puhelin || '';
   document.getElementById('set-sahkoposti').value = currentUser.sahkoposti || '';
   document.getElementById('set-ms-client-id').value = microsoftClientId();
+  const redirEl=document.getElementById('ms-redirect-uri');
+  if (redirEl) redirEl.value = window.location.origin + window.location.pathname;
   initMicrosoft().then(updateMicrosoftStatus).catch(()=>updateMicrosoftStatus());
   const pjInput=document.getElementById('pj-uusi-nimi'); if (pjInput) pjInput.value='';
   renderProjektitList();
@@ -2424,6 +2428,13 @@ function saveMicrosoftSettings() {
   msalInstance=null; microsoftAccount=null;
   updateMicrosoftStatus();
   showToast('Outlook-asetus tallennettu ✓','success');
+}
+
+async function copyRedirectUri() {
+  const val=document.getElementById('ms-redirect-uri')?.value||'';
+  if (!val) return;
+  try { await navigator.clipboard.writeText(val); showToast('Redirect URI kopioitu ✓','success'); }
+  catch(_) { showToast('Kopiointi epäonnistui — valitse teksti käsin','error'); }
 }
 
 let _projektitOrphanCache = [];
@@ -2797,6 +2808,25 @@ async function saveGlobalTask() {
       </div>
 
       <div class="cs-title" style="margin-top:22px">Outlook-sähköposti</div>
+      <div class="ms-setup-guide">
+        <div style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Käyttöönotto (kerran per organisaatio)</div>
+        <ol style="font-size:12px;line-height:1.7;margin:0 0 10px 18px;padding:0">
+          <li>Avaa Microsoft Entra ja luo <strong>uusi sovellusrekisteröinti</strong> (alustaksi <em>Single-page application</em>).</li>
+          <li>Liitä alla näkyvä <strong>Redirect URI</strong> sovellukseen täsmälleen sellaisenaan.</li>
+          <li>Lisää API-oikeudet: Microsoft Graph → Delegated → <code>Mail.Send</code> + <code>Mail.Read</code>, ja myönnä admin-suostumus koko organisaatiolle.</li>
+          <li>Kopioi sovelluksen <strong>Application (client) ID</strong> Overview-sivulta alla olevaan kenttään.</li>
+        </ol>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+          <a class="btn btn-outlook btn-sm" href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener">🔗 Avaa Microsoft Entra – Sovellusrekisteröinnit</a>
+        </div>
+        <div class="form-group full" style="margin-bottom:10px">
+          <label>Redirect URI (kopioi tämä Entraan)</label>
+          <div style="display:flex;gap:6px">
+            <input class="form-control" id="ms-redirect-uri" readonly style="font-family:monospace;font-size:11px">
+            <button class="btn btn-ghost btn-sm" onclick="copyRedirectUri()">📋 Kopioi</button>
+          </div>
+        </div>
+      </div>
       <div class="form-grid">
         <div class="form-group full">
           <label>Microsoft-sovelluksen Client ID</label>
