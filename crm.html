@@ -82,6 +82,12 @@
     .integration-dot.connected { background:var(--green); }
     .email-toolbar { display:flex;gap:4px;margin-bottom:6px; }
     .email-toolbar button { min-width:30px; }
+    .email-body-html img { max-width:100%;height:auto; }
+    .emoji-picker { position:fixed;z-index:2000;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);width:224px; }
+    .emoji-picker.hidden { display:none; }
+    .emoji-grid { display:grid;grid-template-columns:repeat(8,1fr);gap:2px;max-height:180px;overflow-y:auto; }
+    .emoji-grid button { font-size:18px;line-height:1;padding:4px;background:none;border:none;cursor:pointer;border-radius:4px; }
+    .emoji-grid button:hover { background:var(--bg3); }
     .email-body-html { min-height:220px;max-height:420px;overflow-y:auto;line-height:1.5;cursor:text; }
     .email-body-html:focus { border-color:var(--accent); }
     .email-attachment-chip { display:inline-flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:4px 8px;font-size:11px;margin:4px 6px 0 0; }
@@ -583,7 +589,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-30.7';
+const BUILD_ID = '2026-07-30.8';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
 });
@@ -987,6 +993,90 @@ function fileToBase64(file) {
     reader.readAsDataURL(file);
   });
 }
+function fileToDataUri(file) {
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result));
+    reader.onerror=()=>reject(reader.error||new Error('Tiedoston luku epäonnistui'));
+    reader.readAsDataURL(file);
+  });
+}
+
+// Kuva upotetaan tekstin sekaan base64-data-URI:na (ei erillisenä liitteenä)
+// — siksi tiukempi per-kuva-raja kuin liitteillä: se kasvattaa suoraan
+// viestin HTML-runkoa, joka lasketaan mukaan samaan Graph-kokorajaan.
+const RICH_IMAGE_MAX = 2*1024*1024;
+let _richImageTargetId = 'email-body-html';
+
+function emailInsertImage(targetId) {
+  _richImageTargetId = targetId || 'email-body-html';
+  document.getElementById('rich-image-input').click();
+}
+async function onRichImageSelected(fileList) {
+  const file=fileList && fileList[0];
+  const input=document.getElementById('rich-image-input'); if (input) input.value='';
+  if (!file) return;
+  if (file.size>RICH_IMAGE_MAX) { showToast('Kuva on liian iso (max 2 Mt) — pienennä tai lähetä liitteenä','error'); return; }
+  try {
+    const dataUri=await fileToDataUri(file);
+    const el=document.getElementById(_richImageTargetId); if (!el) return;
+    el.focus();
+    document.execCommand('insertImage',false,dataUri);
+  } catch(e) { showToast('Kuvan lisäys epäonnistui: '+e.message,'error'); }
+}
+
+// Jos leikepöydällä on itse kuvadataa (esim. kuvakaappaus, tai kuvatiedosto
+// kopioituna tiedostonhallinnasta), upotetaan se suoraan base64:nä sen
+// sijaan että annettaisiin selaimen liittää pelkkä (mahdollisesti rikkinäinen
+// tai autentikoitu) src-viittaus. Ei koske normaalia teksti/linkki-liittämistä
+// — se etenee selaimen oletustoiminnolla ennallaan.
+function handleRichPaste(ev) {
+  const items=(ev.clipboardData||window.clipboardData)?.items;
+  if (!items) return;
+  const imageItem=[...items].find(it=>it.type&&it.type.startsWith('image/'));
+  if (!imageItem) return;
+  const file=imageItem.getAsFile(); if (!file) return;
+  ev.preventDefault();
+  if (file.size>RICH_IMAGE_MAX) { showToast('Liitetty kuva on liian iso (max 2 Mt)','error'); return; }
+  fileToDataUri(file).then(dataUri=>{
+    document.execCommand('insertImage',false,dataUri);
+  }).catch(()=>showToast('Kuvan liittäminen epäonnistui','error'));
+}
+document.addEventListener('paste', ev=>{
+  const el=ev.target && ev.target.closest ? ev.target.closest('.email-body-html') : null;
+  if (!el || !el.isContentEditable) return;
+  handleRichPaste(ev);
+});
+
+const EMOJI_SET=['😀','😄','😊','🙂','😉','😍','🤔','😅','😢','😮','👍','👎','🙏','👏',
+  '💪','🤝','✅','❌','⭐','🔥','💡','📌','📎','📅','⏰','📞','✉️','🎉','🚀','💰','🏠',
+  '☀️','❤️','👋','🙌','😴','✨','⚡','📈'];
+let _emojiTargetId='email-body-html';
+function toggleEmojiPicker(btnEl, targetId) {
+  const picker=document.getElementById('emoji-picker');
+  if (!picker.classList.contains('hidden') && _emojiTargetId===targetId) { picker.classList.add('hidden'); return; }
+  _emojiTargetId=targetId||'email-body-html';
+  const grid=document.getElementById('emoji-grid');
+  if (!grid.dataset.built) {
+    grid.innerHTML=EMOJI_SET.map(e=>`<button type="button" onclick="insertEmoji('${e}')">${e}</button>`).join('');
+    grid.dataset.built='1';
+  }
+  const rect=btnEl.getBoundingClientRect();
+  picker.style.top=(rect.bottom+4)+'px';
+  picker.style.left=rect.left+'px';
+  picker.classList.remove('hidden');
+}
+function insertEmoji(e) {
+  const el=document.getElementById(_emojiTargetId);
+  if (el) { el.focus(); document.execCommand('insertText',false,e); }
+  document.getElementById('emoji-picker').classList.add('hidden');
+}
+document.addEventListener('click', ev=>{
+  const picker=document.getElementById('emoji-picker');
+  if (!picker || picker.classList.contains('hidden')) return;
+  if (ev.target.closest('#emoji-picker') || ev.target.closest('.emoji-toggle-btn')) return;
+  picker.classList.add('hidden');
+});
 
 // Graphin /sendMail-rajapinta hyväksyy liitteet suoraan pyynnön mukana vain
 // pieninä (base64 kasvattaa kokoa ~1.37x) — isommat vaatisivat erillisen
@@ -3015,6 +3105,8 @@ function renderTemplatesList() {
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('italic','tpl-${t.id}-sisalto')"><i>I</i></button>
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('underline','tpl-${t.id}-sisalto')"><u>U</u></button>
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertLink('tpl-${t.id}-sisalto')">🔗 Linkki</button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertImage('tpl-${t.id}-sisalto')">🖼️ Kuva</button>
+              <button type="button" class="btn btn-ghost btn-sm emoji-toggle-btn" onclick="toggleEmojiPicker(this,'tpl-${t.id}-sisalto')">🙂</button>
             </div>
             <div class="form-control email-body-html" id="tpl-${t.id}-sisalto" contenteditable="true" style="min-height:90px">${t.sisalto}</div>
           </div>
@@ -3274,13 +3366,21 @@ async function saveGlobalTask() {
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('italic','set-allekirjoitus')" title="Kursiivi"><i>I</i></button>
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('underline','set-allekirjoitus')" title="Alleviivaus"><u>U</u></button>
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertLink('set-allekirjoitus')" title="Lisää linkki">🔗 Linkki</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertImage('set-allekirjoitus')" title="Lisää kuva (esim. logo)">🖼️ Kuva</button>
+            <button type="button" class="btn btn-ghost btn-sm emoji-toggle-btn" onclick="toggleEmojiPicker(this,'set-allekirjoitus')" title="Lisää hymiö">🙂</button>
           </div>
           <div class="form-control email-body-html" id="set-allekirjoitus" contenteditable="true" style="min-height:90px"></div>
           <div style="font-size:11px;color:var(--text2);margin-top:4px;line-height:1.5">
             Microsoft ei tarjoa rajapintaa jolla Outlookin allekirjoituksen voisi hakea automaattisesti
-            CRM:ään — liitä se tähän kertaalleen käsin niin logot yms. tulevat mukaan: avaa Outlookin
-            asetuksista oma allekirjoituksesi, kopioi koko sisältö (Ctrl+A → Ctrl+C) ja liitä yllä olevaan
-            kenttään (Ctrl+V). Lisätään automaattisesti jokaisen Suppilosta lähetetyn sähköpostin loppuun.
+            CRM:ään — liitä se tähän kertaalleen käsin: avaa Outlookin asetuksista oma allekirjoituksesi,
+            kopioi koko sisältö (Ctrl+A → Ctrl+C) ja liitä yllä olevaan kenttään (Ctrl+V). Lisätään
+            automaattisesti jokaisen Suppilosta lähetetyn sähköpostin loppuun.
+            <strong>Jos logo tai kuva ei tule mukaan liittäessä</strong> — Outlookin kuvat ovat usein
+            linkkejä jotka toimivat vain omassa Outlook-istunnossasi eivätkä siksi kopioidu luotettavasti
+            mihinkään toiseen sovellukseen — tallenna kuva ensin tiedostoksi (esim. paina hiiren
+            oikeaa näppäintä kuvan päällä → Tallenna kuva nimellä) ja lisää se sitten yllä olevasta
+            🖼️ Kuva -painikkeesta, tai liitä suoraan leikepöydältä (Ctrl+V) jos kuva on kopioitu
+            kuvana (esim. kuvakaappaus).
           </div>
         </div>
       </div>
@@ -3360,6 +3460,8 @@ async function saveGlobalTask() {
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('italic','tpl-uusi-sisalto')"><i>I</i></button>
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('underline','tpl-uusi-sisalto')"><u>U</u></button>
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertLink('tpl-uusi-sisalto')">🔗 Linkki</button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertImage('tpl-uusi-sisalto')">🖼️ Kuva</button>
+              <button type="button" class="btn btn-ghost btn-sm emoji-toggle-btn" onclick="toggleEmojiPicker(this,'tpl-uusi-sisalto')">🙂</button>
             </div>
             <div class="form-control email-body-html" id="tpl-uusi-sisalto" contenteditable="true" style="min-height:90px"></div>
             <div style="font-size:11px;color:var(--text2);margin-top:4px">
@@ -3414,6 +3516,8 @@ async function saveGlobalTask() {
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('underline')" title="Alleviivaus"><u>U</u></button>
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('insertUnorderedList')" title="Luettelo">• Lista</button>
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertLink()" title="Lisää linkki">🔗 Linkki</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertImage('email-body-html')" title="Lisää kuva">🖼️ Kuva</button>
+            <button type="button" class="btn btn-ghost btn-sm emoji-toggle-btn" onclick="toggleEmojiPicker(this,'email-body-html')" title="Lisää hymiö">🙂</button>
           </div>
           <div class="form-control email-body-html" id="email-body-html" contenteditable="true"></div>
         </div>
@@ -3431,6 +3535,9 @@ async function saveGlobalTask() {
   </div>
 </div>
 
+<!-- Jaettu piilotettu tiedostovalitsin ja hymiövalitsin kaikille email-body-html-kentille -->
+<input type="file" id="rich-image-input" accept="image/*" style="display:none" onchange="onRichImageSelected(this.files)">
+<div class="emoji-picker hidden" id="emoji-picker"><div class="emoji-grid" id="emoji-grid"></div></div>
 
 </body>
 </html>
