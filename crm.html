@@ -597,6 +597,7 @@ let customProjektit = [];
 let msalInstance = null, microsoftAccount = null, emailDraftContext = null;
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
+let _emailConsentRetried = false;
 window.addEventListener('load', () => {
   const s = document.createElement('script');
   s.src = 'https://accounts.google.com/gsi/client';
@@ -605,16 +606,39 @@ window.addEventListener('load', () => {
       client_id: CLIENT_ID,
       scope: SCOPE,
       callback: async (resp) => {
-        if (resp.error) { showToast('Kirjautuminen epäonnistui', 'error'); return; }
+        if (resp.error) {
+          if (_emailConsentRetried && accessToken) {
+            // Peruspääsy (Sheets) oli jo olemassa; käyttäjä vain kieltäytyi
+            // lisäsuostumuksesta sähköpostille. Jatketaan silti sovellukseen.
+            console.warn('Sähköposti-suostumus evätty:', resp.error);
+            showToast('Sähköpostioikeutta ei myönnetty — Omat tiedot -tallennus ei toimi','error');
+            if (microsoftClientId()) initMicrosoft().catch(()=>{});
+            await loadData();
+            return;
+          }
+          showToast('Kirjautuminen epäonnistui', 'error');
+          return;
+        }
         accessToken = resp.access_token;
+        console.log('Google-kirjautuminen onnistui, myönnetyt oikeudet:', resp.scope);
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('app').style.display = 'block';
         try {
           const ui = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: auth() });
           const j = await ui.json();
           currentUserEmail = (j.email || '').trim().toLowerCase() || null;
-          if (!currentUserEmail) console.error('Google userinfo ei palauttanut sähköpostia:', j);
+          console.log('Google userinfo -vastaus:', j);
         } catch(e) { console.error('Google userinfo -haku epäonnistui:', e); }
+        if (!currentUserEmail && !_emailConsentRetried) {
+          // Käyttäjä on saattanut aiemmin hyväksyä vain suppeamman (Sheets-)
+          // oikeuden, jolloin prompt:'' ei välttämättä näytä uutta
+          // suostumusruutua uudelle email-oikeudelle. Pakotetaan se kerran.
+          _emailConsentRetried = true;
+          console.warn('Sähköpostioikeutta ei saatu — pakotetaan suostumusruutu uudelleen');
+          tokenClient.requestAccessToken({ prompt: 'consent' });
+          return;
+        }
+        if (!currentUserEmail) showToast('Google-sähköpostia ei saatu — Omat tiedot -tallennus ei toimi','error');
         if (microsoftClientId()) initMicrosoft().catch(()=>{});
         await loadData();
       },
@@ -964,12 +988,14 @@ async function loadData() {
     const usersRows = await sheetGet(`${USERS_TAB}!A:E`);
     const usersData = usersRows.slice(1);
     const myIdx = usersData.findIndex(r=>(r[0]||'').trim().toLowerCase()===(currentUserEmail||'').trim().toLowerCase());
+    console.log('Käyttäjät-haku: currentUserEmail=', currentUserEmail, 'rivejä=', usersData.length, 'löytyi indeksistä=', myIdx, 'kaikki sähköpostit=', usersData.map(r=>r[0]));
     if (myIdx>=0) {
       const r=usersData[myIdx];
       currentUser = { email:r[0]||'', nimi:r[1]||'', puhelin:r[2]||'', sahkoposti:r[3]||'', updated_at:r[4]||'', _rowIndex:myIdx+2 };
     } else {
       currentUser = { email:currentUserEmail||'', nimi:'', puhelin:'', sahkoposti:'', updated_at:'', _rowIndex:null };
     }
+    console.log('currentUser asetettu:', currentUser);
     const projRows = await sheetGet(`${PROJEKTIT_TAB}!A:C`);
     customProjektit = projRows.slice(1).filter(r=>r[0]).map((r,i)=>({id:r[0],nimi:r[1]||'',created_at:r[2]||'',_rowIndex:i+2}));
   } catch(e) {
@@ -2420,17 +2446,20 @@ async function saveMyProfile() {
   const email=currentUser.email||currentUserEmail||'';
   if (!email) { showToast('Google-sähköpostia ei saatu — kirjaudu ulos ja sisään uudelleen','error'); return; }
   const row=[email, nimi, puhelin, sahkoposti, new Date().toISOString()];
+  console.log('saveMyProfile: tallennetaan rivi', row, '_rowIndex=', currentUser._rowIndex);
   try {
     if (currentUser._rowIndex) {
       await sheetPut(`${USERS_TAB}!A${currentUser._rowIndex}:E${currentUser._rowIndex}`, [row]);
+      console.log('saveMyProfile: päivitetty olemassa oleva rivi', currentUser._rowIndex);
     } else {
       const colA = await sheetGet(`${USERS_TAB}!A:A`);
       await sheetAppend(`${USERS_TAB}!A:E`, [row]);
       currentUser._rowIndex = colA.length+1;
+      console.log('saveMyProfile: lisätty uusi rivi', currentUser._rowIndex);
     }
     Object.assign(currentUser, { email, nimi, puhelin, sahkoposti, updated_at:row[4] });
     showToast('Omat tiedot tallennettu ✓','success');
-  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+  } catch(e) { console.error('saveMyProfile epäonnistui:', e); showToast('Virhe: '+e.message,'error'); }
 }
 
 function saveMicrosoftSettings() {
