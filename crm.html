@@ -583,7 +583,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-30.6';
+const BUILD_ID = '2026-07-30.7';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
 });
@@ -604,7 +604,10 @@ const TEMPLATES_COLS = ['id','nimi','aihe','sisalto','created_at'];
 const PROJEKTIT_TAB = 'Projektit';
 const PROJEKTIT_COLS = ['id','nimi','created_at'];
 const BASE_PROJEKTIT = ['ETJ+','Talopakettivalmistajat FIN','Talopakettivalmistajat SWE','Muu Projekti'];
-const MS_GRAPH_SCOPES = ['Mail.Send','Mail.Read'];
+// Mail.ReadWrite tarvitaan luonnoksen luontiin (POST /me/messages), jotta
+// conversationId saadaan talteen yhdellä kutsulla ennen lähetystä — ilman
+// sitä ticket-vastauslinkitys jäisi arvailemaan Lähetetyt-kansiosta.
+const MS_GRAPH_SCOPES = ['Mail.Send','Mail.Read','Mail.ReadWrite'];
 
 let accessToken = null, tokenClient = null;
 let allProspects = [], filteredRows = [], currentId = null;
@@ -1014,6 +1017,8 @@ function renderEmailAttachments() {
   ).join('');
 }
 
+function newTicketCode() { return 'SP-'+Date.now().toString(36).slice(-5).toUpperCase(); }
+
 async function sendOutlookEmail() {
   if (!emailDraftContext) return;
   const to=document.getElementById('email-to').value.trim();
@@ -1027,8 +1032,20 @@ async function sendOutlookEmail() {
   btn.disabled=true; btn.textContent='Lähetetään…';
   try {
     const token=await microsoftAccessToken();
+    const p=allProspects.find(x=>x.spara_id===emailDraftContext.tiliId);
+    const acts=p?parseActs(p):[];
+    let task=(p&&emailDraftContext.taskId) ? acts.find(a=>a.id===emailDraftContext.taskId) : null;
+
+    // Tiketin koodi pysyy samana koko ketjun ajan (vanha tunnistetaan
+    // olemassa olevalta tehtävältä) — vain uusi tiketti saa tuoreen koodin.
+    // Näkyy sulkeissa aiheessa varaosoitteena conversationId-vastaukselle,
+    // jos vastaus jostain syystä katkaisisi Graphin oman ketjutuksen
+    // (esim. vastaanottaja aloittaa täysin uuden viestin samalla aiheella).
+    const ticketCode=task?.ticketCode||newTicketCode();
+    const subjectOut=subject.includes(`[${ticketCode}]`)?subject:`${subject} [${ticketCode}]`;
+
     const message={
-      subject,
+      subject:subjectOut,
       body:{contentType:'HTML',content:bodyHtml},
       toRecipients:[{emailAddress:{address:to}}]
     };
@@ -1038,26 +1055,36 @@ async function sendOutlookEmail() {
         name:a.name, contentType:a.contentType, contentBytes:a.contentBytes
       }));
     }
-    const response=await fetch('https://graph.microsoft.com/v1.0/me/sendMail',{
+    // Luonnos + lähetys kahdessa kutsussa (ei yhden kutsun /sendMail) jotta
+    // conversationId saadaan luontivastauksesta talteen ketjun linkitystä
+    // varten — /sendMail ei palauta mitään viestitietoa (202, tyhjä body).
+    const createRes=await fetch('https://graph.microsoft.com/v1.0/me/messages',{
       method:'POST',
       headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
-      body:JSON.stringify({message, saveToSentItems:true})
+      body:JSON.stringify(message)
     });
-    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+    if (!createRes.ok) throw new Error(`${createRes.status} ${await createRes.text()}`);
+    const created=await createRes.json();
+    const sendRes=await fetch(`https://graph.microsoft.com/v1.0/me/messages/${created.id}/send`,{
+      method:'POST', headers:{Authorization:`Bearer ${token}`}
+    });
+    if (!sendRes.ok) throw new Error(`${sendRes.status} ${await sendRes.text()}`);
 
-    const p=allProspects.find(x=>x.spara_id===emailDraftContext.tiliId);
     if (p) {
-      const acts=parseActs(p);
       const teksti=`Lähetetty: ${subject} → ${to}`;
       const tekija=currentUser.nimi||currentUserEmail||null;
-      let task=emailDraftContext.taskId ? acts.find(a=>a.id===emailDraftContext.taskId) : null;
+      const threadEntry={dir:'out',graphId:created.id,ts:new Date().toISOString(),subject:subjectOut,preview:bodyEl.textContent.trim().slice(0,200)};
       if (task) {
+        task.thread=task.thread||[];
+        task.thread.push(threadEntry);
         Object.assign(task,{tila:'Toimitettu',done:true,aihe:subject,teksti,
-          contactId:emailDraftContext.contactId||task.contactId||null});
+          contactId:emailDraftContext.contactId||task.contactId||null,
+          conversationId:created.conversationId||task.conversationId||null, ticketCode});
       } else {
         acts.push({id:'TK'+Date.now(),tyyppi:'sahkoposti',tila:'Toimitettu',done:true,
           aihe:subject,teksti,tekija,muistiinpanot:null,created_at:new Date().toISOString(),
-          due_date:null,contactId:emailDraftContext.contactId||null});
+          due_date:null,contactId:emailDraftContext.contactId||null,
+          conversationId:created.conversationId||null,ticketCode,thread:[threadEntry]});
       }
       p.aktiviteetit=JSON.stringify(acts);
       await saveCrmState(p);
@@ -1087,7 +1114,7 @@ async function fetchIncomingEmails(address, token) {
   // joka tapauksessa alla JS:llä ennen tallennusta.
   const url='https://graph.microsoft.com/v1.0/me/messages'
     +`?$filter=${encodeURIComponent(`from/emailAddress/address eq '${safeAddr}'`)}`
-    +'&$select=id,subject,bodyPreview,receivedDateTime,webLink'
+    +'&$select=id,subject,bodyPreview,receivedDateTime,webLink,conversationId'
     +'&$top=20';
   const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
@@ -1095,6 +1122,14 @@ async function fetchIncomingEmails(address, token) {
   return data.value||[];
 }
 
+// Tunnistaa mihin lähetettyyn tikettiin saapunut vastaus kuuluu: ensisijaisesti
+// Graphin omalla conversationId:llä (luotettavin, ei riipu siitä mitä
+// vastaanottaja tekee viestin otsikolle), toissijaisesti aiheeseen upotetulla
+// [SP-xxxxx]-koodilla (varalta, jos vastaus jostain syystä katkaisee Graphin
+// ketjutuksen, esim. vastaanottaja aloittaa täysin uuden viestiketjun samalla
+// aiheella). Jos kumpikaan ei täsmää, viesti kirjataan omaksi uudeksi
+// tiketiksi tilaan "Uusi" — ei enää pelkäksi historialokiksi, jotta myös
+// aidosti uudet yhteydenotot näkyvät ja etenevät Tehtävät-välilehdellä.
 async function syncContactEmails(contactId, opts) {
   const silent=!!(opts&&opts.silent);
   const c=allContacts.find(x=>x.id===contactId); if (!c||!c.sahkoposti) return;
@@ -1106,26 +1141,47 @@ async function syncContactEmails(contactId, opts) {
     const token=await microsoftAccessToken();
     const msgs=await fetchIncomingEmails(c.sahkoposti.trim(), token);
     const acts=parseActs(p);
-    const known=new Set(acts.filter(a=>a.graphId).map(a=>a.graphId));
+    const tickets=acts.filter(a=>a.tyyppi==='sahkoposti'&&a.id&&a.contactId===contactId);
+    const byConv=new Map(tickets.filter(t=>t.conversationId).map(t=>[t.conversationId,t]));
+    const byCode=new Map(tickets.filter(t=>t.ticketCode).map(t=>[t.ticketCode,t]));
+    const known=new Set([
+      ...acts.filter(a=>a.graphId).map(a=>a.graphId),
+      ...tickets.flatMap(t=>(t.thread||[]).map(x=>x.graphId))
+    ]);
     const uusi=msgs.filter(m=>!known.has(m.id))
       .sort((a,b)=>new Date(a.receivedDateTime)-new Date(b.receivedDateTime));
+    let linked=0;
     uusi.forEach(m=>{
-      acts.push({
-        tyyppi:'sahkoposti',
-        teksti:`Saapunut: "${m.subject||'(ei aihetta)'}" — ${m.bodyPreview||''}`.trim(),
-        tekija:null,
-        created_at:m.receivedDateTime||new Date().toISOString(),
-        graphId:m.id,
-        graphLink:m.webLink||null
-      });
+      let ticket=byConv.get(m.conversationId);
+      if (!ticket) {
+        const codeMatch=(m.subject||'').match(/\[([A-Z]{2}-[A-Z0-9]{4,6})\]/);
+        if (codeMatch) ticket=byCode.get(codeMatch[1]);
+      }
+      if (ticket) {
+        ticket.thread=ticket.thread||[];
+        ticket.thread.push({dir:'in',graphId:m.id,ts:m.receivedDateTime,subject:m.subject,preview:m.bodyPreview,webLink:m.webLink||null});
+        // Vastaus palauttaa tiketin "Uusi"-tilaan (jos oli merkitty
+        // Toimitetuksi) — taskIsDone johtaa done-tilan tila-kentästä, joten
+        // pelkkä done:false ei riittäisi nostamaan korttia takaisin
+        // aktiiviseksi. Ei kosketa mitä vastaus sisältää, ei arvaa uutta
+        // tilaa sen perusteella — vain merkitsee että joku vastasi.
+        if (ticket.tila==='Toimitettu') ticket.tila='Uusi';
+        linked++;
+      } else {
+        acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,6),tyyppi:'sahkoposti',
+          tila:'Uusi',done:false,aihe:m.subject||'(ei aihetta)',
+          teksti:`Saapunut: "${m.subject||'(ei aihetta)'}" — ${m.bodyPreview||''}`.trim(),
+          tekija:null,muistiinpanot:null,created_at:m.receivedDateTime||new Date().toISOString(),
+          due_date:null,contactId,graphId:m.id,graphLink:m.webLink||null});
+      }
     });
     if (uusi.length) {
       p.aktiviteetit=JSON.stringify(acts);
       await saveCrmState(p);
-      if (currentId===p.spara_id) renderActivities(p);
+      if (currentId===p.spara_id) { renderActivities(p); renderTaskList(p); }
     }
     if (statusEl) statusEl.textContent='Viimeksi tarkistettu: '+fmtDT(new Date().toISOString());
-    if (!silent) showToast(uusi.length?`${uusi.length} uutta viestiä löytyi ✓`:'Ei uusia viestejä','success');
+    if (!silent) showToast(uusi.length?`${uusi.length} uutta viestiä (${linked} liitetty olemassa olevaan tikettiin) ✓`:'Ei uusia viestejä','success');
   } catch(e) {
     if (statusEl) statusEl.textContent='Tarkistus epäonnistui';
     if (!silent) showToast('Sähköpostien haku epäonnistui: '+e.message,'error');
@@ -2011,6 +2067,9 @@ function renderTaskList(p) {
     const tilaOpts=(TASK_TILA[t.tyyppi]||TASK_TILA.muu).map(o=>`<option${o===t.tila?' selected':''}>${esc(o)}</option>`).join('');
     const color=TASK_COLOR[t.tyyppi]||'var(--accent)';
     const dueColor=late?'var(--red)':isToday?'var(--orange)':'var(--text2)';
+    const lastMsg=t.thread&&t.thread.length?t.thread[t.thread.length-1]:null;
+    const waitingReply=lastMsg&&lastMsg.dir==='in';
+    const threadBadge=lastMsg?`<div style="font-size:11px;margin-top:3px;color:${waitingReply?'var(--orange)':'var(--text2)'}">${waitingReply?'↩️':'💬'} ${t.thread.length} viesti${t.thread.length===1?'':'ä'}${waitingReply?' · odottaa vastausta':''}</div>`:'';
     return `<div class="task-card${done?' done-card':''}" style="border-top:2px solid ${color}">
       <div class="task-card-hdr">
         <span style="font-size:13px">${TASK_ICON[t.tyyppi]||'📝'}</span>
@@ -2018,6 +2077,7 @@ function renderTaskList(p) {
         ${t.arvo?`<span style="font-size:11px;color:var(--green);font-weight:700">${Number(t.arvo).toLocaleString('fi')} €</span>`:''}
       </div>
       <div class="task-card-aihe">${esc(t.aihe)||'–'}</div>
+      ${threadBadge}
       <div class="task-card-foot">
         ${done
           ?`<span class="badge" style="background:rgba(76,175,80,.2);color:#81C784;font-size:10px">✓ ${esc(t.tila)}</span>`
@@ -3234,7 +3294,7 @@ async function saveGlobalTask() {
         <ol style="font-size:12px;line-height:1.7;margin:0 0 10px 18px;padding:0">
           <li>Avaa Microsoft Entra ja luo <strong>uusi sovellusrekisteröinti</strong> (alustaksi <em>Single-page application</em>, tilityyppi <em>vain tämä organisaatio</em>).</li>
           <li>Liitä alla näkyvä <strong>Redirect URI</strong> sovellukseen täsmälleen sellaisenaan.</li>
-          <li>Lisää API-oikeudet: Microsoft Graph → Delegated → <code>Mail.Send</code> + <code>Mail.Read</code>, ja myönnä admin-suostumus koko organisaatiolle.</li>
+          <li>Lisää API-oikeudet: Microsoft Graph → Delegated → <code>Mail.Send</code> + <code>Mail.Read</code> + <code>Mail.ReadWrite</code>, ja myönnä admin-suostumus koko organisaatiolle.</li>
           <li>Kopioi sovelluksen <strong>Application (client) ID</strong> Overview-sivulta ja tarkista <strong>organisaation verkkotunnus</strong> alla oleviin kenttiin.</li>
         </ol>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
@@ -3274,12 +3334,17 @@ async function saveGlobalTask() {
       <div id="ms-connect-feedback" class="ms-connect-feedback" style="display:none"></div>
       <div class="build-marker-text" style="font-size:10px;color:var(--text2);opacity:.5;margin-top:6px"></div>
       <div style="font-size:11px;color:var(--text2);line-height:1.5;margin-top:7px">
-        Suppilo pyytää lähetysoikeuden (Mail.Send) ja lukuoikeuden (Mail.Read).
-        Microsoft myöntää Mail.Read-oikeuden koko postilaatikkoosi, mutta
-        Suppilon koodi hakee sillä ainoastaan CRM:ssä tunnistettujen
-        yhteyshenkilöiden lähettämiä viestejä — ei muuta postia selaa tai
+        Suppilo pyytää lähetysoikeuden (Mail.Send), lukuoikeuden (Mail.Read)
+        ja luonnosten luontioikeuden (Mail.ReadWrite — tarvitaan, jotta
+        viestin conversationId saadaan talteen ennen lähetystä ja vastaukset
+        voidaan linkittää oikeaan tikettiin). Microsoft myöntää Mail.Read/
+        ReadWrite-oikeuden koko postilaatikkoosi, mutta Suppilon koodi
+        käyttää niitä ainoastaan CRM:ssä tunnistettujen yhteyshenkilöiden
+        kanssa käytyihin viesteihin — ei muuta postia selaa, muokkaa tai
         tallenna. Client ID ei ole salasana. Salasanaasi ei koskaan syötetä
         Suppiloon — kirjautuminen tapahtuu Microsoftin omassa ikkunassa.
+        Jos tili on jo yhdistetty aiemmin: seuraava lähetys pyytää
+        automaattisesti uuden hyväksynnän laajennetulle oikeudelle.
       </div>
 
       <div class="cs-title" style="margin-top:22px">Sähköpostimallit</div>
