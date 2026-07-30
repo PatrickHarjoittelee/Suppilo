@@ -273,6 +273,7 @@
       Kirjaudu Googlella
     </button>
     <p class="login-note">Vaatii pääsyn Google Sheetsiin (Spara prospektit)</p>
+    <p class="login-note build-marker-text" style="opacity:.5"></p>
   </div>
 </div>
 
@@ -572,6 +573,14 @@
 <div class="toast-wrap" id="toast-wrap"></div>
 
 <script>
+// Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
+// tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
+// jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
+const BUILD_ID = '2026-07-30.1';
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
+});
+
 const CLIENT_ID = '305442089079-umco1cv64ei5i8vu9pfefo4dm4fp3kj4.apps.googleusercontent.com';
 const SHEET_ID  = '1NpkHd0nTpWvaOP6GrwyFo1-P2_dohUn6BdTV-rmT0og';
 const SCOPE     = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email';
@@ -2924,6 +2933,7 @@ async function saveGlobalTask() {
         <button class="btn btn-ghost btn-sm" id="ms-disconnect-btn" style="display:none" onclick="disconnectMicrosoft()">Katkaise</button>
       </div>
       <div id="ms-connect-feedback" class="ms-connect-feedback" style="display:none"></div>
+      <div class="build-marker-text" style="font-size:10px;color:var(--text2);opacity:.5;margin-top:6px"></div>
       <div style="font-size:11px;color:var(--text2);line-height:1.5;margin-top:7px">
         Suppilo pyytää lähetysoikeuden (Mail.Send) ja lukuoikeuden (Mail.Read).
         Microsoft myöntää Mail.Read-oikeuden koko postilaatikkoosi, mutta
