@@ -82,7 +82,10 @@
     .integration-dot.connected { background:var(--green); }
     .email-toolbar { display:flex;gap:4px;margin-bottom:6px; }
     .email-toolbar button { min-width:30px; }
-    .email-body-html img { max-width:100%;height:auto; }
+    .email-body-html img { max-width:100%;height:auto;cursor:pointer; }
+    .img-resize-frame { position:fixed;border:2px solid var(--accent);box-sizing:border-box;pointer-events:none;z-index:2100; }
+    .img-resize-handle { position:absolute;width:12px;height:12px;right:-7px;bottom:-7px;background:var(--accent);border:2px solid #fff;border-radius:50%;cursor:nwse-resize;pointer-events:auto; }
+    .img-resize-label { position:absolute;top:-24px;left:0;background:var(--accent);color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;white-space:nowrap; }
     .emoji-picker { position:fixed;z-index:2000;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);width:224px; }
     .emoji-picker.hidden { display:none; }
     .emoji-grid { display:grid;grid-template-columns:repeat(8,1fr);gap:2px;max-height:180px;overflow-y:auto; }
@@ -589,9 +592,13 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-30.8';
+const BUILD_ID = '2026-07-30.9';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
+  // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
+  // kahvat contenteditable-kentissä, jotta vain alla oleva oma toteutus
+  // (kuvasuhde aina lukittu, näyttää mitat) ohjaa kuvien koon muokkausta.
+  try { document.execCommand('enableObjectResizing', false, false); } catch(_) {}
 });
 
 const CLIENT_ID = '305442089079-umco1cv64ei5i8vu9pfefo4dm4fp3kj4.apps.googleusercontent.com';
@@ -963,6 +970,7 @@ function closeEmailComposer() {
   emailDraftContext=null;
   emailAttachments=[];
   renderEmailAttachments();
+  deselectEditableImage();
 }
 function closeEmailComposerMaybe(e) { if(e.target===document.getElementById('email-modal')) closeEmailComposer(); }
 
@@ -1077,6 +1085,74 @@ document.addEventListener('click', ev=>{
   if (ev.target.closest('#emoji-picker') || ev.target.closest('.emoji-toggle-btn')) return;
   picker.classList.add('hidden');
 });
+
+// ── Kuvan koon muokkaus contenteditable-kentissä ────────────────────────────────
+// Yksi jaettu tila (_imgResize) riittää, koska vain yhtä kuvaa voi säätää
+// kerrallaan. Kehys on position:fixed ja irrallaan kuvasta DOM:ssa, koska
+// kuva voi olla minkä tahansa neljän email-body-html-kentän sisällä eri
+// modaaleissa — sijainti luetaan aina tuoreeltaan getBoundingClientRect:llä.
+let _imgResize=null;
+
+function selectEditableImage(img) {
+  if (_imgResize && _imgResize.img===img) return;
+  deselectEditableImage();
+  const frame=document.createElement('div');
+  frame.className='img-resize-frame';
+  frame.innerHTML='<div class="img-resize-handle"></div><div class="img-resize-label"></div>';
+  document.body.appendChild(frame);
+  _imgResize={img, frame};
+  positionImgResizeFrame();
+  frame.querySelector('.img-resize-handle').addEventListener('mousedown', startImgResizeDrag);
+}
+function deselectEditableImage() {
+  if (!_imgResize) return;
+  _imgResize.frame.remove();
+  _imgResize=null;
+}
+function positionImgResizeFrame() {
+  if (!_imgResize) return;
+  const r=_imgResize.img.getBoundingClientRect();
+  Object.assign(_imgResize.frame.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});
+  updateImgResizeLabel();
+}
+function updateImgResizeLabel() {
+  if (!_imgResize) return;
+  const img=_imgResize.img;
+  const w=Math.round(img.getBoundingClientRect().width);
+  const nat=img.naturalWidth||w;
+  const pct=Math.max(1,Math.round((w/nat)*100));
+  const label=_imgResize.frame.querySelector('.img-resize-label');
+  if (label) label.textContent=`${w} px (${pct}%)`;
+}
+function startImgResizeDrag(ev) {
+  ev.preventDefault(); ev.stopPropagation();
+  if (!_imgResize) return;
+  _imgResize.startX=ev.clientX;
+  _imgResize.startW=_imgResize.img.getBoundingClientRect().width;
+  document.addEventListener('mousemove', onImgResizeDrag);
+  document.addEventListener('mouseup', endImgResizeDrag);
+}
+function onImgResizeDrag(ev) {
+  if (!_imgResize) return;
+  const dx=ev.clientX-_imgResize.startX;
+  // Vain leveys asetetaan — height:auto (email-body-html img -CSS) skaalaa
+  // korkeuden automaattisesti kuvan omaa kuvasuhdetta noudattaen, joten
+  // kuvasuhde säilyy aina eikä sitä tarvitse laskea erikseen käsin.
+  const newW=Math.max(24,Math.min(1200,Math.round(_imgResize.startW+dx)));
+  _imgResize.img.style.width=newW+'px';
+  _imgResize.img.style.height='auto';
+  positionImgResizeFrame();
+}
+function endImgResizeDrag() {
+  document.removeEventListener('mousemove', onImgResizeDrag);
+  document.removeEventListener('mouseup', endImgResizeDrag);
+}
+document.addEventListener('click', ev=>{
+  const img=ev.target.closest ? ev.target.closest('.email-body-html img') : null;
+  if (img) { selectEditableImage(img); return; }
+  if (!ev.target.closest('.img-resize-frame')) deselectEditableImage();
+});
+window.addEventListener('scroll', ()=>{ if (_imgResize) positionImgResizeFrame(); }, true);
 
 // Graphin /sendMail-rajapinta hyväksyy liitteet suoraan pyynnön mukana vain
 // pieninä (base64 kasvattaa kokoa ~1.37x) — isommat vaatisivat erillisen
@@ -2857,7 +2933,7 @@ function openSettings() {
   renderTemplatesList();
   document.getElementById('settings-modal').classList.remove('hidden');
 }
-function closeSettings() { document.getElementById('settings-modal').classList.add('hidden'); }
+function closeSettings() { document.getElementById('settings-modal').classList.add('hidden'); deselectEditableImage(); }
 function closeSettingsMaybe(e) { if (e.target===document.getElementById('settings-modal')) closeSettings(); }
 
 async function saveMyProfile() {
@@ -3123,6 +3199,7 @@ function toggleTemplateEdit(id) {
   if (!view||!form) return;
   const show=form.style.display==='none';
   form.style.display=show?'':'none'; view.style.display=show?'none':'';
+  deselectEditableImage();
 }
 async function addEmailTemplate() {
   const nimi=(document.getElementById('tpl-uusi-nimi')?.value||'').trim();
