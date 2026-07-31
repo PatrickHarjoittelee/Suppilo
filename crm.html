@@ -595,7 +595,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-31.2';
+const BUILD_ID = '2026-07-31.3';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -725,6 +725,14 @@ function anthropicApiKey() {
 function anthropicModel() {
   return (localStorage.getItem('suppilo.anthropicModel') || '').trim() || 'claude-haiku-4-5';
 }
+// Anthropicin palvelinpuolen verkkohaku-työkalu — Claude päättää itse
+// haetaanko mitään, ei erillistä clientin toteuttamaa hakukierrosta.
+// Työkaluversio riippuu mallista: Opus 5 tukee uudempaa (dynaaminen
+// suodatus), Haiku 4.5 vain perusversiota.
+function webSearchToolDef() {
+  const type = anthropicModel()==='claude-opus-5' ? 'web_search_20260209' : 'web_search_20250305';
+  return { type, name:'web_search', max_uses:3 };
+}
 
 // Kevyt, ei-kryptografinen sormenjälki — havaitsee vain onko signaali/
 // perustelu muuttunut edellisestä generoinnista, jotta samaa tekoäly-
@@ -750,13 +758,13 @@ function aiOpenerHash(ctx) { return simpleHash(JSON.stringify(ctx)+'|'+anthropic
 async function generateAiOpeners(ctx) {
   const key=anthropicApiKey();
   if (!key) throw new Error('Lisää Anthropic API-avain Asetuksissa');
-  const prompt=`Kirjoita 2-3 vaihtoehtoista avausrivi(ä) myyntisähköpostiin. Käytä VAIN alla olevia tietoja — älä keksi tai oleta mitään mainitsematonta. Yksi konkreettinen havainto + yksi lause miksi se on relevantti energiatehokkuuden kannalta. Enintään noin 30 sanaa per vaihtoehto. Suora, asiallinen suomalainen liike-elämän sävy — ei ylistystä, ei huutomerkkejä, ei käännetyn kuuloista markkinointitekstiä. Tämä on luonnos jonka myyjä muokkaa ennen lähetystä.
+  const prompt=`Kirjoita 2-3 vaihtoehtoista avausrivi(ä) myyntisähköpostiin. Käytä alla olevia tietoja. Sinulla on käytössä verkkohaku — käytä sitä tarvittaessa täydentämään tai tukemaan signaalia (esim. tuore uutinen, laajennus, vastuullisuus- tai energiahanke). Älä keksi tai oleta mitään: jokaisen väitteen on perustuttava joko alla olevaan tietoon tai oikeaan hakutulokseen. Jos et löydä relevanttia lisätietoa, käytä pelkkää alla olevaa signaalia. Yksi konkreettinen havainto + yksi lause miksi se on relevantti energiatehokkuuden kannalta. Enintään noin 30 sanaa per vaihtoehto. Suora, asiallinen suomalainen liike-elämän sävy — ei ylistystä, ei huutomerkkejä, ei käännetyn kuuloista markkinointitekstiä. Tämä on luonnos jonka myyjä muokkaa ennen lähetystä.
 
 Palauta täsmälleen kolme vaihtoehtoa, kukin omalla rivillään, muodossa:
 1. ...
 2. ...
 3. ...
-Älä lisää mitään muuta tekstiä.
+Älä lisää mitään muuta tekstiä — ei hakutuloksia, ei lähteitä, vain kolme avausriviä.
 
 Yritys: ${ctx.yritys}
 Segmentti: ${ctx.segmentti}
@@ -771,7 +779,7 @@ Perustelu: ${ctx.perustelu}`;
       'anthropic-dangerous-direct-browser-access':'true',
       'content-type':'application/json'
     },
-    body:JSON.stringify({model:anthropicModel(), max_tokens:300, messages:[{role:'user',content:prompt}]})
+    body:JSON.stringify({model:anthropicModel(), max_tokens:1024, tools:[webSearchToolDef()], messages:[{role:'user',content:prompt}]})
   });
   if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
   const data=await response.json();
@@ -3729,7 +3737,9 @@ async function saveGlobalTask() {
         tallennetaan vain tähän selaimeen ja lähetetään suoraan Anthropicin rajapintaan — ei jaettua
         taustapalvelinta, ei kenenkään muun nähtävissä. <strong>Avain on oikea salaisuus, ei julkinen
         tunniste</strong>: jos se vuotaa, vain sinä voit kumota sen Anthropicin konsolissa, CRM ei voi
-        tehdä sitä puolestasi.
+        tehdä sitä puolestasi. Tekoäly voi tarvittaessa myös hakea täydentävää tietoa verkosta
+        signaalin tueksi — Anthropic laskuttaa hauista pienen lisän normaalin tokenkäytön päälle
+        omalta avaimeltasi.
       </div>
       <div class="form-grid">
         <div class="form-group full">
