@@ -46,7 +46,7 @@
       header { padding:0 10px;gap:8px;height:52px; }
       .header-logo { max-height:24px; }
       .hdr-right { gap:5px; }
-      .btn.btn-ghost.btn-sm:last-child { display:none; }
+      #btn-logout { display:none; }
       .summary-bar { overflow-x:auto;flex-wrap:nowrap;padding:8px 12px;scrollbar-width:none; }
       .summary-bar::-webkit-scrollbar { display:none; }
       .card { flex:0 0 auto;min-width:88px;padding:8px 12px; }
@@ -310,7 +310,7 @@
       </div>
     </div>
     <button class="btn btn-ghost btn-sm" onclick="openSettings()" title="Asetukset">⚙️ Asetukset</button>
-    <button class="btn btn-ghost btn-sm" onclick="logout()">Kirjaudu ulos</button>
+    <button class="btn btn-ghost btn-sm" id="btn-logout" onclick="logout()">Kirjaudu ulos</button>
   </div>
 </header>
 
