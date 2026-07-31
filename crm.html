@@ -595,7 +595,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-30.11';
+const BUILD_ID = '2026-07-31.1';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -734,16 +734,22 @@ function simpleHash(str) {
   for (let i=0; i<str.length; i++) h = (Math.imul(31,h) + str.charCodeAt(i))|0;
   return h.toString(36);
 }
-function aiOpenerContext(p) {
-  return { yritys:p.yritys_nimi||'', segmentti:p.segmentti||'', titteli:p.titteli||'',
-    signaali:p.signaali||'', perustelu:p.perustelu||'' };
+// contactId: valitun vastaanottajan id (emailDraftContext.contactId). Titteli
+// haetaan ensisijaisesti VALITULTA yhteyshenkilöltä (allContacts) — tilin oma
+// p.titteli on vain tuontiaikainen, yhteen (usein vanhentuneeseen) kontaktiin
+// sidottu kenttä eikä päivity vastaanottajaa vaihdettaessa.
+function aiOpenerContext(p, contactId) {
+  const c = contactId ? allContacts.find(x=>x.id===contactId) : null;
+  return { yritys:p.yritys_nimi||'', segmentti:p.segmentti||'',
+    titteli:(c&&c.titteli)||p.titteli||'', signaali:p.signaali||'', perustelu:p.perustelu||'' };
 }
-function aiOpenerHash(ctx) { return simpleHash(JSON.stringify(ctx)); }
+// Malli kuuluu sormenjälkeen muttei itse kehotteeseen — mallin vaihto
+// Asetuksissa mitätöi välimuistin, vaikka mikään tilin tieto ei muuttuisi.
+function aiOpenerHash(ctx) { return simpleHash(JSON.stringify(ctx)+'|'+anthropicModel()); }
 
-async function generateAiOpeners(p) {
+async function generateAiOpeners(ctx) {
   const key=anthropicApiKey();
   if (!key) throw new Error('Lisää Anthropic API-avain Asetuksissa');
-  const ctx=aiOpenerContext(p);
   const prompt=`Kirjoita 2-3 vaihtoehtoista avausrivi(ä) myyntisähköpostiin. Käytä VAIN alla olevia tietoja — älä keksi tai oleta mitään mainitsematonta. Yksi konkreettinen havainto + yksi lause miksi se on relevantti energiatehokkuuden kannalta. Enintään noin 30 sanaa per vaihtoehto. Suora, asiallinen suomalainen liike-elämän sävy — ei ylistystä, ei huutomerkkejä, ei käännetyn kuuloista markkinointitekstiä. Tämä on luonnos jonka myyjä muokkaa ennen lähetystä.
 
 Palauta täsmälleen kolme vaihtoehtoa, kukin omalla rivillään, muodossa:
@@ -785,25 +791,35 @@ function aiOpenerButtonState(p) {
 }
 async function openAiOpenerPanel() {
   if (!emailDraftContext) return;
-  const p=allProspects.find(x=>x.spara_id===emailDraftContext.tiliId); if (!p) return;
+  // Kuvakaappaus arvoista (ei viittaus) — emailDraftContext.contactId voi
+  // muuttua paikan päällä (pickEmailToContact) haun ollessa kesken, joten
+  // viittauksen vertailu ei riittäisi havaitsemaan vastaanottajan vaihtoa.
+  const draftCtx={tiliId:emailDraftContext.tiliId, contactId:emailDraftContext.contactId};
+  const p=allProspects.find(x=>x.spara_id===draftCtx.tiliId); if (!p) return;
+  // Jos ikkuna suljetaan/vaihdetaan toiseen tiliin tai vastaanottajaan kesken
+  // haun, hylkää vastauksen UI-päivitys — älä liitä sitä väärän tilin lomakkeeseen.
+  const stillCurrent=()=>emailDraftContext && emailDraftContext.tiliId===draftCtx.tiliId && emailDraftContext.contactId===draftCtx.contactId;
   const panel=document.getElementById('ai-opener-panel');
   const btn=document.getElementById('ai-opener-btn');
-  const ctx=aiOpenerContext(p);
+  const ctx=aiOpenerContext(p, draftCtx.contactId);
   const hash=aiOpenerHash(ctx);
   let variants=(p.ai_opener_hash===hash && p.ai_opener && p.ai_opener.length) ? p.ai_opener : null;
   if (!variants) {
     btn.disabled=true; btn.textContent='⏳ Luodaan…';
     try {
-      variants=await generateAiOpeners(p);
+      variants=await generateAiOpeners(ctx);
       p.ai_opener=variants; p.ai_opener_hash=hash;
       await saveCrmState(p);
     } catch(e) {
-      showToast('Personointi epäonnistui: '+e.message,'error');
-      btn.disabled=false; btn.textContent='✨ Personoi avaus';
+      if (stillCurrent()) {
+        showToast('Personointi epäonnistui: '+e.message,'error');
+        btn.disabled=false; btn.textContent='✨ Personoi avaus';
+      }
       return;
     }
-    btn.disabled=false; btn.textContent='✨ Personoi avaus';
+    if (stillCurrent()) { btn.disabled=false; btn.textContent='✨ Personoi avaus'; }
   }
+  if (!stillCurrent()) return;
   panel.innerHTML=variants.map((v,i)=>`<button type="button" class="ai-opener-option" onclick="pickAiOpener(${i})">${esc(v)}</button>`).join('');
   panel.dataset.variants=JSON.stringify(variants);
   panel.style.display='';
@@ -1072,6 +1088,10 @@ function pickEmailToContact(contactId) {
   const c=allContacts.find(x=>x.id===contactId);
   emailDraftContext.contactId=c?c.id:null;
   document.getElementById('email-to').value=c?c.sahkoposti:'';
+  // Vastaanottaja vaihtui — edellisen kontaktin AI-avausehdotukset eivät
+  // enää päde (titteli/personointi voi olla eri), joten piilota paneeli.
+  const p=allProspects.find(x=>x.spara_id===emailDraftContext.tiliId);
+  if (p) aiOpenerButtonState(p);
 }
 
 function closeEmailComposer() {
