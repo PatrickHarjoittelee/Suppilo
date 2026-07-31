@@ -595,7 +595,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-31.1';
+const BUILD_ID = '2026-07-31.2';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -2022,6 +2022,11 @@ function openTaskForm(tyyppi) {
   if(arvoEl) arvoEl.style.display=tyyppi==='kauppa'?'grid-column:1/-1;display:block':'none';
   if(arvoEl) arvoEl.style.cssText=tyyppi==='kauppa'?'display:block;grid-column:1/-1':'display:none';
   document.querySelectorAll('.task-type-btn').forEach(b=>b.classList.toggle('active',b.dataset.type===tyyppi));
+  // Automaattivalinta: uudelle tehtävälle tekijäksi kirjautunut käyttäjä,
+  // ellei kenttää ole jo täytetty (esim. tyyppiä vaihdettaessa kesken
+  // täytön) — editTask() ylikirjoittaa tämän heti oikealla arvolla.
+  const tekijaEl=document.getElementById('task-tekija');
+  if (tekijaEl && !tekijaEl.value) tekijaEl.value=currentUser.nimi||currentUserEmail||'';
   const form=document.getElementById('task-add-form');
   form.style.display='';
   const delBtn=document.getElementById('task-del-btn'); if(delBtn) delBtn.style.display='none';
@@ -3501,10 +3506,11 @@ async function saveGlobalTask() {
   if(!tiliId||!due_date){showToast('Tili ja päivämäärä ovat pakollisia','error');return;}
   const p=allProspects.find(x=>x.spara_id===tiliId); if(!p) return;
   const done=(TASK_DONE[tyyppi]||[]).includes(tila);
+  const tekija=currentUser.nimi||currentUserEmail||null;
   const acts=parseActs(p);
-  acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,tekija:null,created_at:new Date().toISOString(),due_date,done});
+  acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,tekija,created_at:new Date().toISOString(),due_date,done});
   p.aktiviteetit=JSON.stringify(acts);
-  if(tyyppi==='kauppa'&&tila){const prev=p.vaihe;p.vaihe=tila;if(prev!==tila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${tila}`,null);}
+  if(tyyppi==='kauppa'&&tila){const prev=p.vaihe;p.vaihe=tila;if(prev!==tila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${tila}`,tekija);}
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
   try {
     await saveCrmState(p);
