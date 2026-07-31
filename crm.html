@@ -595,7 +595,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-31.4';
+const BUILD_ID = '2026-07-31.5';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -1044,7 +1044,9 @@ function openEmailComposer(opts) {
   document.getElementById('email-subject').value=opts.subject||`${p.yritys_nimi} – yhteydenotto`;
   const sender=currentUser.nimi||'';
   const greetName=c?c.nimi.split(/\s+/)[0]:'';
-  document.getElementById('email-body-html').innerHTML=
+  // Tallennettu luonnos (opts.bodyHtml) korvaa oletustervehdyksen —
+  // muuten aiemmin kirjoitettu sisältö katoaisi joka uudelleenavauksella.
+  document.getElementById('email-body-html').innerHTML = opts.bodyHtml ||
     `<p>Hei${greetName?' '+esc(greetName)+',':','}</p><p><br></p><p>Ystävällisin terveisin<br>${esc(sender)}</p>${signatureHtml()}`;
 
   const tplWrap=document.getElementById('email-template-wrap');
@@ -1091,7 +1093,8 @@ function openEmailComposerFromTask() {
   const editId=document.getElementById('task-edit-id')?.value||null;
   const existing=editId?parseActs(p).find(a=>a.id===editId):null;
   const subject=(document.getElementById('task-aihe')?.value||'').trim();
-  openEmailComposer({tiliId:currentId, taskId:editId||null, contactId:existing?.contactId||null, subject:subject||undefined});
+  openEmailComposer({tiliId:currentId, taskId:editId||null, contactId:existing?.contactId||null,
+    subject:subject||undefined, bodyHtml:existing?.bodyHtml||undefined});
 }
 
 function pickEmailToContact(contactId) {
@@ -1423,6 +1426,69 @@ async function sendOutlookEmail() {
     showToast('Lähetys epäonnistui: '+e.message,'error');
   } finally {
     btn.disabled=false; btn.textContent='Lähetä Outlookista';
+  }
+}
+
+// Sheetsin solukoko on rajattu ~50 000 merkkiin ja p.aktiviteetit on YKSI
+// JSON-blobi koko tilin kaikelle aktiviteetille — upotettu kuva (base64,
+// ks. RICH_IMAGE_MAX) voi yksinään olla ~2,7M merkkiä. Luonnos ei siis voi
+// sisältää upotettuja kuvia eikä olla rajaton kokoinen.
+const EMAIL_DRAFT_BODY_MAX = 25000;
+function emailDraftBodyTooLarge(html) {
+  return /<img[^>]+src=["']data:/i.test(html) || html.length > EMAIL_DRAFT_BODY_MAX;
+}
+
+// Puhdas funktio (ei I/O) — sekä yksittäisen luonnoksen tallennus
+// (saveEmailDraftTask) että Älykkään Prospektoinnin bulk-luonti käyttävät
+// tätä. Satunnaistettu id (ei paljas 'TK'+Date.now()) koska bulk-silmukka
+// voi luoda useita samalla millisekunnilla.
+function buildDraftEmailActivity({contactId, subject, bodyHtml, tekija}) {
+  return {
+    id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
+    tyyppi:'sahkoposti', tila:'Luonnos', done:false,
+    aihe:subject, teksti:'Luonnos: '+subject, bodyHtml,
+    tekija:tekija||null, muistiinpanot:null,
+    created_at:new Date().toISOString(), due_date:null,
+    contactId:contactId||null
+  };
+}
+
+// Kirjoitusikkunan "💾 Tallenna luonnos" -painike — ei lähetä mitään
+// Outlookiin, tallentaa vain CRM:ään odottamaan myöhempää lähetystä.
+// Uudelleenkäyttää olemassa olevan tehtävän jos luonnos avattiin
+// tehtävälistan kautta (sama kaava kuin sendOutlookEmail), jotta toistuva
+// tallennus ei luo duplikaattitehtäviä.
+async function saveEmailDraftTask() {
+  if (!emailDraftContext) return;
+  const p=allProspects.find(x=>x.spara_id===emailDraftContext.tiliId); if (!p) return;
+  const subject=(document.getElementById('email-subject')?.value||'').trim();
+  const bodyEl=document.getElementById('email-body-html');
+  const bodyHtml=(bodyEl?.innerHTML||'').trim();
+  const bodyEmpty=!bodyEl?.textContent.trim() && !bodyEl?.querySelector('img,a');
+  if (!subject || bodyEmpty) { showToast('Aihe ja viesti ovat pakollisia luonnokselle','error'); return; }
+  if (emailDraftBodyTooLarge(bodyHtml)) {
+    showToast('Luonnos on liian iso tallennettavaksi (poista upotetut kuvat tai lähetä suoraan)','error');
+    return;
+  }
+  const acts=parseActs(p);
+  const task=emailDraftContext.taskId ? acts.find(a=>a.id===emailDraftContext.taskId) : null;
+  const tekija=currentUser.nimi||currentUserEmail||null;
+  if (task) {
+    Object.assign(task,{tila:'Luonnos',done:false,aihe:subject,
+      teksti:'Luonnos: '+subject, bodyHtml,
+      contactId:emailDraftContext.contactId||task.contactId||null});
+  } else {
+    const newTask=buildDraftEmailActivity({contactId:emailDraftContext.contactId, subject, bodyHtml, tekija});
+    acts.push(newTask);
+    emailDraftContext.taskId=newTask.id;
+  }
+  p.aktiviteetit=JSON.stringify(acts);
+  try {
+    await saveCrmState(p);
+    if (currentId===p.spara_id) { renderActivities(p); renderTaskList(p); }
+    showToast('Luonnos tallennettu ✓','success');
+  } catch(e) {
+    showToast('Tallennus epäonnistui: '+e.message,'error');
   }
 }
 
@@ -2016,7 +2082,7 @@ function kauppaStats(){
 const TASK_TILA={
   kauppa:    ['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'],
   soitto:    ['Uusi','Vastaamaton','Viesti vastaajaan','SMS-viesti','Tavoitettu'],
-  sahkoposti:['Uusi','Hylkäys','Lomavastaaja','Toimitettu'],
+  sahkoposti:['Uusi','Luonnos','Hylkäys','Lomavastaaja','Toimitettu'],
   muu:       ['Uusi','Aloitettu','Odottaa lisätietoa','Valmis']
 };
 const TASK_DONE={kauppa:['Sopimus','Hävitty'],soitto:['Tavoitettu'],sahkoposti:['Toimitettu'],muu:['Valmis']};
@@ -3820,6 +3886,7 @@ async function saveGlobalTask() {
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
         <button class="btn btn-ghost" onclick="closeEmailComposer()">Peruuta</button>
+        <button class="btn btn-ghost" id="email-save-draft-btn" onclick="saveEmailDraftTask()">💾 Tallenna luonnos</button>
         <button class="btn btn-outlook" id="email-send-btn" onclick="sendOutlookEmail()">Lähetä Outlookista</button>
       </div>
     </div>
