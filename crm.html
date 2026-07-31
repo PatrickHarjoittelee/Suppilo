@@ -316,11 +316,11 @@
 
 <div class="summary-bar">
   <div class="card"><div class="card-label">Kaikki tilit</div><div class="card-value cv-blue" id="s-total">–</div></div>
-  <div class="card"><div class="card-label">ETJ+</div><div class="card-value cv-red" id="s-etj">–</div></div>
+  <div class="card"><div class="card-label" id="s-etj-label">ETJ+</div><div class="card-value cv-red" id="s-etj">–</div></div>
   <div class="card"><div class="card-label">Talopaketit</div><div class="card-value cv-orange" id="s-talo">–</div></div>
   <div class="card"><div class="card-label">Aktiiviset</div><div class="card-value" style="color:var(--yellow)" id="s-active">–</div></div>
   <div class="card"><div class="card-label">Sopimukset</div><div class="card-value cv-green" id="s-sopimus">–</div></div>
-  <div class="card"><div class="card-label">Muu Projekti</div><div class="card-value" style="color:var(--purple)" id="s-muu">–</div></div>
+  <div class="card"><div class="card-label" id="s-muu-label">Muu Projekti</div><div class="card-value" style="color:var(--purple)" id="s-muu">–</div></div>
 </div>
 
 <div class="tabs">
@@ -674,7 +674,12 @@ const TEMPLATES_TAB = 'Sähköpostimallit';
 const TEMPLATES_COLS = ['id','nimi','aihe','sisalto','created_at'];
 const PROJEKTIT_TAB = 'Projektit';
 const PROJEKTIT_COLS = ['id','nimi','created_at'];
-const BASE_PROJEKTIT = ['ETJ+','Talopakettivalmistajat FIN','Talopakettivalmistajat SWE','Muu Projekti'];
+const BASE_PROJEKTIT = Object.freeze([
+  {id:'BASE_ETJ_PLUS', nimi:'ETJ+'},
+  {id:'BASE_TALO_FIN', nimi:'Talopakettivalmistajat FIN'},
+  {id:'BASE_TALO_SWE', nimi:'Talopakettivalmistajat SWE'},
+  {id:'BASE_MUU', nimi:'Muu Projekti'}
+]);
 // Mail.ReadWrite tarvitaan luonnoksen luontiin (POST /me/messages), jotta
 // conversationId saadaan talteen yhdellä kutsulla ennen lähetystä — ilman
 // sitä ticket-vastauslinkitys jäisi arvailemaan Lähetetyt-kansiosta.
@@ -689,6 +694,7 @@ let yhPage = 0, yhSortCol = 'nimi', yhSortAsc = true, yhFilteredRows = [], curre
 const YH_PAGE_SIZE = 60;
 let currentUserEmail = null;
 let currentUser = { email:'', nimi:'', puhelin:'', sahkoposti:'', updated_at:'', allekirjoitus:'', _rowIndex:null };
+let baseProjektit = BASE_PROJEKTIT.map(p=>({...p,defaultNimi:p.nimi,created_at:'',_rowIndex:null}));
 let customProjektit = [];
 let emailTemplates = [];
 let msalInstance = null, microsoftAccount = null, emailDraftContext = null, msalInstanceKey = null;
@@ -1792,7 +1798,34 @@ async function loadData() {
     }
     console.log('currentUser asetettu:', currentUser);
     const projRows = await sheetGet(`${PROJEKTIT_TAB}!A:C`);
-    customProjektit = projRows.slice(1).filter(r=>r[0]).map((r,i)=>({id:r[0],nimi:r[1]||'',created_at:r[2]||'',_rowIndex:i+2}));
+    const storedProjektit = projRows.slice(1).map((r,i)=>({
+      id:r[0]||'', nimi:r[1]||'', created_at:r[2]||'', _rowIndex:i+2
+    })).filter(p=>p.id);
+    const baseIds = new Set(BASE_PROJEKTIT.map(p=>p.id));
+    baseProjektit = BASE_PROJEKTIT.map(def=>{
+      const stored=storedProjektit.find(p=>p.id===def.id);
+      return stored
+        ? {...stored,nimi:stored.nimi||def.nimi,defaultNimi:def.nimi}
+        : {...def,defaultNimi:def.nimi,created_at:'',_rowIndex:null};
+    });
+    customProjektit = storedProjektit.filter(p=>!baseIds.has(p.id));
+
+    // Vanhoista tai erillisistä lähdevälilehdistä luetut oletusnimet seuraavat
+    // Projektit-välilehdelle tallennettua uutta nimeä myös sivun latauksen jälkeen.
+    baseProjektit.forEach(pj=>{
+      if (pj.nimi===pj.defaultNimi) return;
+      allProspects.filter(p=>p.kampanja===pj.defaultNimi).forEach(p=>p.kampanja=pj.nimi);
+    });
+    const etjNimi=baseProjektiNimi('BASE_ETJ_PLUS');
+    const taloNimet=new Set([baseProjektiNimi('BASE_TALO_FIN'),baseProjektiNimi('BASE_TALO_SWE')]);
+    allProspects.filter(p=>p.spara_id?.startsWith('ID')).forEach(p=>{
+      if (p.kampanja===etjNimi) {
+        delete p._isTili;
+      } else if (taloNimet.has(p.kampanja)) {
+        delete p._isTili;
+        p.sija=parseInt(p.prioriteetti||'0')||null;
+      }
+    });
     const tplRows = await sheetGet(`${TEMPLATES_TAB}!A:E`);
     emailTemplates = tplRows.slice(1).filter(r=>r[0]).map((r,i)=>({id:r[0],nimi:r[1]||'',aihe:r[2]||'',sisalto:r[3]||'',created_at:r[4]||'',_rowIndex:i+2}));
   } catch(e) {
@@ -1805,12 +1838,14 @@ async function loadData() {
 async function initVirtualKaupat() {
   const ts = new Date().toISOString();
   const newRows = [];
+  const etjNimi=baseProjektiNimi('BASE_ETJ_PLUS');
+  const taloNimet=new Set([baseProjektiNimi('BASE_TALO_FIN'),baseProjektiNimi('BASE_TALO_SWE')]);
   allProspects.forEach(p => {
     const acts = parseActs(p);
     if (acts.some(a => a.tyyppi === 'kauppa')) return;
     let aihe, arvo;
-    if (p.kampanja === 'ETJ+') { aihe='ETJ+'; arvo=299; }
-    else if (p.kampanja?.startsWith('Talopakett')) { aihe=p.kampanja; arvo=7000; }
+    if (p.kampanja === etjNimi) { aihe=etjNimi; arvo=299; }
+    else if (taloNimet.has(p.kampanja)) { aihe=p.kampanja; arvo=7000; }
     else return;
     acts.push({id:'TKv_'+p.spara_id, tyyppi:'kauppa', tila:'Liidi', aihe, arvo,
       tekija:null, muistiinpanot:p.signaali||null, created_at:ts, due_date:null, done:false});
@@ -1862,7 +1897,7 @@ function parseProspects(rows) {
         perustelu:cv(c,16), velvoiteluokka:cv(c,17), huomiot:cv(c,18), kontaktoinnin_tila:tila,
         tulos_seuraava_toimi:tulos, lahde:cv(c,21), 'yhteyshenkilö':cv(c,22), titteli:cv(c,23),
         suora_numero:cv(c,24), henk_sahkoposti:cv(c,25), linkedin:cv(c,26),
-        vaihe:detectVaihe(tila,tulos), ...blankCrm() };
+        vaihe:detectVaihe(tila,tulos), _rowIndex:idx+1, ...blankCrm() };
       if (kampanja.startsWith('Talopakett')) {
         p.sija = parseInt(cv(c,2)||'0') || null;
         p.liikevaihto_meur = cn(c,9);
@@ -1947,7 +1982,7 @@ async function saveTiliData(p) {
   let row, range;
   if (p.spara_id.startsWith('ID')) {
     row = [
-      p.spara_id, p.kampanja||'Muu Projekti', p.prioriteetti||'',
+      p.spara_id, p.kampanja||baseProjektiNimi('BASE_MUU'), p.prioriteetti||'',
       p.segmentti||'', p.yritys_nimi||'', p.juridinen_yhtio||'',
       p.osoite||'', p.kaupunki||'', p.y_tunnus||'',
       p.liikevaihto_meur||'', p.kulutusarvio_mwh||'', p.pisteet||'',
@@ -3627,7 +3662,7 @@ function openAddTili() {
    'tf_kaupunki','tf_www','tf_yhteyshenkilö','tf_sahkoposti','tf_rekisteroity','tf_lisatiedot']
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   const kSel=document.getElementById('tf_kampanja');
-  if (kSel) kSel.value='Muu Projekti';
+  if (kSel) kSel.value=baseProjektiNimi('BASE_MUU');
   document.getElementById('addtili-modal').classList.remove('hidden');
 }
 function closeAddTili() { document.getElementById('addtili-modal').classList.add('hidden'); }
@@ -3636,7 +3671,7 @@ function closeTiliMaybe(e) { if (e.target===document.getElementById('addtili-mod
 async function saveNewTili() {
   const name = document.getElementById('tf_name')?.value.trim();
   if (!name) { showToast('Yrityksen nimi on pakollinen', 'error'); return; }
-  const kampanja = document.getElementById('tf_kampanja')?.value || 'Muu Projekti';
+  const kampanja = document.getElementById('tf_kampanja')?.value || baseProjektiNimi('BASE_MUU');
   const maxId = allProspects
     .map(p => p.spara_id)
     .filter(sid => /^ID\d+$/.test(sid))
@@ -3781,10 +3816,18 @@ async function copyRedirectUri() {
 
 let _projektitOrphanCache = [];
 
+function baseProjekti(id) { return baseProjektit.find(p=>p.id===id); }
+function baseProjektiNimi(id) {
+  const active=baseProjekti(id);
+  const fallback=BASE_PROJEKTIT.find(p=>p.id===id);
+  return active?.nimi || fallback?.nimi || '';
+}
+function baseProjektitNimet() { return baseProjektit.map(p=>p.nimi).filter(Boolean); }
+
 // Kampanja-arvot joita esiintyy tileillä mutta joita ei ole koskaan lisätty
 // Projektit-välilehdelle (esim. suoraan Sheetsiin tuotu data, kuten HubSpot-tuonti).
 function orphanProjektitNimet() {
-  const known = new Set([...BASE_PROJEKTIT, ...customProjektit.map(p=>p.nimi)]);
+  const known = new Set([...baseProjektitNimet(), ...customProjektit.map(p=>p.nimi)]);
   const seen = new Set(), out = [];
   allProspects.forEach(p => {
     const k = p.kampanja;
@@ -3794,7 +3837,7 @@ function orphanProjektitNimet() {
   return out.sort((a,b)=>a.localeCompare(b,'fi'));
 }
 
-function allProjektitNimet() { return [...BASE_PROJEKTIT, ...customProjektit.map(p=>p.nimi), ...orphanProjektitNimet()]; }
+function allProjektitNimet() { return [...baseProjektitNimet(), ...customProjektit.map(p=>p.nimi), ...orphanProjektitNimet()]; }
 
 function populateProjektiSelects() {
   const nimet=allProjektitNimet();
@@ -3809,23 +3852,36 @@ function populateProjektiSelects() {
   // "mihin luodaan" -valitsimia, ei suodattimia — ei tyhjää "Kaikki
   // projektit" -vaihtoehtoa, oletusarvo 'Muu Projekti' jos aiempi arvo
   // ei enää kelpaa.
+  const muu=baseProjektiNimi('BASE_MUU');
   ['tf_kampanja','pm-projekti'].forEach(id=>{
     const sel=document.getElementById(id); if(!sel) return;
-    const prev=sel.value||'Muu Projekti';
+    const prev=sel.value||muu;
     sel.innerHTML=opts;
-    sel.value=nimet.includes(prev)?prev:'Muu Projekti';
+    sel.value=nimet.includes(prev)?prev:muu;
   });
 }
 
 function renderProjektitList() {
   const div=document.getElementById('settings-projektit-list'); if(!div) return;
   let html='';
-  BASE_PROJEKTIT.forEach(nimi=>{
-    const n=allProspects.filter(p=>p.kampanja===nimi).length;
+  baseProjektit.forEach(pj=>{
+    const n=allProspects.filter(p=>p.kampanja===pj.nimi).length;
     html+=`<div class="yh-item" style="cursor:default">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-        <div><div class="yh-item-name">${esc(nimi)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${n} tiliä</div></div>
-        <span class="source-badge">Perus</span>
+      <div id="pj-${pj.id}-view">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div><div class="yh-item-name">${esc(pj.nimi)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${n} tiliä</div></div>
+          <div style="display:flex;align-items:center;gap:4px">
+            <span class="source-badge">Perus</span>
+            <button class="btn btn-ghost btn-sm" onclick="toggleProjektiEdit('${pj.id}')">Muokkaa</button>
+          </div>
+        </div>
+      </div>
+      <div id="pj-${pj.id}-form" style="display:none;margin-top:6px">
+        <div style="display:flex;gap:6px">
+          <input class="form-control" id="pj-${pj.id}-nimi" value="${esc(pj.nimi)}">
+          <button class="btn btn-ghost btn-sm" onclick="toggleProjektiEdit('${pj.id}')">Peruuta</button>
+          <button class="btn btn-primary btn-sm" onclick="saveBaseProjektiRename('${pj.id}')">Tallenna</button>
+        </div>
       </div>
     </div>`;
   });
@@ -3900,28 +3956,51 @@ async function addProjekti() {
 }
 
 async function renameProjekti(oldNimi, newNimi, trackedPj) {
-  if (allProjektitNimet().some(n=>n.toLowerCase()===newNimi.toLowerCase())) { showToast('Projekti on jo olemassa','error'); return; }
-  const affected=allProspects.filter(p=>p.kampanja===oldNimi && p._rowIndex);
+  const oldKey=oldNimi.toLocaleLowerCase('fi');
+  const newKey=newNimi.toLocaleLowerCase('fi');
+  if (allProjektitNimet().some(n=>n.toLocaleLowerCase('fi')===newKey && n.toLocaleLowerCase('fi')!==oldKey)) {
+    showToast('Projekti on jo olemassa','error'); return;
+  }
+  const affected=allProspects.filter(p=>p.kampanja===oldNimi);
+  // Vain ID-rivien B-sarake sisältää projektin. Vanhan Txxxx-rivimuodon
+  // B-sarake on yrityksen nimi, joten sitä ei saa ylikirjoittaa.
+  const storedAffected=affected.filter(p=>p._rowIndex && p.spara_id?.startsWith('ID'));
   try {
     if (trackedPj) {
-      await sheetPut(`${PROJEKTIT_TAB}!B${trackedPj._rowIndex}`, [[newNimi]]);
+      if (trackedPj._rowIndex) {
+        await sheetPut(`${PROJEKTIT_TAB}!B${trackedPj._rowIndex}`, [[newNimi]]);
+      } else {
+        const row=[trackedPj.id,newNimi,new Date().toISOString()];
+        const colA=await sheetGet(`${PROJEKTIT_TAB}!A:A`);
+        await sheetAppend(`${PROJEKTIT_TAB}!A:C`,[row]);
+        trackedPj.created_at=row[2];
+        trackedPj._rowIndex=colA.length+1;
+      }
       trackedPj.nimi=newNimi;
-    } else if (!BASE_PROJEKTIT.includes(newNimi) && !customProjektit.some(p=>p.nimi===newNimi)) {
+    } else if (!baseProjektitNimet().includes(newNimi) && !customProjektit.some(p=>p.nimi===newNimi)) {
       const id='PJ'+Date.now();
       const row=[id,newNimi,new Date().toISOString()];
       const colA=await sheetGet(`${PROJEKTIT_TAB}!A:A`);
       await sheetAppend(`${PROJEKTIT_TAB}!A:C`,[row]);
       customProjektit.push({id,nimi:newNimi,created_at:row[2],_rowIndex:colA.length+1});
     }
-    if (affected.length) {
-      await sheetBatchUpdate(affected.map(p=>({range:`${MAIN_TAB}!B${p._rowIndex}`, values:[[newNimi]]})));
-      affected.forEach(p=>p.kampanja=newNimi);
+    if (storedAffected.length) {
+      await sheetBatchUpdate(storedAffected.map(p=>({range:`${MAIN_TAB}!B${p._rowIndex}`, values:[[newNimi]]})));
     }
+    affected.forEach(p=>p.kampanja=newNimi);
     renderProjektitList();
     populateProjektiSelects();
     buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard(); renderKanban(); applyYhFilters();
     showToast(`Projekti nimetty uudelleen: ${newNimi} (${affected.length} tiliä)`,'success');
   } catch(e) { showToast('Virhe: '+e.message,'error'); }
+}
+
+async function saveBaseProjektiRename(id) {
+  const pj=baseProjekti(id); if(!pj) return;
+  const nimi=(document.getElementById(`pj-${id}-nimi`)?.value||'').trim();
+  if (!nimi) { showToast('Nimi on pakollinen','error'); return; }
+  if (nimi===pj.nimi) { toggleProjektiEdit(id); return; }
+  await renameProjekti(pj.nimi, nimi, pj);
 }
 
 async function saveProjektiRename(id) {
@@ -4045,12 +4124,17 @@ async function deleteEmailTemplate(id) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function updateSummary() {
+  const etjNimi=baseProjektiNimi('BASE_ETJ_PLUS');
+  const taloNimet=new Set([baseProjektiNimi('BASE_TALO_FIN'),baseProjektiNimi('BASE_TALO_SWE')]);
+  const muuNimi=baseProjektiNimi('BASE_MUU');
   document.getElementById('s-total').textContent  = allProspects.length;
-  document.getElementById('s-etj').textContent    = allProspects.filter(p=>p.kampanja==='ETJ+').length;
-  document.getElementById('s-talo').textContent   = allProspects.filter(p=>p.kampanja?.startsWith('Talopakett')).length;
+  document.getElementById('s-etj').textContent    = allProspects.filter(p=>p.kampanja===etjNimi).length;
+  document.getElementById('s-talo').textContent   = allProspects.filter(p=>taloNimet.has(p.kampanja)).length;
   document.getElementById('s-active').textContent = allProspects.filter(p=>!['Sopimus','Hävitty'].includes(p.vaihe)).length;
   document.getElementById('s-sopimus').textContent= allProspects.filter(p=>p.vaihe==='Sopimus').length;
-  document.getElementById('s-muu').textContent    = allProspects.filter(p=>p.kampanja==='Muu Projekti').length;
+  document.getElementById('s-muu').textContent    = allProspects.filter(p=>p.kampanja===muuNimi).length;
+  document.getElementById('s-etj-label').textContent=etjNimi;
+  document.getElementById('s-muu-label').textContent=muuNimi;
 }
 // Segmenteillä ei ole hallittua listaa (toisin kuin projekteilla) — ne
 // johdetaan aina suoraan olemassa olevasta datasta.
@@ -4064,16 +4148,16 @@ function buildSegmentFilter() {
 }
 function kampBadge(k) {
   if (!k) return '–';
-  if (k==='ETJ+') return '<span style="color:var(--red)">ETJ+</span>';
-  if (k.includes('FIN')) return '<span style="color:var(--orange)">🇫🇮 FIN</span>';
-  if (k.includes('SWE')) return '<span style="color:var(--blue)">🇸🇪 SWE</span>';
-  if (k==='Muu Projekti') return '<span style="color:var(--purple)">Muu</span>';
+  if (k===baseProjektiNimi('BASE_ETJ_PLUS')) return `<span style="color:var(--red)">${esc(k)}</span>`;
+  if (k===baseProjektiNimi('BASE_TALO_FIN')) return `<span style="color:var(--orange)">🇫🇮 ${esc(k)}</span>`;
+  if (k===baseProjektiNimi('BASE_TALO_SWE')) return `<span style="color:var(--blue)">🇸🇪 ${esc(k)}</span>`;
+  if (k===baseProjektiNimi('BASE_MUU')) return `<span style="color:var(--purple)">${esc(k)}</span>`;
   return esc(k);
 }
 function scoreClass(s) { return !s?'':s>=85?'score-high':s>=70?'score-mid':'score-low'; }
 function calcArvosana(p) { return p.pisteet!=null ? parseFloat((p.pisteet/10).toFixed(1)) : null; }
 function arvosanaClass(a) { return a==null?'':a>=8.5?'score-high':a>=7.0?'score-mid':'score-low'; }
-function esc(s) { return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'):'–'; }
+function esc(s) { return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'):'–'; }
 function fmtDT(d) { return d?new Date(d).toLocaleString('fi-FI',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):''; }
 function showToast(msg,type='') {
   const t=document.createElement('div'); t.className='toast '+type; t.textContent=msg;
