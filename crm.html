@@ -650,7 +650,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-31.8';
+const BUILD_ID = '2026-07-31.9';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -3300,6 +3300,80 @@ async function createProspectAccountsBatch(candidates, opts) {
   if (document.getElementById('tab-kanban')?.classList.contains('active')) renderKanban();
 
   return newProspects.map(p=>p.spara_id);
+}
+
+// ── Älykäs Prospektointi: YTJ-todennus ──────────────────────────────────────
+// fetchAndFillYTJ():n "jos tasan 1 PRH-tulos, täytä automaattisesti" on
+// ihmisen valvoma mukavuusheuristiikka — käyttäjä vahvistaa visuaalisesti
+// ennen tallennusta. Täysin automatisoidussa erässä ei ole vastaavaa
+// silmäparia, joten tarvitaan oikea, deterministinen samankaltaisuustarkistus
+// eikä pelkkä "yksi tulos" -oletus.
+const FI_LEGAL_FORM_TOKENS=['oyj','oy','ab','ky','tmi','ry','osk'];
+function normalizeCompanyName(s) {
+  if (!s) return '';
+  const cleaned=String(s).toLowerCase().replace(/[.,\-–—()]/g,' ').replace(/\s+/g,' ').trim();
+  return cleaned.split(' ').filter(w=>w && !FI_LEGAL_FORM_TOKENS.includes(w)).join(' ').trim();
+}
+function levenshteinDistance(a, b) {
+  const m=a.length, n=b.length;
+  if (!m) return n; if (!n) return m;
+  const dp=Array(n+1).fill(0).map((_,i)=>i);
+  for (let i=1;i<=m;i++) {
+    let prev=dp[0]; dp[0]=i;
+    for (let j=1;j<=n;j++) {
+      const tmp=dp[j];
+      dp[j]=a[i-1]===b[j-1]?prev:1+Math.min(prev,dp[j],dp[j-1]);
+      prev=tmp;
+    }
+  }
+  return dp[n];
+}
+function stringSimilarity(a, b) {
+  if (!a && !b) return 1;
+  if (!a || !b) return 0;
+  return 1-levenshteinDistance(a,b)/Math.max(a.length,b.length);
+}
+
+const YTJ_MATCH_THRESHOLD=0.85;
+// Hylkää mieluummin kuin hyväksyy epävarmasti — hylätty ehdokas näkyy vain
+// yhteenvedon "Hylätty"-listassa, hyväksytty EPÄvarma osuma loisi väärän
+// tilin. { accepted:true, data:<_prhToTiliForm-muotoinen>, matchScore,
+// matchedName } tai { accepted:false, reason, closestMatch? }.
+async function verifyCandidateAgainstYtj({name, city}) {
+  const trimmedName=(name||'').trim();
+  if (!trimmedName) return {accepted:false, reason:'Ei nimeä ehdotuksessa'};
+  let results;
+  try { results=await prhSearchByName(trimmedName); }
+  catch(e) { return {accepted:false, reason:'PRH-haku epäonnistui: '+e.message}; }
+  if (!results.length) return {accepted:false, reason:'Ei löydy PRH:n yritysrekisteristä'};
+
+  const normCandidate=normalizeCompanyName(trimmedName);
+  let best=null, bestScore=-1;
+  results.forEach(r=>{
+    const rName=_prhName(r);
+    const score=stringSimilarity(normCandidate, normalizeCompanyName(rName));
+    if (score>bestScore) { bestScore=score; best={result:r, name:rName}; }
+  });
+  if (!best || bestScore<YTJ_MATCH_THRESHOLD) {
+    return {accepted:false,
+      reason:`Lähin PRH-osuma "${best?best.name:'–'}" ei riittävän samankaltainen (${Math.round((bestScore<0?0:bestScore)*100)}%)`,
+      closestMatch:best?best.name:null};
+  }
+  const businessId=_str(best.result.businessId);
+  if (!businessId) return {accepted:false, reason:'PRH-tulokselta puuttuu Y-tunnus'};
+  let confirmed;
+  try { confirmed=await prhFetchByBusinessId(businessId); }
+  catch(e) { return {accepted:false, reason:'Y-tunnuksen varmistus epäonnistui: '+e.message}; }
+  return {accepted:true, data:confirmed, matchScore:bestScore, matchedName:best.name};
+}
+
+// Tarkistaa sekä olemassa olevat tilit että saman ajon jo hyväksytyt
+// kandidaatit (AI voisi ehdottaa samaa oikeaa yritystä kahdesti eri
+// lohkoissa) — Y-tunnus on ainoa luotettava avain, ei nimi.
+function checkDuplicateAccount(yTunnus, acceptedInThisRun) {
+  if (!yTunnus) return false;
+  if (allProspects.some(p=>p.y_tunnus && p.y_tunnus===yTunnus)) return true;
+  return (acceptedInThisRun||[]).some(c=>c.tf_ytunnus===yTunnus);
 }
 
 async function runProspectingBatch() {
