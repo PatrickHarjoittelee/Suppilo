@@ -595,7 +595,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-31.5';
+const BUILD_ID = '2026-07-31.6';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -638,6 +638,10 @@ let customProjektit = [];
 let emailTemplates = [];
 let msalInstance = null, microsoftAccount = null, emailDraftContext = null, msalInstanceKey = null;
 let emailAttachments = [];
+// Otos kirjoitusikkunan alkutilasta (aihe/runko esitäytetään aina
+// tervehdys+allekirjoitus-pohjalla, joten "onko sisältöä" pitää verrata
+// tähän otokseen, ei tyhjään — muuten joka avaus näyttäisi "muokatulta").
+let emailComposerInitialSnapshot = null;
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 let _emailConsentRetried = false;
@@ -1064,6 +1068,25 @@ function openEmailComposer(opts) {
   renderEmailAttachments();
   document.getElementById('email-send-btn').disabled=false;
   document.getElementById('email-modal').classList.remove('hidden');
+  captureEmailComposerSnapshot();
+}
+
+// Kutsutaan avauksen lopussa (esitäytön jälkeen) ja onnistuneen
+// luonnostallennuksen jälkeen, jotta "onko muutoksia" -tarkistuksella on
+// oikea vertailukohta eikä se nagaa tallennuksesta juuri palanneelle.
+function captureEmailComposerSnapshot() {
+  emailComposerInitialSnapshot = {
+    subject: document.getElementById('email-subject')?.value||'',
+    bodyHtml: document.getElementById('email-body-html')?.innerHTML||'',
+    attachmentCount: emailAttachments.length
+  };
+}
+function emailComposerIsDirty() {
+  if (!emailComposerInitialSnapshot) return false;
+  const s=emailComposerInitialSnapshot;
+  return (document.getElementById('email-subject')?.value||'')!==s.subject
+    || (document.getElementById('email-body-html')?.innerHTML||'')!==s.bodyHtml
+    || emailAttachments.length!==s.attachmentCount;
 }
 
 // {{etunimi}}/{{nimi}}/{{yritys}}/{{tekija}} korvataan mallia valittaessa —
@@ -1116,7 +1139,15 @@ function closeEmailComposer() {
   deselectEditableImage();
   const aiPanel=document.getElementById('ai-opener-panel'); if (aiPanel) aiPanel.style.display='none';
 }
-function closeEmailComposerMaybe(e) { if(e.target===document.getElementById('email-modal')) closeEmailComposer(); }
+// Käyttäjän käynnistämä sulkeminen (✕, Peruuta, klikkaus ulkopuolelle) —
+// kysyy vahvistuksen jos muutoksia. closeEmailComposer() itse pysyy
+// ehdottomana, koska sendOutlookEmail() kutsuu sitä lähetyksen jälkeen
+// eikä silloin pidä kysyä mitään.
+function closeEmailComposerGuarded() {
+  if (emailComposerIsDirty() && !confirm('Sähköpostiluonnos ei ole tallennettu. Suljetaanko silti?')) return;
+  closeEmailComposer();
+}
+function closeEmailComposerMaybe(e) { if(e.target===document.getElementById('email-modal')) closeEmailComposerGuarded(); }
 
 // targetId oletuksena varsinainen viestikenttä, mutta samaa työkaluriviä
 // käytetään myös Asetusten allekirjoitus- ja mallipohjakentissä.
@@ -1486,6 +1517,7 @@ async function saveEmailDraftTask() {
   try {
     await saveCrmState(p);
     if (currentId===p.spara_id) { renderActivities(p); renderTaskList(p); }
+    captureEmailComposerSnapshot();
     showToast('Luonnos tallennettu ✓','success');
   } catch(e) {
     showToast('Tallennus epäonnistui: '+e.message,'error');
@@ -3847,7 +3879,7 @@ async function saveGlobalTask() {
   <div class="modal" style="max-width:720px">
     <div class="modal-header">
       <div class="modal-title">Uusi Outlook-sähköposti</div>
-      <button class="modal-close" onclick="closeEmailComposer()">✕</button>
+      <button class="modal-close" onclick="closeEmailComposerGuarded()">✕</button>
     </div>
     <div class="modal-body">
       <div class="form-grid">
@@ -3885,7 +3917,7 @@ async function saveGlobalTask() {
         </div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
-        <button class="btn btn-ghost" onclick="closeEmailComposer()">Peruuta</button>
+        <button class="btn btn-ghost" onclick="closeEmailComposerGuarded()">Peruuta</button>
         <button class="btn btn-ghost" id="email-save-draft-btn" onclick="saveEmailDraftTask()">💾 Tallenna luonnos</button>
         <button class="btn btn-outlook" id="email-send-btn" onclick="sendOutlookEmail()">Lähetä Outlookista</button>
       </div>
