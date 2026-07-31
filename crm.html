@@ -595,7 +595,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-31.3';
+const BUILD_ID = '2026-07-31.4';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -816,8 +816,6 @@ async function openAiOpenerPanel() {
     btn.disabled=true; btn.textContent='⏳ Luodaan…';
     try {
       variants=await generateAiOpeners(ctx);
-      p.ai_opener=variants; p.ai_opener_hash=hash;
-      await saveCrmState(p);
     } catch(e) {
       if (stillCurrent()) {
         showToast('Personointi epäonnistui: '+e.message,'error');
@@ -825,6 +823,11 @@ async function openAiOpenerPanel() {
       }
       return;
     }
+    p.ai_opener=variants; p.ai_opener_hash=hash;
+    // Välimuistiin tallennus Sheetsiin on parhaan yrityksen optimointi —
+    // jos se epäonnistuu (esim. vanhentunut token), näytä silti juuri
+    // generoidut ja jo maksetut vaihtoehdot älä hukkaa niitä virheeseen.
+    saveCrmState(p).catch(e=>console.warn('AI-avausrivien välimuistitallennus epäonnistui:',e));
     if (stillCurrent()) { btn.disabled=false; btn.textContent='✨ Personoi avaus'; }
   }
   if (!stillCurrent()) return;
