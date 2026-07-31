@@ -650,7 +650,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-31.9';
+const BUILD_ID = '2026-07-31.10';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -3374,6 +3374,113 @@ function checkDuplicateAccount(yTunnus, acceptedInThisRun) {
   if (!yTunnus) return false;
   if (allProspects.some(p=>p.y_tunnus && p.y_tunnus===yTunnus)) return true;
   return (acceptedInThisRun||[]).some(c=>c.tf_ytunnus===yTunnus);
+}
+
+// ── Älykäs Prospektointi: AI-kandidaattien haku ─────────────────────────────
+// YKSI jäsennelty JSON-vastaus koko lohkolle (ei erillistä kutsua per
+// yritys) — kontrolloi kustannusta ja latenssia samalla API-avaimella
+// jota "✨ Personoi avaus" jo käyttää.
+//
+// HUOM structured output (output_config.format) + palvelinpuolen
+// web_search-yhdistelmästä: Anthropicin dokumentaatio ei erikseen vahvista
+// eikä kiellä tätä täsmällistä yhdistelmää — molemmat tuetaan itsenäisesti,
+// ja dokumentoitu malli on että skeema rajoittaa vain lopullista
+// tekstivastausta työkalukäytön JÄLKEEN. Tätä ei ole voitu todentaa oikeaa
+// Anthropic-avainta vasten, koska agentilla ei BYOK-arkkitehtuurin takia
+// ole pääsyä kenenkään todelliseen avaimeen — vain käyttäjän oma selain
+// voi sen tehdä. Koodi on siksi kirjoitettu puolustavasti: jäsennys
+// tarkistaa vastauksen muodon eikä kaadu jos se poikkeaa odotetusta, ja
+// looginen varasuunnitelma (pudota output_config.format, pyydä JSON
+// koodilohkon sisällä vapaassa tekstissä kuten generateAiOpeners tekee)
+// on olemassa jos tämä osoittautuu tarpeelliseksi ensimmäisen oikean
+// käyttökerran jälkeen.
+const PROSPECT_CANDIDATE_SCHEMA={
+  type:'object',
+  properties:{
+    candidates:{
+      type:'array',
+      items:{
+        type:'object',
+        properties:{
+          name:{type:'string', description:'Yrityksen nimi — käytetään VAIN YTJ-haun siemenenä, ei koskaan suoraan CRM:ään ilman todennusta'},
+          city:{type:'string', description:'Yrityksen kotipaikka jos tiedossa, muuten tyhjä merkkijono'},
+          signaali:{type:'string', description:'Yksi konkreettinen, verkkohaulla todennettava havainto yrityksestä'},
+          perustelu:{type:'string', description:'Miksi signaali on relevantti energiatehokkuuden kannalta'},
+          opening_paragraph:{type:'string', description:'Lyhyt (noin 30 sanaa) avausrivi myyntisähköpostiin, suora asiallinen suomalainen liike-elämän sävy'},
+          contact_name:{type:'string', description:'Julkisesti saatavilla oleva yhteyshenkilön nimi jos löytyy (esim. yrityksen yhteystiedot-sivulta), muuten tyhjä merkkijono — älä koskaan arvaa nimeä'},
+          contact_title:{type:'string', description:'Yhteyshenkilön titteli jos löytyy, muuten tyhjä merkkijono'}
+        },
+        required:['name','city','signaali','perustelu','opening_paragraph','contact_name','contact_title'],
+        additionalProperties:false
+      }
+    }
+  },
+  required:['candidates'],
+  additionalProperties:false
+};
+
+function prospectCandidatesRequestBody(prompt, extraMessages) {
+  return {
+    model:anthropicModel(),
+    max_tokens:4096,
+    tools:[{...webSearchToolDef(), max_uses:8}],
+    output_config:{format:{type:'json_schema', schema:PROSPECT_CANDIDATE_SCHEMA}},
+    messages:[{role:'user',content:prompt}, ...(extraMessages||[])]
+  };
+}
+
+function parseProspectCandidatesResponse(data) {
+  const textBlocks=(data.content||[]).filter(b=>b.type==='text');
+  if (!textBlocks.length) throw new Error('Tekoäly ei palauttanut jäsenneltyä vastausta');
+  // Viimeinen tekstilohko, ei ensimmäinen eikä yhdistelmä — jos malli
+  // kirjoittaa jotain ennen hakuja, se ei ole skeeman mukainen lopputulos.
+  let parsed;
+  try { parsed=JSON.parse(textBlocks[textBlocks.length-1].text); }
+  catch(e) { throw new Error('Tekoälyn vastaus ei ollut kelvollista JSONia: '+e.message); }
+  if (!parsed || !Array.isArray(parsed.candidates)) throw new Error('Tekoälyn vastauksesta puuttui candidates-taulukko');
+  return parsed.candidates;
+}
+
+// segmentti: mihin segmenttiin etsitään. count: pyydetty määrä (ohjataan
+// kehotteella, ei skeemalla — minItems/maxItems ei ole dokumentoidusti
+// tuettu Anthropicin structured outputs -skeemarajoitteissa). excludeNames:
+// olemassa olevien tilien nimet ettei AI ehdota jo CRM:ssä olevaa yritystä
+// (kutsuja vastaa listan koon rajaamisesta — tämä funktio ei rajaa sitä).
+async function generateProspectCandidates(segmentti, count, excludeNames) {
+  const key=anthropicApiKey();
+  if (!key) throw new Error('Lisää Anthropic API-avain Asetuksissa');
+  const exclusionNote=(excludeNames&&excludeNames.length)
+    ? `\n\nÄlä ehdota näitä yrityksiä, ne ovat jo CRM:ssä: ${excludeNames.join(', ')}.` : '';
+  const prompt=`Etsi verkkohaulla ${count} todellista, tällä hetkellä toiminnassa olevaa suomalaista yritystä segmentistä "${segmentti}". Käytä VAIN oikeita, verkkohaulla löytämiäsi yrityksiä — älä koskaan keksi yrityksen nimeä. Jokaiselle yritykselle: yksi konkreettinen, todennettava signaali (esim. tuore uutinen, laajennus, energiahanke) ja lyhyt perustelu miksi se on relevantti energiatehokkuuden kannalta. Jos löydät julkisesti saatavilla olevan yhteyshenkilön nimen (esim. yrityksen "Yhteystiedot"-sivulta), sisällytä se — muuten jätä contact_name tyhjäksi, älä arvaa nimeä.${exclusionNote}`;
+
+  const headers={
+    'x-api-key':key,
+    'anthropic-version':'2023-06-01',
+    'anthropic-dangerous-direct-browser-access':'true',
+    'content-type':'application/json'
+  };
+  let response=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST', headers, body:JSON.stringify(prospectCandidatesRequestBody(prompt))
+  });
+  if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+  let data=await response.json();
+
+  // Palvelinpuolen hakusilmukalla on dokumentoitu 10 iteraation
+  // oletuskatto ennen pause_turn:ia — jatketaan lähettämällä SAMA
+  // user+assistant-pari uudelleen (EI "jatka"-viestiä, API tunnistaa
+  // katkenneen server_tool_use-lohkon itse). Yritetään vain kerran
+  // uudelleen; jos pysähtyy toistamiseen, luovutetaan selkeällä virheellä.
+  if (data.stop_reason==='pause_turn') {
+    response=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST', headers,
+      body:JSON.stringify(prospectCandidatesRequestBody(prompt, [{role:'assistant',content:data.content}]))
+    });
+    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+    data=await response.json();
+    if (data.stop_reason==='pause_turn') throw new Error('Tekoäly ei saanut hakua valmiiksi (jatkoyritys pysähtyi uudelleen) — kokeile pienempää määrää');
+  }
+
+  return parseProspectCandidatesResponse(data);
 }
 
 async function runProspectingBatch() {
