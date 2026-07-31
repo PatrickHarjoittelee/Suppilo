@@ -379,6 +379,7 @@
         <option>ETJ+</option><option>Talopakettivalmistajat FIN</option><option>Talopakettivalmistajat SWE</option>
         <option>Muu Projekti</option>
       </select>
+      <button class="btn btn-primary btn-sm" onclick="openProspectingModal()" title="Etsi ja luo uusia prospekti-tilejä AI:n avulla, PRH/YTJ-rekisterillä todennettuna">🔍 Älykäs Prospektointi</button>
     </div>
     <div class="kanban" id="kanban-board"></div>
   </div>
@@ -589,13 +590,67 @@
   </div>
 </div>
 
+<!-- Älykäs Prospektointi modal -->
+<div class="modal-overlay hidden" id="prospecting-modal" onclick="closeProspectingMaybe(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">🔍 Älykäs Prospektointi</div>
+      <button class="modal-close" onclick="closeProspectingModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="prospecting-form">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.5">
+          Tekoäly etsii todellisia yrityksiä valitusta segmentistä ja todentaa
+          jokaisen PRH:n avoimesta yritysrekisteristä ennen tilin luontia —
+          ehdotukset joita ei löydy rekisteristä hylätään eikä niistä koskaan
+          luoda tiliä.
+        </div>
+        <div class="form-grid">
+          <div class="form-group full"><label>Projekti</label><select class="form-control" id="pm-projekti"></select></div>
+          <div class="form-group full"><label>Segmentti</label><select class="form-control" id="pm-segmentti"></select></div>
+          <div class="form-group full"><label>Montako tiliä luodaan</label>
+            <select class="form-control" id="pm-maara">
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="20">20</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-top:14px">
+          <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:8px">Luodaanko tilille myös:</label>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="pm-want-contact"> a. Yhteyshenkilö <span style="color:var(--text2);font-size:11px">(AI:n ehdotus — sähköposti/puhelin jäävät aina tyhjäksi, tarkista ennen yhteydenottoa)</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="pm-want-signal" checked> b. Signaali ja perustelu
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="pm-want-deal"> c. Kauppa Liidi-vaiheeseen
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="pm-want-draft"> d. Avaussähköposti luonnoksena (ei lähetetä automaattisesti)
+            </label>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
+          <button class="btn btn-ghost" onclick="closeProspectingModal()">Peruuta</button>
+          <button class="btn btn-primary" onclick="runProspectingBatch()">Aloita</button>
+        </div>
+      </div>
+      <div id="prospecting-progress" style="display:none"></div>
+      <div id="prospecting-summary" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
 <div class="toast-wrap" id="toast-wrap"></div>
 
 <script>
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-31.6';
+const BUILD_ID = '2026-07-31.7';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -3100,6 +3155,32 @@ async function saveYhEdit() {
   } catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 
+// ── Älykäs Prospektointi ─────────────────────────────────────────────────────
+// Rakennetaan vaiheittain: tämä avaa/sulkee lomakkeen ja täyttää valikot.
+// Varsinainen generointi (AI + PRH/YTJ-todennus + bulk-tallennus) tulee
+// seuraavissa vaiheissa — "Aloita" on toistaiseksi tynkä.
+function openProspectingModal() {
+  populateProjektiSelects();
+  document.getElementById('pm-segmentti').innerHTML=
+    distinctSegments().map(s=>`<option>${esc(s)}</option>`).join('');
+  document.getElementById('pm-maara').value='5';
+  document.getElementById('pm-want-contact').checked=false;
+  document.getElementById('pm-want-signal').checked=true;
+  document.getElementById('pm-want-deal').checked=false;
+  document.getElementById('pm-want-draft').checked=false;
+  document.getElementById('prospecting-form').style.display='';
+  document.getElementById('prospecting-progress').style.display='none';
+  document.getElementById('prospecting-summary').style.display='none';
+  document.getElementById('prospecting-modal').classList.remove('hidden');
+}
+function closeProspectingModal() {
+  document.getElementById('prospecting-modal').classList.add('hidden');
+}
+function closeProspectingMaybe(e) { if (e.target===document.getElementById('prospecting-modal')) closeProspectingModal(); }
+async function runProspectingBatch() {
+  showToast('Älykäs Prospektointi on vielä rakenteilla — tulossa pian','error');
+}
+
 // ── Tilit ─────────────────────────────────────────────────────────────────────
 function openAddTili() {
   document.getElementById('addtili-ytj-input').value = '';
@@ -3287,12 +3368,16 @@ function populateProjektiSelects() {
     sel.innerHTML='<option value="">Kaikki projektit</option>'+opts;
     if (nimet.includes(prev)) sel.value=prev;
   });
-  const tfSel=document.getElementById('tf_kampanja');
-  if (tfSel) {
-    const prev=tfSel.value||'Muu Projekti';
-    tfSel.innerHTML=opts;
-    tfSel.value=nimet.includes(prev)?prev:'Muu Projekti';
-  }
+  // tf_kampanja (Lisää tili) ja pm-projekti (Älykäs Prospektointi) ovat
+  // "mihin luodaan" -valitsimia, ei suodattimia — ei tyhjää "Kaikki
+  // projektit" -vaihtoehtoa, oletusarvo 'Muu Projekti' jos aiempi arvo
+  // ei enää kelpaa.
+  ['tf_kampanja','pm-projekti'].forEach(id=>{
+    const sel=document.getElementById(id); if(!sel) return;
+    const prev=sel.value||'Muu Projekti';
+    sel.innerHTML=opts;
+    sel.value=nimet.includes(prev)?prev:'Muu Projekti';
+  });
 }
 
 function renderProjektitList() {
@@ -3530,8 +3615,13 @@ function updateSummary() {
   document.getElementById('s-sopimus').textContent= allProspects.filter(p=>p.vaihe==='Sopimus').length;
   document.getElementById('s-muu').textContent    = allProspects.filter(p=>p.kampanja==='Muu Projekti').length;
 }
+// Segmenteillä ei ole hallittua listaa (toisin kuin projekteilla) — ne
+// johdetaan aina suoraan olemassa olevasta datasta.
+function distinctSegments() {
+  return [...new Set(allProspects.map(p=>p.segmentti).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fi'));
+}
 function buildSegmentFilter() {
-  const segs=[...new Set(allProspects.map(p=>p.segmentti).filter(Boolean))].sort();
+  const segs=distinctSegments();
   const sel=document.getElementById('f-segmentti'), prev=sel.value;
   sel.innerHTML='<option value="">Kaikki segmentit</option>'+segs.map(s=>`<option${s===prev?' selected':''}>${esc(s)}</option>`).join('');
 }
