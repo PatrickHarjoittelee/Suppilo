@@ -650,7 +650,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-31.10';
+const BUILD_ID = '2026-07-31.11';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -3173,7 +3173,12 @@ function openProspectingModal() {
   document.getElementById('prospecting-summary').style.display='none';
   document.getElementById('prospecting-modal').classList.remove('hidden');
 }
+// Erä käynnissä -tila estää sulkemisen — muutoin ikkuna piiloutuisi mutta
+// taustalla käynnissä oleva erä jatkaisi silti Sheets-kirjoituksia, ja
+// käyttäjä luulisi peruuttaneensa jotain vaikka ei peruuttanutkaan.
+let prospectingInProgress=false;
 function closeProspectingModal() {
+  if (prospectingInProgress) { showToast('Erä on käynnissä — käytä Peruuta-nappia pysäyttääksesi','error'); return; }
   document.getElementById('prospecting-modal').classList.add('hidden');
 }
 function closeProspectingMaybe(e) { if (e.target===document.getElementById('prospecting-modal')) closeProspectingModal(); }
@@ -3483,8 +3488,134 @@ async function generateProspectCandidates(segmentti, count, excludeNames) {
   return parseProspectCandidatesResponse(data);
 }
 
+let prospectingCancelled=false;
+function cancelProspectingBatch() { prospectingCancelled=true; }
+
+function renderProspectingProgress(current, total, label) {
+  const el=document.getElementById('prospecting-progress'); if (!el) return;
+  const pct=total?Math.round(current/total*100):0;
+  el.innerHTML=`
+    <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Käsitellään ${current}/${total}${label?' — '+esc(label):''}</div>
+    <div style="background:var(--bg3);border-radius:8px;height:8px;overflow:hidden;margin-bottom:14px">
+      <div style="background:var(--accent);height:100%;width:${pct}%;transition:width .2s"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" onclick="cancelProspectingBatch()">Peruuta</button>
+    </div>`;
+}
+
+function renderProspectingSummary(created, rejected) {
+  const el=document.getElementById('prospecting-summary'); if (!el) return;
+  const createdHtml=created.length
+    ? created.map(p=>`<div class="ytj-dropdown-item" style="cursor:pointer" onclick="closeProspectingModal();openModal('${p.spara_id}')">
+        <div class="ytj-item-name">${esc(p.yritys_nimi)}</div>
+        <div class="ytj-item-meta">${esc(p.spara_id)}${p.kaupunki?' · '+esc(p.kaupunki):''}</div>
+      </div>`).join('')
+    : '<div style="font-size:12px;color:var(--text2)">Ei luotuja tilejä</div>';
+  const rejectedHtml=rejected.length
+    ? rejected.map(r=>`<div class="ytj-dropdown-item">
+        <div class="ytj-item-name">${esc(r.name)}</div>
+        <div class="ytj-item-meta" style="color:var(--red)">${esc(r.reason)}</div>
+      </div>`).join('')
+    : '<div style="font-size:12px;color:var(--text2)">Ei hylättyjä ehdotuksia</div>';
+  el.innerHTML=`
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--green)">✓ Luotu (${created.length})</div>
+    <div style="max-height:180px;overflow-y:auto;margin-bottom:16px">${createdHtml}</div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--red)">✕ Hylätty (${rejected.length})</div>
+    <div style="max-height:180px;overflow-y:auto;margin-bottom:16px">${rejectedHtml}</div>
+    <div style="display:flex;justify-content:flex-end">
+      <button class="btn btn-primary" onclick="closeProspectingModal()">Sulje</button>
+    </div>`;
+}
+
+// Lohkottaa pyydetyn määrän 5 kappaleen erissä ja SITOUTTAA jokaisen lohkon
+// Sheetsiin heti kun se on valmis (createProspectAccountsBatch per lohko)
+// — ei vasta koko ajon lopussa. Kaatunut välilehti lohkon 2 jälkeen jättää
+// ensimmäiset 10 tiliä turvallisesti luotuina, ei kadonneina, ja "Peruuta"
+// tarkoittaa oikeasti jotain (jo valmiit lohkot pysyvät).
+const PROSPECTING_CHUNK_SIZE=5;
 async function runProspectingBatch() {
-  showToast('Älykäs Prospektointi on vielä rakenteilla — tulossa pian','error');
+  if (prospectingInProgress) return;
+  const kampanja=document.getElementById('pm-projekti').value;
+  const segmentti=document.getElementById('pm-segmentti').value;
+  const totalCount=parseInt(document.getElementById('pm-maara').value,10)||5;
+  if (!segmentti) { showToast('Valitse segmentti','error'); return; }
+  const opts={
+    kampanja,
+    wantContact:document.getElementById('pm-want-contact').checked,
+    wantSignal:document.getElementById('pm-want-signal').checked,
+    wantDeal:document.getElementById('pm-want-deal').checked,
+    wantDraft:document.getElementById('pm-want-draft').checked
+  };
+
+  prospectingCancelled=false;
+  prospectingInProgress=true;
+  document.getElementById('prospecting-form').style.display='none';
+  document.getElementById('prospecting-summary').style.display='none';
+  document.getElementById('prospecting-progress').style.display='';
+  renderProspectingProgress(0, totalCount, 'Aloitetaan…');
+
+  const chunks=[];
+  for (let remaining=totalCount; remaining>0; remaining-=PROSPECTING_CHUNK_SIZE) {
+    chunks.push(Math.min(PROSPECTING_CHUNK_SIZE, remaining));
+  }
+
+  const createdAccounts=[], rejected=[], acceptedThisRun=[];
+  let processedCount=0;
+
+  for (const chunkSize of chunks) {
+    if (prospectingCancelled) break;
+
+    // Estä AI:ta ehdottamasta samaa yritystä uudelleen — sekä olemassa
+    // olevat tilit että tämän ajon aiemmissa lohkoissa jo hyväksytyt.
+    const excludeNames=[...new Set([
+      ...allProspects.map(p=>p.yritys_nimi),
+      ...acceptedThisRun.map(c=>c.tf_name)
+    ].filter(Boolean))];
+
+    let aiCandidates;
+    try {
+      renderProspectingProgress(processedCount, totalCount, 'Haetaan ehdotuksia tekoälyltä…');
+      aiCandidates=await generateProspectCandidates(segmentti, chunkSize, excludeNames);
+    } catch(e) {
+      showToast('Tekoälyn haku epäonnistui: '+e.message,'error');
+      break;
+    }
+
+    const chunkVerified=[];
+    for (const c of aiCandidates) {
+      if (prospectingCancelled) break;
+      processedCount++;
+      renderProspectingProgress(processedCount, totalCount, `${c.name}: tarkistetaan YTJ:stä…`);
+      const verify=await verifyCandidateAgainstYtj({name:c.name, city:c.city});
+      if (!verify.accepted) { rejected.push({name:c.name, reason:verify.reason}); continue; }
+      if (checkDuplicateAccount(verify.data.tf_ytunnus, acceptedThisRun)) {
+        rejected.push({name:c.name, reason:'Duplikaatti — yritys on jo CRM:ssä tai tässä erässä'});
+        continue;
+      }
+      const merged={...verify.data, signaali:c.signaali, perustelu:c.perustelu,
+        openingParagraph:c.opening_paragraph,
+        contactSuggestion:c.contact_name?{nimi:c.contact_name, titteli:c.contact_title}:null};
+      chunkVerified.push(merged);
+      acceptedThisRun.push(merged);
+    }
+
+    if (chunkVerified.length) {
+      try {
+        renderProspectingProgress(processedCount, totalCount, 'Tallennetaan…');
+        const ids=await createProspectAccountsBatch(chunkVerified, opts);
+        ids.forEach(id=>{ const p=allProspects.find(x=>x.spara_id===id); if (p) createdAccounts.push(p); });
+      } catch(e) {
+        showToast('Tallennus epäonnistui kesken erän: '+e.message,'error');
+        break;
+      }
+    }
+  }
+
+  prospectingInProgress=false;
+  document.getElementById('prospecting-progress').style.display='none';
+  document.getElementById('prospecting-summary').style.display='';
+  renderProspectingSummary(createdAccounts, rejected);
 }
 
 // ── Tilit ─────────────────────────────────────────────────────────────────────
