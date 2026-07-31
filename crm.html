@@ -584,7 +584,7 @@
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
         <button class="btn btn-ghost" onclick="closeAddTili()">Peruuta</button>
-        <button class="btn btn-primary" onclick="saveNewTili()">Lisää järjestelmään</button>
+        <button class="btn btn-primary" id="addtili-save-btn" onclick="saveNewTili()">Lisää järjestelmään</button>
       </div>
     </div>
   </div>
@@ -3410,10 +3410,22 @@ async function verifyCandidateAgainstYtj({name, city}) {
 // Tarkistaa sekä olemassa olevat tilit että saman ajon jo hyväksytyt
 // kandidaatit (AI voisi ehdottaa samaa oikeaa yritystä kahdesti eri
 // lohkoissa) — Y-tunnus on ainoa luotettava avain, ei nimi.
+function normalizeBusinessId(value) {
+  const compact=String(value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  return compact.replace(/^FI(?=\d)/,'');
+}
+
+function findExistingAccountByBusinessId(yTunnus, prospects=allProspects) {
+  const key=normalizeBusinessId(yTunnus);
+  if (!key) return null;
+  return (prospects||[]).find(p=>normalizeBusinessId(p.y_tunnus)===key)||null;
+}
+
 function checkDuplicateAccount(yTunnus, acceptedInThisRun) {
-  if (!yTunnus) return false;
-  if (allProspects.some(p=>p.y_tunnus && p.y_tunnus===yTunnus)) return true;
-  return (acceptedInThisRun||[]).some(c=>c.tf_ytunnus===yTunnus);
+  const key=normalizeBusinessId(yTunnus);
+  if (!key) return false;
+  if (findExistingAccountByBusinessId(yTunnus)) return true;
+  return (acceptedInThisRun||[]).some(c=>normalizeBusinessId(c.tf_ytunnus)===key);
 }
 
 // ── Älykäs Prospektointi: AI-kandidaattien haku ─────────────────────────────
@@ -3700,7 +3712,36 @@ async function saveNewTili() {
     rekisteroity, yhteyshenkilö, '', '',
     henk_sahkoposti, ''
   ];
+  const saveBtn=document.getElementById('addtili-save-btn');
+  if (saveBtn?.disabled) return;
+  const originalBtnText=saveBtn?.textContent||'Lisää järjestelmään';
+  if (saveBtn) { saveBtn.disabled=true; saveBtn.textContent='Tarkistetaan…'; }
+
   try {
+    let existing=findExistingAccountByBusinessId(y_tunnus);
+
+    // Tarkista myös Sheetsin tämänhetkinen sisältö. Näin toisessa selaimessa
+    // juuri lisätty tili ei pääse läpi vain siksi, että tämän sivun data on vanha.
+    if (!existing && normalizeBusinessId(y_tunnus)) {
+      let latestRows;
+      try { latestRows=await sheetGet(`${MAIN_TAB}!A1:AA`); }
+      catch(e) { throw new Error('Y-tunnuksen duplikaattitarkistus epäonnistui: '+e.message); }
+      existing=findExistingAccountByBusinessId(y_tunnus,parseProspects(latestRows));
+      if (existing && !allProspects.some(p=>p.spara_id===existing.spara_id)) {
+        await loadData();
+        existing=findExistingAccountByBusinessId(y_tunnus)||existing;
+        if (!allProspects.some(p=>p.spara_id===existing.spara_id)) allProspects.push(existing);
+      }
+    }
+
+    if (existing) {
+      closeAddTili();
+      openModal(existing.spara_id);
+      showToast(`Y-tunnus ${y_tunnus} löytyy jo: ${existing.yritys_nimi}. Avattiin olemassa oleva tili.`,'error');
+      return;
+    }
+
+    if (saveBtn) saveBtn.textContent='Tallennetaan…';
     const colA = await sheetGet(`${MAIN_TAB}!A:A`);
     await sheetAppend(`${MAIN_TAB}!A:AA`, [row]);
     const rowIndex = colA.length + 1;
@@ -3729,6 +3770,8 @@ async function saveNewTili() {
     showToast('Tili lisätty: ' + name, 'success');
   } catch(e) {
     showToast('Virhe: ' + e.message, 'error');
+  } finally {
+    if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent=originalBtnText; }
   }
 }
 
