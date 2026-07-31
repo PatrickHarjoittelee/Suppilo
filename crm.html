@@ -650,7 +650,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-31.7';
+const BUILD_ID = '2026-07-31.8';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -3177,6 +3177,131 @@ function closeProspectingModal() {
   document.getElementById('prospecting-modal').classList.add('hidden');
 }
 function closeProspectingMaybe(e) { if (e.target===document.getElementById('prospecting-modal')) closeProspectingModal(); }
+
+// Rakentaa KAIKKI rivit muistissa ja kirjoittaa jokaiseen tauluun VAIN
+// kerran per kutsu (initKaupat():n todistettu kaava, rivi ~2629) — naiivi
+// per-tili-silmukka joka kutsuisi saveNewTili()/saveGlobalContact()/
+// saveCrmState():a jokaiselle ehdokkaalle tekisi 20 tilin erässä
+// karkeasti 180 Sheets-kutsua.
+//
+// candidates: PRH/YTJ:stä jo vahvistettuja, _prhToTiliForm()-muotoisia
+// olioita AI:n signaali/perustelu/yhteyshenkilöehdotuksella täydennettynä:
+// {tf_name, tf_ytunnus, tf_toimiala, tf_yhtiömuoto, tf_osoite,
+//  tf_postinumero, tf_kaupunki, tf_rekisteroity, tf_www,
+//  signaali, perustelu, openingParagraph,
+//  contactSuggestion:{nimi,titteli}|null}
+// opts: {kampanja, wantContact, wantSignal, wantDeal, wantDraft}
+// Palauttaa luotujen tilien spara_id-listan.
+async function createProspectAccountsBatch(candidates, opts) {
+  if (!candidates.length) return [];
+  const ts=new Date().toISOString();
+
+  // spara_id lasketaan kerran, kasvatetaan paikallisesti — saveNewTili():n
+  // skannaus ei ole silmukkaturvallinen useammalle tilille samassa ajossa.
+  let maxId = allProspects
+    .map(p=>p.spara_id)
+    .filter(sid=>/^ID\d+$/.test(sid))
+    .reduce((max,sid)=>Math.max(max,parseInt(sid.replace('ID',''))), 20260119);
+
+  const tiliColA = await sheetGet(`${MAIN_TAB}!A:A`);
+  let tiliRowIndex = tiliColA.length+1;
+  let yhRowIndex = null;
+  if (opts.wantContact) yhRowIndex = (await sheetGet(`${YH_TAB}!A:A`)).length+1;
+
+  const newProspects=[], tiliRows=[], crmRows=[], contactRows=[], newContacts=[];
+
+  for (const c of candidates) {
+    maxId += 1;
+    const id = 'ID'+maxId;
+    const kaupunkiVal = c.tf_postinumero ? `${c.tf_postinumero} ${c.tf_kaupunki||''}`.trim() : (c.tf_kaupunki||'');
+    const signaali = opts.wantSignal ? (c.signaali||'') : '';
+    const perustelu = opts.wantSignal ? (c.perustelu||'') : '';
+
+    // Yhteyshenkilö luodaan ensin (jos pyydetty ja AI löysi ehdotuksen)
+    // jotta tili- ja luonnos-aktiviteettirivit voivat viitata siihen.
+    let contactId=null, contactName='';
+    if (opts.wantContact && c.contactSuggestion && c.contactSuggestion.nimi) {
+      contactId='YH'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+      contactName=c.contactSuggestion.nimi;
+      // Turvallisuussääntö: AI:n ehdottamaa sähköpostia/puhelinta EI
+      // KOSKAAN kirjoiteta kontaktiin. openEmailComposer() valitsee
+      // automaattisesti AINOAN sähköpostillisen kontaktin vastaanottajaksi
+      // ilman vahvistusta (rivi ~1029) — vahvistamaton AI-arvaus siellä
+      // tarkoittaisi että joku lähettäisi hiljaa väärään osoitteeseen.
+      contactRows.push([contactId, id, contactName,
+        'AI-ehdotus, ei vahvistettu'+(c.contactSuggestion.titteli?' — '+c.contactSuggestion.titteli:''),
+        '', '', '', ts]);
+      newContacts.push({id:contactId, tili_id:id, nimi:contactName,
+        titteli:contactRows[contactRows.length-1][3], puhelin:'', sahkoposti:'', linkedin:'', created_at:ts,
+        _rowIndex:yhRowIndex+contactRows.length-1});
+    }
+
+    tiliRows.push([
+      id, opts.kampanja, '',
+      c.tf_toimiala||'', c.tf_name, c.tf_yhtiömuoto||'',
+      c.tf_osoite||'', kaupunkiVal, c.tf_ytunnus||'',
+      '', '', '',
+      '', '', c.tf_www||'',
+      signaali, perustelu, '',
+      '', '', '',
+      c.tf_rekisteroity||'', contactName, '', '',
+      '', ''
+    ]);
+
+    const p = {
+      spara_id:id, kampanja:opts.kampanja, prioriteetti:null,
+      segmentti:c.tf_toimiala||'', yritys_nimi:c.tf_name, juridinen_yhtio:c.tf_yhtiömuoto||'',
+      osoite:c.tf_osoite||'', kaupunki:kaupunkiVal, y_tunnus:c.tf_ytunnus||'',
+      liikevaihto_meur:null, kulutusarvio_mwh:null, pisteet:null,
+      vaihde_puhelin:null, yleinen_sahkoposti:null, www:c.tf_www||'',
+      signaali:signaali||null, perustelu:perustelu||null, velvoiteluokka:null,
+      huomiot:null, kontaktoinnin_tila:null, tulos_seuraava_toimi:null,
+      lahde:c.tf_rekisteroity||'', 'yhteyshenkilö':contactName, titteli:null, suora_numero:null,
+      henk_sahkoposti:'', linkedin:null,
+      vaihe:null, _isTili:true, _rowIndex:tiliRowIndex,
+      ...blankCrm()
+    };
+    tiliRowIndex += 1;
+
+    const acts=[];
+    if (opts.wantDeal) {
+      acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
+        tyyppi:'kauppa',tila:'Liidi',aihe:opts.kampanja,arvo:0,tekija:null,
+        muistiinpanot:signaali||null,created_at:ts,due_date:null,done:false});
+      p.vaihe='Liidi';
+    }
+    if (opts.wantDraft) {
+      const opener=(c.openingParagraph||'').trim();
+      const bodyHtml=`<p>${esc(opener)||'Hei,'}</p><p><br></p><p>Ystävällisin terveisin<br>${esc(currentUser.nimi||'')}</p>${signatureHtml()}`;
+      acts.push(buildDraftEmailActivity({contactId, subject:`${c.tf_name} – yhteydenotto`, bodyHtml,
+        tekija:currentUser.nimi||currentUserEmail||null}));
+    }
+    p.aktiviteetit=JSON.stringify(acts);
+
+    const ov=p.tili_override&&Object.keys(p.tili_override).length?JSON.stringify(p.tili_override):'';
+    crmRows.push([p.spara_id,p.vaihe||'',p.omistaja||'',p.seuraava_toimenpide||'',
+      p.seuraava_pvm||'',p.muistiinpanot||'',p.aktiviteetit,ts,p.crm_status||'Prospekti',ov,'','']);
+
+    newProspects.push(p);
+  }
+
+  await sheetAppend(`${MAIN_TAB}!A:AA`, tiliRows);
+  await sheetAppend(`${CRM_TAB}!A:L`, crmRows);
+  if (contactRows.length) await sheetAppend(`${YH_TAB}!A:H`, contactRows);
+
+  allProspects.push(...newProspects);
+  allContacts.push(...newContacts);
+  const freshCrmRows=await sheetGet(`${CRM_TAB}!A:L`);
+  applyCrmState(freshCrmRows);
+
+  buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard();
+  // populateProjektiSelects() ei tarvita — opts.kampanja tulee aina jo
+  // olemassa olevasta listasta, ei voi luoda uutta "orpo"-projektinimeä.
+  if (document.getElementById('tab-kanban')?.classList.contains('active')) renderKanban();
+
+  return newProspects.map(p=>p.spara_id);
+}
+
 async function runProspectingBatch() {
   showToast('Älykäs Prospektointi on vielä rakenteilla — tulossa pian','error');
 }
