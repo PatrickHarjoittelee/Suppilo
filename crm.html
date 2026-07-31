@@ -197,11 +197,46 @@
     .form-control:focus{border-color:var(--accent);}
     textarea.form-control{resize:vertical;min-height:72px;}
 
-    /* Activity */
-    .act-log{display:flex;flex-direction:column;gap:6px;margin-top:10px;}
+    /* Activity / history timeline */
+    .act-log{position:relative;display:flex;flex-direction:column;gap:12px;margin-top:10px;padding:6px 0 8px;}
+    .act-log.timeline::before{content:"";position:absolute;top:12px;bottom:12px;left:50%;width:2px;transform:translateX(-1px);background:linear-gradient(var(--accent),var(--border));border-radius:2px;}
     .act-item{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:9px 12px;}
     .act-meta{font-size:10px;color:var(--text2);margin-bottom:3px;} .act-text{font-size:12px;}
     .act-input-row{display:flex;gap:8px;margin-top:8px;} .act-input-row input{flex:1;}
+    .timeline-group{position:relative;z-index:1;align-self:center;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:3px 10px;color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
+    .timeline-item{position:relative;width:50%;padding:0 22px;--timeline-color:var(--accent);}
+    .timeline-item.timeline-left{align-self:flex-start;}
+    .timeline-item.timeline-right{align-self:flex-end;}
+    .timeline-item::before{content:"";position:absolute;top:24px;width:22px;height:2px;background:var(--timeline-color);opacity:.7;}
+    .timeline-left::before{right:0;}.timeline-right::before{left:0;}
+    .timeline-node{position:absolute;z-index:2;top:19px;width:12px;height:12px;border:3px solid var(--bg2);border-radius:50%;background:var(--timeline-color);box-shadow:0 0 0 2px var(--timeline-color);}
+    .timeline-left .timeline-node{right:-6px;}.timeline-right .timeline-node{left:-6px;}
+    .timeline-card{background:var(--bg3);border:1px solid var(--border);border-top:3px solid var(--timeline-color);border-radius:10px;overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.13);transition:border-color .15s,transform .15s;}
+    .timeline-card:hover{border-left-color:var(--timeline-color);border-right-color:var(--timeline-color);}
+    .timeline-card.open{transform:translateY(-1px);}
+    .timeline-card-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;width:100%;padding:10px 11px;background:none;border:0;color:var(--text);font:inherit;text-align:left;cursor:pointer;}
+    .timeline-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--bg4);border:1px solid var(--border);color:var(--text2);font-size:10px;font-weight:800;overflow:hidden;}
+    .timeline-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
+    .timeline-card-main{min-width:0;}
+    .timeline-card-title{display:block;font-size:12px;font-weight:700;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .timeline-card-meta{display:block;font-size:10px;color:var(--text2);line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .timeline-chevron{color:var(--text2);font-size:13px;transition:transform .18s;}
+    .timeline-card.open .timeline-chevron{transform:rotate(180deg);}
+    .timeline-card-body{display:none;padding:10px 12px 12px;border-top:1px solid var(--border);font-size:12px;line-height:1.55;word-break:break-word;}
+    .timeline-card.open .timeline-card-body{display:block;}
+    .timeline-detail-row{display:flex;gap:8px;margin-top:6px;color:var(--text2);font-size:11px;}
+    .timeline-detail-row strong{color:var(--text);font-weight:600;}
+    .timeline-badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:10px;background:color-mix(in srgb,var(--timeline-color) 18%,transparent);color:var(--timeline-color);font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.35px;}
+    .timeline-upcoming .timeline-card{box-shadow:0 5px 18px rgba(76,175,80,.12);}
+    @media(max-width:640px){
+      .act-log.timeline::before{left:17px;transform:none;}
+      .timeline-group{align-self:flex-start;margin-left:0;}
+      .timeline-item,.timeline-item.timeline-left,.timeline-item.timeline-right{width:100%;align-self:stretch;padding:0 0 0 42px;}
+      .timeline-left .timeline-node,.timeline-right .timeline-node{left:11px;right:auto;}
+      .timeline-item::before,.timeline-left::before,.timeline-right::before{left:17px;right:auto;width:25px;}
+      .timeline-card-head{padding:9px;gap:8px;}
+      .timeline-avatar{width:28px;height:28px;}
+    }
 
     /* Modal tabs */
     .mtabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:14px;overflow-x:auto;scrollbar-width:none;}
@@ -650,7 +685,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-31.11';
+const BUILD_ID = '2026-07-31.12';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -669,7 +704,7 @@ const TILIT_COLS = ['id','name','y_tunnus','toimiala','yhtiömuoto','osoite','po
 const YH_TAB  = 'Yhteyshenkilöt';
 const YH_COLS = ['id','tili_id','nimi','titteli','puhelin','sahkoposti','linkedin','created_at'];
 const USERS_TAB = 'Käyttäjät';
-const USERS_COLS = ['email','nimi','puhelin','sahkoposti','updated_at','allekirjoitus'];
+const USERS_COLS = ['email','nimi','puhelin','sahkoposti','updated_at','allekirjoitus','profiilikuva'];
 const TEMPLATES_TAB = 'Sähköpostimallit';
 const TEMPLATES_COLS = ['id','nimi','aihe','sisalto','created_at'];
 const PROJEKTIT_TAB = 'Projektit';
@@ -693,7 +728,8 @@ const PAGE_SIZE = 60;
 let yhPage = 0, yhSortCol = 'nimi', yhSortAsc = true, yhFilteredRows = [], currentYhId = null;
 const YH_PAGE_SIZE = 60;
 let currentUserEmail = null;
-let currentUser = { email:'', nimi:'', puhelin:'', sahkoposti:'', updated_at:'', allekirjoitus:'', _rowIndex:null };
+let currentUser = { email:'', nimi:'', puhelin:'', sahkoposti:'', updated_at:'', allekirjoitus:'', profiilikuva:'', _rowIndex:null };
+let allUsers = [], profileImageData = '';
 let baseProjektit = BASE_PROJEKTIT.map(p=>({...p,defaultNimi:p.nimi,created_at:'',_rowIndex:null}));
 let customProjektit = [];
 let emailTemplates = [];
@@ -1498,11 +1534,13 @@ async function sendOutlookEmail() {
         task.thread=task.thread||[];
         task.thread.push(threadEntry);
         Object.assign(task,{tila:'Toimitettu',done:true,aihe:subject,teksti,
+          updated_at:threadEntry.ts,completed_at:threadEntry.ts,
           contactId:emailDraftContext.contactId||task.contactId||null,
           conversationId:created.conversationId||task.conversationId||null, ticketCode});
       } else {
+        const completed_at=new Date().toISOString();
         acts.push({id:'TK'+Date.now(),tyyppi:'sahkoposti',tila:'Toimitettu',done:true,
-          aihe:subject,teksti,tekija,muistiinpanot:null,created_at:new Date().toISOString(),
+          aihe:subject,teksti,tekija,muistiinpanot:null,created_at:completed_at,completed_at,
           due_date:null,contactId:emailDraftContext.contactId||null,
           conversationId:created.conversationId||null,ticketCode,thread:[threadEntry]});
       }
@@ -1567,7 +1605,7 @@ async function saveEmailDraftTask() {
   const tekija=currentUser.nimi||currentUserEmail||null;
   if (task) {
     Object.assign(task,{tila:'Luonnos',done:false,aihe:subject,
-      teksti:'Luonnos: '+subject, bodyHtml,
+      teksti:'Luonnos: '+subject, bodyHtml,completed_at:null,updated_at:new Date().toISOString(),
       contactId:emailDraftContext.contactId||task.contactId||null});
   } else {
     const newTask=buildDraftEmailActivity({contactId:emailDraftContext.contactId, subject, bodyHtml, tekija});
@@ -1650,6 +1688,7 @@ async function syncContactEmails(contactId, opts) {
         // aktiiviseksi. Ei kosketa mitä vastaus sisältää, ei arvaa uutta
         // tilaa sen perusteella — vain merkitsee että joku vastasi.
         if (ticket.tila==='Toimitettu') ticket.tila='Uusi';
+        ticket.done=false; ticket.completed_at=null; ticket.updated_at=m.receivedDateTime||new Date().toISOString();
         linked++;
       } else {
         acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,6),tyyppi:'sahkoposti',
@@ -1786,17 +1825,22 @@ async function loadData() {
         ...Object.fromEntries(YH_COLS.map((k,j)=>[k,r[j]||''])), _rowIndex:i+2
       }));
     }
-    const usersRows = await sheetGet(`${USERS_TAB}!A:F`);
+    const usersRows = await sheetGet(`${USERS_TAB}!A:G`);
+    if ((usersRows[0]?.[6]||'') !== 'profiilikuva') {
+      await sheetPut(`${USERS_TAB}!G1`, [['profiilikuva']]);
+    }
     const usersData = usersRows.slice(1);
-    const myIdx = usersData.findIndex(r=>(r[0]||'').trim().toLowerCase()===(currentUserEmail||'').trim().toLowerCase());
+    allUsers = usersData.map((r,i)=>({
+      ...Object.fromEntries(USERS_COLS.map((k,j)=>[k,r[j]||''])), _rowIndex:i+2
+    })).filter(u=>u.email);
+    const myIdx = allUsers.findIndex(u=>(u.email||'').trim().toLowerCase()===(currentUserEmail||'').trim().toLowerCase());
     console.log('Käyttäjät-haku: currentUserEmail=', currentUserEmail, 'rivejä=', usersData.length, 'löytyi indeksistä=', myIdx, 'kaikki sähköpostit=', usersData.map(r=>r[0]));
     if (myIdx>=0) {
-      const r=usersData[myIdx];
-      currentUser = { email:r[0]||'', nimi:r[1]||'', puhelin:r[2]||'', sahkoposti:r[3]||'', updated_at:r[4]||'', allekirjoitus:r[5]||'', _rowIndex:myIdx+2 };
+      currentUser = {...allUsers[myIdx]};
     } else {
-      currentUser = { email:currentUserEmail||'', nimi:'', puhelin:'', sahkoposti:'', updated_at:'', allekirjoitus:'', _rowIndex:null };
+      currentUser = { email:currentUserEmail||'', nimi:'', puhelin:'', sahkoposti:'', updated_at:'', allekirjoitus:'', profiilikuva:'', _rowIndex:null };
     }
-    console.log('currentUser asetettu:', currentUser);
+    console.log('currentUser asetettu:', currentUser.email, currentUser.nimi||'(nimi puuttuu)', currentUser.profiilikuva?'profiilikuva ✓':'ei profiilikuvaa');
     const projRows = await sheetGet(`${PROJEKTIT_TAB}!A:C`);
     const storedProjektit = projRows.slice(1).map((r,i)=>({
       id:r[0]||'', nimi:r[1]||'', created_at:r[2]||'', _rowIndex:i+2
@@ -2321,6 +2365,8 @@ async function moveKauppaVaihe(sid, taskId, newVaihe) {
   const prev=task.tila||'–';
   task.tila=newVaihe;
   task.done=(TASK_DONE.kauppa||[]).includes(newVaihe);
+  task.updated_at=new Date().toISOString();
+  task.completed_at=task.done?task.updated_at:null;
   p.aktiviteetit=JSON.stringify(acts);
   addActToProspect(p,'vaihe_muutos',`${task.aihe||'Kauppa'}: ${prev} → ${newVaihe}`,task.tekija);
   p.vaihe=newVaihe;
@@ -2361,6 +2407,9 @@ document.querySelectorAll('.mtab').forEach(t=>t.addEventListener('click',()=>{
   t.classList.add('active'); document.getElementById('mt-'+t.dataset.mt).classList.add('active');
   if (t.dataset.mt==='tehtavat' && currentId) {
     const p=allProspects.find(x=>x.spara_id===currentId); if(p) renderTaskList(p);
+  }
+  if (t.dataset.mt==='historia' && currentId) {
+    const p=allProspects.find(x=>x.spara_id===currentId); if(p) renderActivities(p);
   }
 }));
 
@@ -2523,9 +2572,11 @@ async function updateTaskEdit(taskId) {
   const tekija=(document.getElementById('task-tekija')?.value||'').trim()||null;
   const taskNote=(document.getElementById('task-muistiinpanot')?.value||'').trim()||null;
   const prevTila=task.tila;
-  Object.assign(task,{tila,aihe,arvo,tekija,muistiinpanot:taskNote,
+  const wasDone=taskIsDone(normalizeTask(task));
+  const done=(TASK_DONE[tyyppi]||[]).includes(tila);
+  Object.assign(task,{tyyppi,tila,aihe,arvo,tekija,muistiinpanot:taskNote,
     due_date:document.getElementById('task-due')?.value||task.due_date||null,
-    done:(TASK_DONE[tyyppi]||[]).includes(tila)});
+    done,updated_at:new Date().toISOString(),completed_at:done?(wasDone?task.completed_at||new Date().toISOString():new Date().toISOString()):null});
   if(tyyppi==='kauppa'&&tila&&tila!==prevTila){
     const prev=p.vaihe; p.vaihe=tila;
     if(prev!==tila) addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${tila}`,tekija);
@@ -2555,7 +2606,8 @@ async function addTask() {
   const taskNote=(document.getElementById('task-muistiinpanot')?.value||'').trim()||null;
   const done=(TASK_DONE[tyyppi]||[]).includes(tila);
   const acts=parseActs(p);
-  acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,tekija,muistiinpanot:taskNote,created_at:new Date().toISOString(),due_date,done});
+  const created_at=new Date().toISOString();
+  acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,tekija,muistiinpanot:taskNote,created_at,due_date,done,completed_at:done?created_at:null});
   p.aktiviteetit=JSON.stringify(acts);
   if(tyyppi==='kauppa'&&tila){const prev=p.vaihe;p.vaihe=tila;if(prev!==tila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${tila}`,tekija);}
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
@@ -2619,11 +2671,13 @@ async function updateTaskTila(taskId, newTila) {
   if(!currentId) return;
   const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return;
   const acts=parseActs(p); const task=acts.find(a=>a.id===taskId); if(!task) return;
-  task.tila=newTila; task.done=(TASK_DONE[task.tyyppi]||[]).includes(newTila);
+  const wasDone=taskIsDone(normalizeTask(task));
+  task.tila=newTila; task.done=(TASK_DONE[task.tyyppi]||[]).includes(newTila); task.updated_at=new Date().toISOString();
+  task.completed_at=task.done?(wasDone?task.completed_at||task.updated_at:task.updated_at):null;
   if(task.tyyppi==='kauppa'){const prev=p.vaihe;p.vaihe=newTila;if(prev!==newTila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${newTila}`,p.omistaja);}
   p.aktiviteetit=JSON.stringify(acts);
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
-  try{await saveCrmState(p);renderTaskList(p);updateSummary();applyFilters();showToast('Tila päivitetty ✓','success');}
+  try{await saveCrmState(p);renderTaskList(p);renderActivities(p);updateSummary();applyFilters();showToast('Tila päivitetty ✓','success');}
   catch(e){showToast('Virhe: '+e.message,'error');}
 }
 
@@ -2631,7 +2685,7 @@ async function completeTask(taskId) {
   if(!currentId) return;
   const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return;
   const acts=parseActs(p); const task=acts.find(a=>a.id===taskId); if(!task) return;
-  task.done=true;
+  task.done=true; task.updated_at=new Date().toISOString(); task.completed_at=task.completed_at||task.updated_at;
   const doneStates=TASK_DONE[task.tyyppi]||[];
   if(doneStates.length&&!doneStates.includes(task.tila)) task.tila=doneStates[doneStates.length-1];
   if(task.tyyppi==='kauppa'){const prev=p.vaihe;p.vaihe=task.tila;if(prev!==task.tila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${task.tila}`,p.omistaja);}
@@ -2695,14 +2749,118 @@ function addActToProspect(p,tyyppi,teksti,tekija) {
   acts.push({tyyppi,teksti,tekija:tekija||null,created_at:new Date().toISOString()});
   p.aktiviteetit=JSON.stringify(acts);
 }
+let timelineRenderItems=[];
+function isTimelineTask(a) {
+  return !!(a && TASK_TILA[a.tyyppi] && (a.due_date || a.tila || a.aihe || a.done != null));
+}
+function timelineTimestamp(value) {
+  const stamp=value?Date.parse(value):NaN;
+  return Number.isFinite(stamp)?stamp:0;
+}
+function timelineItems(p) {
+  return parseActs(p).map((raw,sourceIndex)=>{
+    const isTask=isTimelineTask(raw);
+    const task=isTask?normalizeTask(raw):null;
+    const upcoming=!!(task&&!taskIsDone(task));
+    const dueStamp=timelineTimestamp(raw.due_date);
+    const historyStamp=timelineTimestamp(raw.completed_at||raw.updated_at||raw.created_at||raw.due_date);
+    return {raw,task,isTask,upcoming,dueStamp,historyStamp,sourceIndex};
+  }).sort((a,b)=>{
+    if(a.upcoming!==b.upcoming) return a.upcoming?-1:1;
+    if(a.upcoming) {
+      if(a.dueStamp!==b.dueStamp) return (a.dueStamp||Number.MAX_SAFE_INTEGER)-(b.dueStamp||Number.MAX_SAFE_INTEGER);
+      return b.historyStamp-a.historyStamp;
+    }
+    return b.historyStamp-a.historyStamp || b.sourceIndex-a.sourceIndex;
+  });
+}
+function timelineActorUser(actor) {
+  const key=String(actor||'').trim().toLocaleLowerCase('fi');
+  if(!key) return null;
+  return allUsers.find(u=>[u.email,u.nimi,u.sahkoposti].some(v=>String(v||'').trim().toLocaleLowerCase('fi')===key))||null;
+}
+function timelineInitials(value) {
+  const parts=String(value||'?').trim().split(/\s+/).filter(Boolean);
+  return (parts.length>1?parts[0][0]+parts[parts.length-1][0]:parts[0]?.slice(0,2)||'?').toLocaleUpperCase('fi');
+}
+function safeProfileImage(value) {
+  const src=String(value||'');
+  return /^data:image\/(?:jpeg|png|webp);base64,[a-z0-9+/=\s]+$/i.test(src)?src:'';
+}
+function timelineAvatarHtml(actor) {
+  const user=timelineActorUser(actor);
+  const src=safeProfileImage(user?.profiilikuva);
+  const label=user?.nimi||actor||'Tuntematon käsittelijä';
+  return `<span class="timeline-avatar" title="${esc(label)}">${src?`<img src="${esc(src)}" alt="${esc(label)}">`:esc(timelineInitials(label))}</span>`;
+}
+function timelineTypeLabel(item) {
+  if(item.isTask) return TASK_LABEL[item.task.tyyppi]||'Tehtävä';
+  return ({kommentti:'Kommentti',puhelu:'Puhelu',sahkoposti:'Sähköposti',tapaaminen:'Tapaaminen',tarjous:'Tarjous',vaihe_muutos:'Vaiheen muutos'}[item.raw.tyyppi]||item.raw.tyyppi||'Merkintä');
+}
+function timelineColor(item) {
+  if(item.isTask) return TASK_COLOR[item.task.tyyppi]||'var(--accent)';
+  return ({kommentti:'var(--blue)',puhelu:'var(--green)',sahkoposti:'var(--orange)',tapaaminen:'var(--purple)',tarjous:'var(--yellow)',vaihe_muutos:'var(--accent)'}[item.raw.tyyppi]||'var(--accent)');
+}
+function timelineDateText(item) {
+  if(item.upcoming) return item.raw.due_date?'Eräpäivä '+new Date(item.raw.due_date+'T12:00:00').toLocaleDateString('fi-FI'):'Ei eräpäivää';
+  const value=item.raw.completed_at||item.raw.updated_at||item.raw.created_at||item.raw.due_date;
+  return fmtDT(value);
+}
+function timelineCardHtml(item,index) {
+  const a=item.raw, task=item.task;
+  const actor=a.tekija||'Ei käsittelijää';
+  const title=item.isTask?(task.aihe||timelineTypeLabel(item)):(a.teksti||timelineTypeLabel(item));
+  const text=a.teksti||task?.muistiinpanot||'';
+  const status=item.isTask?(item.upcoming?(task.tila||'Avoin'):(task.tila||'Valmis')):timelineTypeLabel(item);
+  const details=[];
+  if(text) details.push(`<div>${esc(text)}</div>`);
+  if(item.isTask&&task.muistiinpanot&&task.muistiinpanot!==text) details.push(`<div class="timeline-detail-row"><span>Muistiinpanot</span><strong>${esc(task.muistiinpanot)}</strong></div>`);
+  if(item.isTask&&task.due_date) details.push(`<div class="timeline-detail-row"><span>Eräpäivä</span><strong>${esc(new Date(task.due_date+'T12:00:00').toLocaleDateString('fi-FI'))}</strong></div>`);
+  if(item.isTask&&task.arvo) details.push(`<div class="timeline-detail-row"><span>Arvo</span><strong>${Number(task.arvo).toLocaleString('fi-FI')} €</strong></div>`);
+  details.push(`<div class="timeline-detail-row"><span>Käsittelijä</span><strong>${esc(actor)}</strong></div>`);
+  if(item.isTask&&task.id) details.push(`<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="openTimelineTask(${index})">✏️ Avaa tehtävä</button>`);
+  const side=index%2?'timeline-right':'timeline-left';
+  return `<div class="timeline-item ${side}${item.upcoming?' timeline-upcoming':''}" style="--timeline-color:${timelineColor(item)}">
+    <span class="timeline-node" aria-hidden="true"></span>
+    <article class="timeline-card" id="timeline-card-${index}">
+      <button type="button" class="timeline-card-head" onclick="toggleTimelineCard(${index},this)" aria-expanded="false">
+        ${timelineAvatarHtml(a.tekija)}
+        <span class="timeline-card-main">
+          <span class="timeline-card-title">${esc(title)}</span>
+          <span class="timeline-card-meta">${actIcon(a.tyyppi)} ${esc(timelineTypeLabel(item))} · ${esc(timelineDateText(item))}</span>
+        </span>
+        <span><span class="timeline-badge">${esc(status)}</span> <span class="timeline-chevron">⌄</span></span>
+      </button>
+      <div class="timeline-card-body">${details.join('')}</div>
+    </article>
+  </div>`;
+}
 function renderActivities(p) {
-  const acts=parseActs(p).filter(a=>!a.due_date||a.done), log=document.getElementById('act-log');
-  if (!acts.length) { log.innerHTML='<div class="empty">Ei merkintöjä</div>'; return; }
-  log.innerHTML=[...acts].reverse().map(a=>`
-    <div class="act-item">
-      <div class="act-meta">${actIcon(a.tyyppi)} ${a.tyyppi} · ${fmtDT(a.created_at)}${a.tekija?' · '+esc(a.tekija):''}</div>
-      <div class="act-text">${esc(a.teksti)}</div>
-    </div>`).join('');
+  const log=document.getElementById('act-log'); if(!log) return;
+  timelineRenderItems=timelineItems(p);
+  if (!timelineRenderItems.length) { log.classList.remove('timeline');log.innerHTML='<div class="empty">Ei tehtäviä tai merkintöjä</div>';return; }
+  log.classList.add('timeline');
+  let hadUpcoming=false, hadHistory=false;
+  log.innerHTML=timelineRenderItems.map((item,index)=>{
+    let group='';
+    if(item.upcoming&&!hadUpcoming){hadUpcoming=true;group='<div class="timeline-group">Tulevat tehtävät</div>';}
+    if(!item.upcoming&&!hadHistory){hadHistory=true;group='<div class="timeline-group">Historia</div>';}
+    return group+timelineCardHtml(item,index);
+  }).join('');
+}
+function toggleTimelineCard(index,button) {
+  const card=document.getElementById('timeline-card-'+index); if(!card) return;
+  const open=card.classList.toggle('open');
+  button?.setAttribute('aria-expanded',String(open));
+}
+function openTimelineTask(index) {
+  const item=timelineRenderItems[index]; if(!item?.task?.id) return;
+  document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
+  document.querySelector('[data-mt="tehtavat"]')?.classList.add('active');
+  document.getElementById('mt-tehtavat')?.classList.add('active');
+  const p=allProspects.find(x=>x.spara_id===currentId); if(p) renderTaskList(p);
+  editTask(item.task.id);
 }
 function updateActFields() {
   const t = document.getElementById('act-type')?.value;
@@ -2720,7 +2878,7 @@ async function addActivity() {
   if (arvo)  teksti = (teksti ? teksti+' — ' : '') + 'Arvo: '+arvo+' €';
   if (!teksti) { showToast('Syötä kuvaus tai tulos','error'); return; }
   const p = allProspects.find(x=>x.spara_id===currentId); if (!p) return;
-  const tekija = document.getElementById('e-omistaja').value.trim()||null;
+  const tekija = currentUser.nimi||currentUserEmail||document.getElementById('e-omistaja').value.trim()||null;
   addActToProspect(p, tyyppi, teksti, tekija);
   try {
     await saveCrmState(p);
@@ -3776,11 +3934,50 @@ async function saveNewTili() {
 }
 
 // ── Asetukset ─────────────────────────────────────────────────────────────────
+function renderProfilePreview() {
+  const preview=document.getElementById('set-profile-preview'); if(!preview) return;
+  const src=safeProfileImage(profileImageData);
+  const label=(document.getElementById('set-nimi')?.value||currentUser.nimi||currentUser.email||'?').trim();
+  preview.innerHTML=src?`<img src="${esc(src)}" alt="${esc(label)}">`:esc(timelineInitials(label));
+  preview.title=label;
+  const remove=document.getElementById('set-profile-remove'); if(remove) remove.style.display=src?'':'none';
+}
+function removeProfileImage() {
+  profileImageData='';
+  const input=document.getElementById('set-profile-image'); if(input) input.value='';
+  renderProfilePreview();
+}
+async function handleProfileImage(event) {
+  const file=event.target?.files?.[0]; if(!file) return;
+  if(!/^image\/(jpeg|png|webp)$/i.test(file.type)){showToast('Valitse JPG-, PNG- tai WebP-kuva','error');event.target.value='';return;}
+  if(file.size>8*1024*1024){showToast('Kuvatiedosto on liian suuri (enintään 8 Mt)','error');event.target.value='';return;}
+  const objectUrl=URL.createObjectURL(file);
+  try {
+    const img=await new Promise((resolve,reject)=>{
+      const el=new Image(); el.onload=()=>resolve(el); el.onerror=()=>reject(new Error('Kuvaa ei voitu lukea')); el.src=objectUrl;
+    });
+    const side=Math.min(img.naturalWidth,img.naturalHeight);
+    const sx=(img.naturalWidth-side)/2, sy=(img.naturalHeight-side)/2;
+    const canvas=document.createElement('canvas'); canvas.width=96; canvas.height=96;
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,96,96); ctx.drawImage(img,sx,sy,side,side,0,0,96,96);
+    const data=canvas.toDataURL('image/jpeg',.78);
+    if(data.length>45000) throw new Error('Pienennetty kuva ei mahdu tallennukseen');
+    profileImageData=data;
+    renderProfilePreview();
+  } catch(e) {
+    event.target.value='';
+    showToast(e.message||'Kuvan käsittely epäonnistui','error');
+  } finally { URL.revokeObjectURL(objectUrl); }
+}
 function openSettings() {
   document.getElementById('set-email').value = currentUser.email || currentUserEmail || '';
   document.getElementById('set-nimi').value = currentUser.nimi || '';
   document.getElementById('set-puhelin').value = currentUser.puhelin || '';
   document.getElementById('set-sahkoposti').value = currentUser.sahkoposti || '';
+  profileImageData=safeProfileImage(currentUser.profiilikuva);
+  const profileInput=document.getElementById('set-profile-image'); if(profileInput) profileInput.value='';
+  renderProfilePreview();
   const sigEl=document.getElementById('set-allekirjoitus'); if (sigEl) sigEl.innerHTML = currentUser.allekirjoitus || '';
   document.getElementById('set-ms-client-id').value = microsoftClientId();
   document.getElementById('set-ms-tenant').value = microsoftTenant();
@@ -3805,21 +4002,25 @@ async function saveMyProfile() {
   const puhelin=(document.getElementById('set-puhelin')?.value||'').trim();
   const sahkoposti=(document.getElementById('set-sahkoposti')?.value||'').trim();
   const allekirjoitus=(document.getElementById('set-allekirjoitus')?.innerHTML||'').trim();
+  const profiilikuva=safeProfileImage(profileImageData);
   const email=currentUser.email||currentUserEmail||'';
   if (!email) { showToast('Google-sähköpostia ei saatu — kirjaudu ulos ja sisään uudelleen','error'); return; }
-  const row=[email, nimi, puhelin, sahkoposti, new Date().toISOString(), allekirjoitus];
-  console.log('saveMyProfile: tallennetaan rivi', row, '_rowIndex=', currentUser._rowIndex);
+  const row=[email, nimi, puhelin, sahkoposti, new Date().toISOString(), allekirjoitus, profiilikuva];
+  console.log('saveMyProfile: tallennetaan', email, profiilikuva?'profiilikuva ✓':'ei profiilikuvaa', '_rowIndex=', currentUser._rowIndex);
   try {
     if (currentUser._rowIndex) {
-      await sheetPut(`${USERS_TAB}!A${currentUser._rowIndex}:F${currentUser._rowIndex}`, [row]);
+      await sheetPut(`${USERS_TAB}!A${currentUser._rowIndex}:G${currentUser._rowIndex}`, [row]);
       console.log('saveMyProfile: päivitetty olemassa oleva rivi', currentUser._rowIndex);
     } else {
       const colA = await sheetGet(`${USERS_TAB}!A:A`);
-      await sheetAppend(`${USERS_TAB}!A:F`, [row]);
+      await sheetAppend(`${USERS_TAB}!A:G`, [row]);
       currentUser._rowIndex = colA.length+1;
       console.log('saveMyProfile: lisätty uusi rivi', currentUser._rowIndex);
     }
-    Object.assign(currentUser, { email, nimi, puhelin, sahkoposti, allekirjoitus, updated_at:row[4] });
+    Object.assign(currentUser, { email, nimi, puhelin, sahkoposti, allekirjoitus, profiilikuva, updated_at:row[4] });
+    const existing=allUsers.findIndex(u=>u._rowIndex===currentUser._rowIndex||u.email.toLowerCase()===email.toLowerCase());
+    if(existing>=0) allUsers[existing]={...currentUser}; else allUsers.push({...currentUser});
+    if(currentId){const p=allProspects.find(x=>x.spara_id===currentId);if(p)renderActivities(p);}
     showToast('Omat tiedot tallennettu ✓','success');
   } catch(e) { console.error('saveMyProfile epäonnistui:', e); showToast('Virhe: '+e.message,'error'); }
 }
@@ -4271,7 +4472,8 @@ async function saveGlobalTask() {
   const done=(TASK_DONE[tyyppi]||[]).includes(tila);
   const tekija=currentUser.nimi||currentUserEmail||null;
   const acts=parseActs(p);
-  acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,tekija,created_at:new Date().toISOString(),due_date,done});
+  const created_at=new Date().toISOString();
+  acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,tekija,created_at,due_date,done,completed_at:done?created_at:null});
   p.aktiviteetit=JSON.stringify(acts);
   if(tyyppi==='kauppa'&&tila){const prev=p.vaihe;p.vaihe=tila;if(prev!==tila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${tila}`,tekija);}
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
@@ -4366,9 +4568,21 @@ async function saveGlobalTask() {
       <div class="cs-title">Omat tiedot</div>
       <div class="form-grid">
         <div class="form-group full"><label>Sähköposti (kirjautuminen)</label><input class="form-control" id="set-email" disabled></div>
-        <div class="form-group"><label>Nimi</label><input class="form-control" id="set-nimi" placeholder="Etunimi Sukunimi"></div>
+        <div class="form-group"><label>Nimi</label><input class="form-control" id="set-nimi" placeholder="Etunimi Sukunimi" oninput="renderProfilePreview()"></div>
         <div class="form-group"><label>Puhelin</label><input class="form-control" id="set-puhelin" placeholder="+358 40…" type="tel"></div>
         <div class="form-group full"><label>Sähköposti (yhteystieto)</label><input class="form-control" id="set-sahkoposti" placeholder="nimi@sparaenergia.com" type="email"></div>
+        <div class="form-group full">
+          <label>Profiilikuva aikajanalle</label>
+          <div style="display:flex;align-items:center;gap:12px;padding:10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius)">
+            <div class="timeline-avatar" id="set-profile-preview" style="width:44px;height:44px;font-size:13px">?</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+              <label class="btn btn-ghost btn-sm" for="set-profile-image" style="cursor:pointer">📷 Valitse kuva</label>
+              <input id="set-profile-image" type="file" accept="image/jpeg,image/png,image/webp" onchange="handleProfileImage(event)" hidden>
+              <button type="button" class="btn btn-ghost btn-sm" id="set-profile-remove" onclick="removeProfileImage()" style="display:none;color:var(--red)">Poista kuva</button>
+              <span style="width:100%;font-size:10px;color:var(--text2)">Kuva pienennetään automaattisesti 96 × 96 pikseliin.</span>
+            </div>
+          </div>
+        </div>
         <div class="form-group full">
           <label>Sähköpostin allekirjoitus (HTML)</label>
           <div class="email-toolbar">
