@@ -526,7 +526,7 @@
             <select class="form-control" id="task-tila" style="grid-column:1/-1"></select>
             <input class="form-control" id="task-aihe" placeholder="Aihe…" style="grid-column:1/-1">
             <input class="form-control" id="task-arvo" type="number" placeholder="Arvo €" min="0" style="display:none;grid-column:1/-1">
-            <input class="form-control" id="task-tekija" placeholder="Tekijä…">
+            <select class="form-control" id="task-tekija" aria-label="Käsittelijä"></select>
             <input class="form-control" id="task-due" type="date">
             <textarea class="form-control" id="task-muistiinpanot" rows="2" placeholder="Muistiinpanot…" style="grid-column:1/-1;resize:vertical"></textarea>
             <input type="hidden" id="task-edit-id">
@@ -685,7 +685,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-31.12';
+const BUILD_ID = '2026-07-31.13';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -2256,6 +2256,24 @@ const TASK_ICON={kauppa:'🤝',soitto:'📞',sahkoposti:'✉️',muu:'📝'};
 const TASK_LABEL={kauppa:'Kauppa',soitto:'Soitto',sahkoposti:'Sähköposti',muu:'Muu tehtävä'};
 
 const TASK_COLOR={kauppa:'var(--green)',soitto:'var(--blue)',sahkoposti:'var(--orange)',muu:'var(--purple)'};
+function handlerDisplayName(u) {
+  return (u?.nimi||u?.sahkoposti||u?.email||'').trim();
+}
+function defaultHandlerName() {
+  return (currentUser.nimi||currentUser.sahkoposti||currentUserEmail||'').trim();
+}
+function populateHandlerSelect(selectedValue='') {
+  const sel=document.getElementById('task-tekija'); if(!sel) return;
+  const selected=(selectedValue||defaultHandlerName()).trim();
+  const names=[...new Set(allUsers.map(handlerDisplayName).filter(Boolean))];
+  if(selected && !names.includes(selected)) names.unshift(selected);
+  if(!names.length && currentUserEmail) names.push(currentUserEmail);
+  sel.innerHTML=[
+    '<option value="">Ei käsittelijää</option>',
+    ...names.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`)
+  ].join('');
+  sel.value=selected||'';
+}
 function openTaskForm(tyyppi) {
   document.getElementById('task-type').value=tyyppi;
   document.getElementById('task-form-label').textContent=`${TASK_ICON[tyyppi]} ${TASK_LABEL[tyyppi]}`;
@@ -2265,11 +2283,11 @@ function openTaskForm(tyyppi) {
   if(arvoEl) arvoEl.style.display=tyyppi==='kauppa'?'grid-column:1/-1;display:block':'none';
   if(arvoEl) arvoEl.style.cssText=tyyppi==='kauppa'?'display:block;grid-column:1/-1':'display:none';
   document.querySelectorAll('.task-type-btn').forEach(b=>b.classList.toggle('active',b.dataset.type===tyyppi));
-  // Automaattivalinta: uudelle tehtävälle tekijäksi kirjautunut käyttäjä,
+  // Automaattivalinta: uudelle tehtävälle käsittelijäksi kirjautunut käyttäjä,
   // ellei kenttää ole jo täytetty (esim. tyyppiä vaihdettaessa kesken
   // täytön) — editTask() ylikirjoittaa tämän heti oikealla arvolla.
   const tekijaEl=document.getElementById('task-tekija');
-  if (tekijaEl && !tekijaEl.value) tekijaEl.value=currentUser.nimi||currentUserEmail||'';
+  populateHandlerSelect(tekijaEl?.value||defaultHandlerName());
   const form=document.getElementById('task-add-form');
   form.style.display='';
   const delBtn=document.getElementById('task-del-btn'); if(delBtn) delBtn.style.display='none';
@@ -2543,6 +2561,7 @@ function editTask(taskId) {
   const sel=document.getElementById('task-tila'); if(sel) sel.value=t.tila||'';
   const aihe=document.getElementById('task-aihe'); if(aihe) aihe.value=t.aihe||'';
   const arvo=document.getElementById('task-arvo'); if(arvo) arvo.value=t.arvo??'';
+  populateHandlerSelect(t.tekija||'');
   const tek=document.getElementById('task-tekija'); if(tek) tek.value=t.tekija||'';
   const due=document.getElementById('task-due'); if(due) due.value=t.due_date||'';
   const nota=document.getElementById('task-muistiinpanot'); if(nota) nota.value=t.muistiinpanot||'';
