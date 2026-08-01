@@ -719,7 +719,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-01.9';
+const BUILD_ID = '2026-08-01.10';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -3794,7 +3794,12 @@ const PROSPECT_CANDIDATE_SCHEMA={
 function prospectCandidatesRequestBody(prompt, extraMessages) {
   return {
     model:anthropicModel(),
-    max_tokens:4096,
+    // Jopa 8 verkkohakua (max_uses alla) + 5 yrityksen jäsennelty tulos
+    // samassa vastauksessa voi viedä enemmän kuin 4096 tokenia — jos malli
+    // loppuu kesken ennen lopullista JSONia, seurauksena on joko katkennut
+    // teksti (jäsennysvirhe, jo aiemmin käsitelty) tai pahimmillaan ettei
+    // tekstilohkoa synny lainkaan. Enemmän tilaa on halpa varmuus.
+    max_tokens:8192,
     tools:[{...anthropicWebSearchToolDef(), max_uses:8}],
     output_config:{format:{type:'json_schema', schema:PROSPECT_CANDIDATE_SCHEMA}},
     messages:[{role:'user',content:prompt}, ...(extraMessages||[])]
@@ -3902,8 +3907,15 @@ function renderProspectingProgress(current, total, label) {
     </div>`;
 }
 
-function renderProspectingSummary(created, rejected) {
+function renderProspectingSummary(created, rejected, errors) {
   const el=document.getElementById('prospecting-summary'); if (!el) return;
+  // Virheet/tyhjät AI-vastaukset näkyivät ennen VAIN muutaman sekunnin
+  // toast-ilmoituksena — jos käyttäjä ei ehtinyt lukea sitä, "0 luotu / 0
+  // hylätty" -yhteenveto ei kertonut MIKSI (kaatuiko haku, vai palauttiko
+  // AI aidosti tyhjän listan). Näytetään syy nyt pysyvästi yhteenvedossa.
+  const errorHtml=(errors&&errors.length)
+    ? `<div style="background:color-mix(in srgb,var(--red) 15%,transparent);border:1px solid var(--red);border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:12px;color:var(--red)">⚠ ${errors.map(e=>esc(e)).join('<br>⚠ ')}</div>`
+    : '';
   const createdHtml=created.length
     ? created.map(p=>`<div class="ytj-dropdown-item" style="cursor:pointer" onclick="closeProspectingModal();openModal('${p.spara_id}')">
         <div class="ytj-item-name">${esc(p.yritys_nimi)}</div>
@@ -3917,6 +3929,7 @@ function renderProspectingSummary(created, rejected) {
       </div>`).join('')
     : '<div style="font-size:12px;color:var(--text2)">Ei hylättyjä ehdotuksia</div>';
   el.innerHTML=`
+    ${errorHtml}
     <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--green)">✓ Luotu (${created.length})</div>
     <div style="max-height:180px;overflow-y:auto;margin-bottom:16px">${createdHtml}</div>
     <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--red)">✕ Hylätty (${rejected.length})</div>
@@ -3958,7 +3971,7 @@ async function runProspectingBatch() {
     chunks.push(Math.min(PROSPECTING_CHUNK_SIZE, remaining));
   }
 
-  const createdAccounts=[], rejected=[], acceptedThisRun=[];
+  const createdAccounts=[], rejected=[], acceptedThisRun=[], batchErrors=[];
   let processedCount=0;
 
   for (const chunkSize of chunks) {
@@ -3976,8 +3989,20 @@ async function runProspectingBatch() {
       renderProspectingProgress(processedCount, totalCount, 'Haetaan ehdotuksia tekoälyltä…');
       aiCandidates=await generateProspectCandidates(segmentti, chunkSize, excludeNames);
     } catch(e) {
-      showToast('Tekoälyn haku epäonnistui: '+e.message,'error');
+      const msg='Tekoälyn haku epäonnistui: '+e.message;
+      showToast(msg,'error');
+      batchErrors.push(msg);
       break;
+    }
+
+    // Skeema ei pakota vähimmäismäärää (Anthropicin structured outputs ei
+    // dokumentoidusti tue minItemsiä) — AI voi siis aidosti palauttaa tyhjän
+    // listan onnistuneesti, ilman virhettä. Ilman tätä tämä näkyisi
+    // täsmälleen samalta kuin virhe (0 luotu, 0 hylätty) eikä kumpaakaan
+    // erottaisi toisistaan pelkästä yhteenvedosta.
+    if (!aiCandidates.length) {
+      batchErrors.push(`Tekoäly ei ehdottanut yhtään yritystä segmentille "${segmentti}" tässä erässä (ei virhe — vastaus oli tyhjä lista).`);
+      continue;
     }
 
     const chunkVerified=[];
@@ -4004,7 +4029,9 @@ async function runProspectingBatch() {
         const ids=await createProspectAccountsBatch(chunkVerified, opts);
         ids.forEach(id=>{ const p=allProspects.find(x=>x.spara_id===id); if (p) createdAccounts.push(p); });
       } catch(e) {
-        showToast('Tallennus epäonnistui kesken erän: '+e.message,'error');
+        const msg='Tallennus epäonnistui kesken erän: '+e.message;
+        showToast(msg,'error');
+        batchErrors.push(msg);
         break;
       }
     }
@@ -4013,7 +4040,7 @@ async function runProspectingBatch() {
   prospectingInProgress=false;
   document.getElementById('prospecting-progress').style.display='none';
   document.getElementById('prospecting-summary').style.display='';
-  renderProspectingSummary(createdAccounts, rejected);
+  renderProspectingSummary(createdAccounts, rejected, batchErrors);
 }
 
 // ── Tilit ─────────────────────────────────────────────────────────────────────
