@@ -18,6 +18,7 @@
 
 ## Branch, Commit, PR
 
+- For every new feature, start from the latest default branch and create a fresh feature branch before editing.
 - Use `agent/{short-description}` branches for new work.
 - If already on a relevant `agent/...` branch, continue on it.
 - Use short Finnish commit messages, for example `Uudista historia aikajanaksi`.
@@ -30,6 +31,7 @@
 - Try shell git first:
   - `git push -u origin "$(git branch --show-current)"`
 - If shell git lacks GitHub credentials or `gh` is unavailable, use the GitHub connector tools to update/create the branch and PR.
+- When publishing through the connector, read the target file metadata first and use the SHA from `structuredContent` when updating files.
 - If neither route can publish, report the exact local branch and commit that are ready.
 
 ## Project Habits
