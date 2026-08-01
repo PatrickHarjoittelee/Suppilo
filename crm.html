@@ -48,10 +48,10 @@
     .user-menu-item.danger:hover { color:var(--red); }
     .sync-dot { width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block; animation:pulse 2s infinite; }
     .header-logo { max-height:36px;width:auto;display:block; }
-    .hal-eye { position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;width:46px;height:46px;border-radius:50%;background:#020306;box-shadow:0 0 0 1px rgba(255,255,255,.06); }
-    .hal-eye-mark { position:relative;width:42px;height:42px;border-radius:50%;background:radial-gradient(circle at 50% 52%,#ffd952 0 4%,#ff4b32 8%,#ca120e 28%,#5c0508 52%,#05070b 68%);box-shadow:0 0 0 3px #05070b,0 0 0 5px #b9b9b9,0 0 0 6px #3f4649,0 0 18px rgba(255,0,0,.55),inset 0 0 10px rgba(255,130,90,.35),inset 0 -10px 16px rgba(0,0,0,.72);animation:halLensPulse 2.5s ease-in-out infinite;overflow:hidden; }
-    .hal-eye-mark::before { content:"";position:absolute;inset:4px;border-radius:50%;background:radial-gradient(ellipse at 50% 13%,rgba(255,255,255,.9) 0 5%,transparent 6%),radial-gradient(ellipse at 27% 25%,rgba(255,255,255,.72) 0 5%,transparent 6%),radial-gradient(ellipse at 73% 25%,rgba(255,255,255,.62) 0 4%,transparent 5%),linear-gradient(90deg,transparent 14%,rgba(255,255,255,.85) 15% 24%,transparent 25% 75%,rgba(255,255,255,.72) 76% 84%,transparent 85%);opacity:.72;filter:blur(.15px); }
-    .hal-eye-mark::after { content:"";position:absolute;left:50%;top:50%;width:7px;height:7px;border-radius:50%;transform:translate(-50%,-50%);background:#ffec56;box-shadow:0 0 10px #ffec56,0 0 24px rgba(255,46,28,.95),0 0 38px rgba(255,0,0,.55);animation:halCorePulse 1.8s ease-in-out infinite; }
+    .hal-eye { position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:50%;background:linear-gradient(145deg,#f7f7f7 0 8%,#8b9094 19%,#171b20 30%,#010204 68%,#cfd2d4 84%,#62686c 100%);box-shadow:0 0 0 1px rgba(255,255,255,.18),0 0 20px rgba(255,18,18,.18); }
+    .hal-eye-mark { position:relative;width:42px;height:42px;border-radius:50%;background:radial-gradient(circle at 50% 51%,#ffe955 0 5%,#ff673f 8%,#d52618 22%,#78100d 39%,#120608 56%,#010204 72%),linear-gradient(145deg,#020407,#10151b 38%,#030507);box-shadow:inset 0 0 0 6px #020407,inset 0 0 0 8px rgba(255,255,255,.04),inset 0 -11px 16px rgba(0,0,0,.82),0 0 16px rgba(255,0,0,.5);animation:halLensPulse 2.5s ease-in-out infinite;overflow:hidden; }
+    .hal-eye-mark::before { content:"";position:absolute;inset:3px;border-radius:50%;background:radial-gradient(ellipse at 50% 13%,rgba(255,255,255,.9) 0 9%,transparent 10%),radial-gradient(ellipse at 50% 25%,rgba(255,255,255,.5) 0 5%,transparent 6%),radial-gradient(ellipse at 25% 29%,rgba(255,255,255,.76) 0 6%,transparent 7%),radial-gradient(ellipse at 75% 29%,rgba(255,255,255,.55) 0 5%,transparent 6%),linear-gradient(90deg,transparent 17%,rgba(255,255,255,.9) 18% 23%,transparent 24% 76%,rgba(255,255,255,.75) 77% 82%,transparent 83%);opacity:.68;filter:blur(.2px); }
+    .hal-eye-mark::after { content:"";position:absolute;left:50%;top:50%;width:8px;height:8px;border-radius:50%;transform:translate(-50%,-50%);background:#ffea45;box-shadow:0 0 8px #ffea45,0 0 18px rgba(255,55,35,.95),0 0 34px rgba(255,0,0,.58);animation:halCorePulse 1.8s ease-in-out infinite; }
     .hal-eye-label { display:none; }
     .quick-add-wrap { position:fixed;right:22px;bottom:22px;z-index:900; }
     .quick-add-wrap > .btn { width:56px;height:56px;border-radius:50%;justify-content:center;padding:0;font-size:28px;line-height:1;box-shadow:0 10px 28px rgba(0,0,0,.42),0 0 0 1px rgba(255,255,255,.08); }
@@ -63,7 +63,7 @@
     @media (max-width:640px) {
       header { padding:0 10px;gap:8px;height:52px; }
       .header-logo { max-height:24px; }
-      .hal-eye { width:40px;height:40px; }
+      .hal-eye { width:46px;height:46px; }
       .hal-eye-mark { width:36px;height:36px; }
       .quick-add-wrap { right:16px;bottom:16px; }
       .hdr-right { gap:5px; }
@@ -89,7 +89,7 @@
       .kanban { padding-bottom:16px; }
     }
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-    @keyframes halLensPulse{0%,100%{filter:brightness(1);box-shadow:0 0 0 3px #05070b,0 0 0 5px #b9b9b9,0 0 0 6px #3f4649,0 0 17px rgba(255,0,0,.5),inset 0 0 10px rgba(255,130,90,.35),inset 0 -10px 16px rgba(0,0,0,.72);}50%{filter:brightness(1.18);box-shadow:0 0 0 3px #05070b,0 0 0 5px #d8d8d8,0 0 0 6px #596165,0 0 29px rgba(255,24,16,.72),inset 0 0 13px rgba(255,170,115,.45),inset 0 -10px 16px rgba(0,0,0,.68);}}
+    @keyframes halLensPulse{0%,100%{filter:brightness(.95);box-shadow:inset 0 0 0 6px #020407,inset 0 0 0 8px rgba(255,255,255,.04),inset 0 -11px 16px rgba(0,0,0,.82),0 0 14px rgba(255,0,0,.44);}50%{filter:brightness(1.18);box-shadow:inset 0 0 0 6px #020407,inset 0 0 0 8px rgba(255,255,255,.07),inset 0 -11px 16px rgba(0,0,0,.78),0 0 27px rgba(255,18,18,.68);}}
     @keyframes halCorePulse{0%,100%{transform:translate(-50%,-50%) scale(.86);opacity:.86;}50%{transform:translate(-50%,-50%) scale(1.16);opacity:1;}}
 
     /* Buttons */
@@ -721,7 +721,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-01.5';
+const BUILD_ID = '2026-08-01.6';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
