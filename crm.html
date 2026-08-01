@@ -685,7 +685,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-07-31.13';
+const BUILD_ID = '2026-08-01.1';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -3550,8 +3550,30 @@ function stringSimilarity(a, b) {
   if (!a || !b) return 0;
   return 1-levenshteinDistance(a,b)/Math.max(a.length,b.length);
 }
+// Moni suomalainen yhtiö on rekisteröity brändinsä + kuvaavan jatko-osan
+// yhdistelmällä ("Holiday Club" -> "Holiday Club Resorts Oy", "Kämp
+// Collection" -> "Kämp Collection Hotels Oy") — raaka merkkitason
+// Levenshtein rankaisee tätä virheellisesti pituuseron takia (pidempi
+// jatko-osa = huonompi pistemäärä, vaikka osuma olisi täysin oikea).
+// Palauttaa korkean pisteen VAIN jos lyhyempi nimi on pidemmän nimen
+// alku KOKONAISIN SANOIN (ei osasanan sisällä, esim. "kamp" ei saa
+// täsmätä "kampanja"-sanan sisään).
+function containmentScore(normA, normB) {
+  if (!normA || !normB) return 0;
+  if (normA===normB) return 1;
+  const shorter=normA.length<=normB.length?normA:normB;
+  const longer=normA.length<=normB.length?normB:normA;
+  if (shorter.length<3) return 0;
+  if (!longer.startsWith(shorter+' ')) return 0;
+  return 0.9+0.1*(shorter.length/longer.length);
+}
 
 const YTJ_MATCH_THRESHOLD=0.85;
+// Alle tämän parhaan alkuperäishaun pistemäärän kokeillaan myös
+// laajempaa hakua pelkällä ensimmäisellä sanalla (ks. alla) — 0.4 on
+// tarkoituksella matala, jotta se laukeaa vain kun täsmähaku selvästi
+// epäonnistui, ei kun se löysi jonkin kohtuullisen läheisen ehdokkaan.
+const YTJ_BROADEN_SEARCH_BELOW=0.4;
 // Hylkää mieluummin kuin hyväksyy epävarmasti — hylätty ehdokas näkyy vain
 // yhteenvedon "Hylätty"-listassa, hyväksytty EPÄvarma osuma loisi väärän
 // tilin. { accepted:true, data:<_prhToTiliForm-muotoinen>, matchScore,
@@ -3562,26 +3584,54 @@ async function verifyCandidateAgainstYtj({name, city}) {
   let results;
   try { results=await prhSearchByName(trimmedName); }
   catch(e) { return {accepted:false, reason:'PRH-haku epäonnistui: '+e.message}; }
-  if (!results.length) return {accepted:false, reason:'Ei löydy PRH:n yritysrekisteristä'};
 
   const normCandidate=normalizeCompanyName(trimmedName);
-  let best=null, bestScore=-1;
-  results.forEach(r=>{
-    const rName=_prhName(r);
-    const score=stringSimilarity(normCandidate, normalizeCompanyName(rName));
-    if (score>bestScore) { bestScore=score; best={result:r, name:rName}; }
-  });
-  if (!best || bestScore<YTJ_MATCH_THRESHOLD) {
+  const scoreOf=r=>Math.max(
+    stringSimilarity(normCandidate, normalizeCompanyName(_prhName(r))),
+    containmentScore(normCandidate, normalizeCompanyName(_prhName(r)))
+  );
+
+  const bestOfInitial=results.length ? Math.max(...results.map(scoreOf)) : 0;
+  if (bestOfInitial<YTJ_BROADEN_SEARCH_BELOW) {
+    // Täsmähaku ei löytänyt käyttökelpoista osumaa — usein syynä on että
+    // AI:n ehdottama muoto (esim. englanninkielinen brändinimi) ei täsmää
+    // PRH:n rekisteröityyn muotoon sanatarkasti, tai koko toiminimen sijaan
+    // on ehdotettu vain sen alkuosa. Laajennetaan hakua ensimmäisellä,
+    // yleensä tunnistettavimmalla sanalla ja yhdistetään tulokset — alla
+    // oleva pisteytys- ja kynnyslogiikka on tästä huolimatta täsmälleen
+    // yhtä tiukka, tämä vain kasvattaa harkittavien ehdokkaiden joukkoa.
+    const firstWord=normCandidate.split(' ')[0];
+    if (firstWord && firstWord.length>=3 && firstWord!==normCandidate) {
+      try {
+        const extra=await prhSearchByName(firstWord);
+        const seen=new Set(results.map(r=>_str(r.businessId)));
+        extra.forEach(r=>{ const id=_str(r.businessId); if (id && !seen.has(id)) { results.push(r); seen.add(id); } });
+      } catch(e) { /* laajennushaku epäonnistui — jatketaan alkuperäisillä tuloksilla */ }
+    }
+  }
+  if (!results.length) return {accepted:false, reason:'Ei löydy PRH:n yritysrekisteristä'};
+
+  const scored=results.map(r=>({result:r, name:_prhName(r), score:scoreOf(r)})).sort((a,b)=>b.score-a.score);
+  const best=scored[0], second=scored[1];
+  if (!best || best.score<YTJ_MATCH_THRESHOLD) {
     return {accepted:false,
-      reason:`Lähin PRH-osuma "${best?best.name:'–'}" ei riittävän samankaltainen (${Math.round((bestScore<0?0:bestScore)*100)}%)`,
+      reason:`Lähin PRH-osuma "${best?best.name:'–'}" ei riittävän samankaltainen (${Math.round((best&&best.score>0?best.score:0)*100)}%)`,
       closestMatch:best?best.name:null};
+  }
+  // Kaksi (tai useampi) yhtä vahvaa osumaa -> ei voida päätellä pelkästä
+  // nimestä kumpi on oikea (esim. samanniminen yhdistys vs. varsinainen
+  // yhtiö) — hylätään näkyvästi sen sijaan että arvattaisiin.
+  if (second && second.score>=YTJ_MATCH_THRESHOLD) {
+    return {accepted:false,
+      reason:`Useita samankaltaisia yrityksiä löytyi ("${best.name}" ja "${second.name}") — ei voida valita automaattisesti`,
+      closestMatch:best.name};
   }
   const businessId=_str(best.result.businessId);
   if (!businessId) return {accepted:false, reason:'PRH-tulokselta puuttuu Y-tunnus'};
   let confirmed;
   try { confirmed=await prhFetchByBusinessId(businessId); }
   catch(e) { return {accepted:false, reason:'Y-tunnuksen varmistus epäonnistui: '+e.message}; }
-  return {accepted:true, data:confirmed, matchScore:bestScore, matchedName:best.name};
+  return {accepted:true, data:confirmed, matchScore:best.score, matchedName:best.name};
 }
 
 // Tarkistaa sekä olemassa olevat tilit että saman ajon jo hyväksytyt
@@ -3680,7 +3730,7 @@ async function generateProspectCandidates(segmentti, count, excludeNames) {
   if (!key) throw new Error('Lisää Anthropic API-avain Asetuksissa');
   const exclusionNote=(excludeNames&&excludeNames.length)
     ? `\n\nÄlä ehdota näitä yrityksiä, ne ovat jo CRM:ssä: ${excludeNames.join(', ')}.` : '';
-  const prompt=`Etsi verkkohaulla ${count} todellista, tällä hetkellä toiminnassa olevaa suomalaista yritystä segmentistä "${segmentti}". Käytä VAIN oikeita, verkkohaulla löytämiäsi yrityksiä — älä koskaan keksi yrityksen nimeä. Jokaiselle yritykselle: yksi konkreettinen, todennettava signaali (esim. tuore uutinen, laajennus, energiahanke) ja lyhyt perustelu miksi se on relevantti energiatehokkuuden kannalta. Jos löydät julkisesti saatavilla olevan yhteyshenkilön nimen (esim. yrityksen "Yhteystiedot"-sivulta), sisällytä se — muuten jätä contact_name tyhjäksi, älä arvaa nimeä.${exclusionNote}`;
+  const prompt=`Etsi verkkohaulla ${count} todellista, tällä hetkellä toiminnassa olevaa suomalaista yritystä segmentistä "${segmentti}". Käytä VAIN oikeita, verkkohaulla löytämiäsi yrityksiä — älä koskaan keksi yrityksen nimeä. TÄRKEÄÄ nimen muodosta: "name"-kenttään ehdotettu nimi tarkistetaan automaattisesti Suomen kaupparekisteristä (PRH/YTJ), joten käytä AINA yrityksen virallista, kaupparekisteriin rekisteröityä toiminimeä (esim. "Holiday Club Resorts Oy", ei pelkkä brändi "Holiday Club"; "Omena Hotellit Oy", ei englanninkielinen "Omena Hotels") — jos et ole varma tarkasta rekisteröidystä muodosta, hae se erikseen (esim. "[yritys] Y-tunnus" tai "[yritys] kaupparekisteri") ennen vastaamista. Jokaiselle yritykselle: yksi konkreettinen, todennettava signaali (esim. tuore uutinen, laajennus, energiahanke) ja lyhyt perustelu miksi se on relevantti energiatehokkuuden kannalta. Jos löydät julkisesti saatavilla olevan yhteyshenkilön nimen (esim. yrityksen "Yhteystiedot"-sivulta), sisällytä se — muuten jätä contact_name tyhjäksi, älä arvaa nimeä.${exclusionNote}`;
 
   const headers={
     'x-api-key':key,
