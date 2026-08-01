@@ -34,6 +34,18 @@
     header h1 span { color:var(--accent); }
     .hdr-right { margin-left:auto; display:flex; align-items:center; gap:8px; }
     .user-chip { font-size:11px; color:var(--text2); background:var(--bg3); padding:4px 10px; border-radius:20px; }
+    .user-menu-wrap { position:relative; }
+    .user-menu-btn { width:36px;height:36px;border-radius:50%;border:1px solid var(--border);background:var(--bg3);color:var(--text);display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:inherit;font-size:12px;font-weight:800;overflow:hidden;padding:0;transition:border-color .15s,box-shadow .15s,transform .15s; }
+    .user-menu-btn:hover,.user-menu-btn:focus-visible { border-color:var(--accent);box-shadow:0 0 0 3px rgba(46,160,255,.14);outline:none; }
+    .user-menu-btn img { width:100%;height:100%;object-fit:cover;display:block; }
+    .user-menu { position:absolute;right:0;top:calc(100% + 8px);background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.55);z-index:650;min-width:210px;overflow:hidden; }
+    .user-menu-info { padding:12px 14px;border-bottom:1px solid var(--border); }
+    .user-menu-name { font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .user-menu-email { margin-top:2px;font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .user-menu-item { display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:500;color:var(--text);background:none;border:none;cursor:pointer;font-family:inherit;border-bottom:1px solid var(--border);transition:background .15s,color .15s; }
+    .user-menu-item:last-child { border-bottom:none; }
+    .user-menu-item:hover { background:var(--bg3);color:var(--accent); }
+    .user-menu-item.danger:hover { color:var(--red); }
     .sync-dot { width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block; animation:pulse 2s infinite; }
     .header-logo { max-height:36px;width:auto;display:block; }
     .hal-eye { display:inline-flex;align-items:center;gap:8px;margin-left:6px;padding:5px 10px 5px 7px;border:1px solid rgba(255,213,79,.34);border-radius:999px;background:linear-gradient(135deg,rgba(255,213,79,.12),rgba(27,42,74,.24));color:var(--yellow);font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;box-shadow:0 0 18px rgba(255,213,79,.09); }
@@ -53,7 +65,7 @@
       .hal-eye { margin-left:2px;padding:4px 6px; }
       .hal-eye-label { display:none; }
       .hdr-right { gap:5px; }
-      #btn-logout { display:none; }
+      .user-menu-btn { width:34px;height:34px; }
       .summary-bar { overflow-x:auto;flex-wrap:nowrap;padding:8px 12px;scrollbar-width:none; }
       .summary-bar::-webkit-scrollbar { display:none; }
       .card { flex:0 0 auto;min-width:88px;padding:8px 12px; }
@@ -355,8 +367,17 @@
         <button class="qa-item" onclick="openGlobalTask();closeQuickAdd()">📋 Uusi tehtävä</button>
       </div>
     </div>
-    <button class="btn btn-ghost btn-sm" onclick="openSettings()" title="Asetukset">⚙️ Asetukset</button>
-    <button class="btn btn-ghost btn-sm" id="btn-logout" onclick="logout()">Kirjaudu ulos</button>
+    <div class="user-menu-wrap">
+      <button class="user-menu-btn" id="user-menu-btn" onclick="toggleUserMenu(event)" title="Omat tiedot" aria-label="Omat tiedot" aria-haspopup="true" aria-expanded="false">?</button>
+      <div class="user-menu" id="user-menu" style="display:none">
+        <div class="user-menu-info">
+          <div class="user-menu-name" id="user-menu-name">Käyttäjä</div>
+          <div class="user-menu-email" id="user-menu-email"></div>
+        </div>
+        <button class="user-menu-item" onclick="closeUserMenu();openSettings()">Asetukset</button>
+        <button class="user-menu-item danger" id="btn-logout" onclick="closeUserMenu();logout()">Kirjaudu ulos</button>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -696,7 +717,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-01.2';
+const BUILD_ID = '2026-08-01.3';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -804,6 +825,7 @@ window.addEventListener('load', () => {
 
 function login()  { tokenClient.requestAccessToken({ prompt: '' }); }
 function logout() {
+  closeUserMenu();
   microsoftAccount = null;
   google.accounts.oauth2.revoke(accessToken, ()=>{});
   accessToken = null;
@@ -1852,6 +1874,7 @@ async function loadData() {
       currentUser = { email:currentUserEmail||'', nimi:'', puhelin:'', sahkoposti:'', updated_at:'', allekirjoitus:'', profiilikuva:'', _rowIndex:null };
     }
     console.log('currentUser asetettu:', currentUser.email, currentUser.nimi||'(nimi puuttuu)', currentUser.profiilikuva?'profiilikuva ✓':'ei profiilikuvaa');
+    renderHeaderUserMenu();
     const projRows = await sheetGet(`${PROJEKTIT_TAB}!A:C`);
     const storedProjektit = projRows.slice(1).map((r,i)=>({
       id:r[0]||'', nimi:r[1]||'', created_at:r[2]||'', _rowIndex:i+2
@@ -4022,6 +4045,31 @@ function renderProfilePreview() {
   preview.title=label;
   const remove=document.getElementById('set-profile-remove'); if(remove) remove.style.display=src?'':'none';
 }
+function renderHeaderUserMenu() {
+  const btn=document.getElementById('user-menu-btn'); if(!btn) return;
+  const name=(currentUser.nimi||currentUser.sahkoposti||currentUser.email||currentUserEmail||'Käyttäjä').trim();
+  const email=(currentUser.email||currentUserEmail||'').trim();
+  const src=safeProfileImage(currentUser.profiilikuva);
+  btn.innerHTML=src?`<img src="${esc(src)}" alt="${esc(name)}">`:esc(timelineInitials(name));
+  btn.title=name;
+  const nameEl=document.getElementById('user-menu-name'); if(nameEl) nameEl.textContent=name;
+  const emailEl=document.getElementById('user-menu-email'); if(emailEl) emailEl.textContent=email;
+}
+function toggleUserMenu(event) {
+  event?.stopPropagation();
+  const menu=document.getElementById('user-menu');
+  const btn=document.getElementById('user-menu-btn');
+  if(!menu) return;
+  const open=menu.style.display!=='none';
+  menu.style.display=open?'none':'block';
+  if(btn) btn.setAttribute('aria-expanded', open?'false':'true');
+}
+function closeUserMenu() {
+  const menu=document.getElementById('user-menu');
+  const btn=document.getElementById('user-menu-btn');
+  if(menu) menu.style.display='none';
+  if(btn) btn.setAttribute('aria-expanded','false');
+}
 function removeProfileImage() {
   profileImageData='';
   const input=document.getElementById('set-profile-image'); if(input) input.value='';
@@ -4100,6 +4148,7 @@ async function saveMyProfile() {
     Object.assign(currentUser, { email, nimi, puhelin, sahkoposti, allekirjoitus, profiilikuva, updated_at:row[4] });
     const existing=allUsers.findIndex(u=>u._rowIndex===currentUser._rowIndex||u.email.toLowerCase()===email.toLowerCase());
     if(existing>=0) allUsers[existing]={...currentUser}; else allUsers.push({...currentUser});
+    renderHeaderUserMenu();
     if(currentId){const p=allProspects.find(x=>x.spara_id===currentId);if(p)renderActivities(p);}
     showToast('Omat tiedot tallennettu ✓','success');
   } catch(e) { console.error('saveMyProfile epäonnistui:', e); showToast('Virhe: '+e.message,'error'); }
@@ -4494,7 +4543,7 @@ function toggleQuickAdd(e) {
   m.style.display=m.style.display==='none'?'':'none';
 }
 function closeQuickAdd() { const m=document.getElementById('quick-add-menu'); if(m) m.style.display='none'; }
-document.addEventListener('click', ()=>closeQuickAdd());
+document.addEventListener('click', ()=>{ closeQuickAdd(); closeUserMenu(); });
 
 // ── Global Add Contact ────────────────────────────────────────────────────────
 function openGlobalContact() {
