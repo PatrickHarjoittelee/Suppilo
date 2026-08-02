@@ -721,7 +721,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-02.1';
+const BUILD_ID = '2026-08-02.2';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -1941,6 +1941,7 @@ async function loadData() {
         });
       } catch(_) {}
     }
+    normalizeTalopakettiPisteet();
     const crmRows = await sheetGet(`${CRM_TAB}!A:L`);
     applyCrmState(crmRows);
     const yhRows = await sheetGet(`${YH_TAB}!A:H`);
@@ -2110,6 +2111,37 @@ function parseProspects(rows) {
     }
   });
   return out;
+}
+
+// Talopakettivalmistajat-tileillä (FIN+SWE) sheetin pisteet-sarakkeessa
+// oleva raaka luku ei ole vertailukelpoinen ETJ+:n kanssa samalla
+// laskukaavalla (calcArvosana = pisteet/10) — havaittu käytännössä:
+// ETJ+-tilit ~8.X, Talopaketti-tilit ~0.X, vaikka molemmat näkyvät
+// samassa "Arvosana"-sarakkeessa samalla asteikolla. Todellinen,
+// tarkoituksella ylläpidetty laatujärjestys näille tileille on `sija`
+// (käsin asetettu järjestysnumero, 1=paras) — muunnetaan se ETJ+:n
+// kanssa vertailukelpoiseksi 0-100-pisteeksi käänteisen prosentti-
+// sijoituksen kautta, KAMPANJAN SISÄLLÄ erikseen (FIN ja SWE eivät
+// kilpaile samasta järjestyksestä keskenään). Tileille joilta sija
+// puuttuu jätetään pisteet koskemattomaksi (näkyy edelleen "–" jos
+// sekin puuttuu) sen sijaan että arvattaisiin — sama "hylkää mieluummin
+// kuin arvaa väärin" -periaate kuin YTJ-todennuksessa. Tämä EI muuta
+// mitään Sheetsiin tallennettua dataa — sija pysyy ainoana totuuden
+// lähteenä, pisteet on tästä johdettu, vain muistissa laskettu näkymä.
+function normalizeTalopakettiPisteet() {
+  const groups = {};
+  allProspects.forEach(p => {
+    if (!p.kampanja || !p.kampanja.startsWith('Talopakett')) return;
+    if (p.sija == null) return;
+    (groups[p.kampanja] = groups[p.kampanja] || []).push(p);
+  });
+  Object.values(groups).forEach(list => {
+    const sijat = list.map(p => p.sija);
+    const min = Math.min(...sijat), max = Math.max(...sijat);
+    list.forEach(p => {
+      p.pisteet = (max === min) ? 100 : Math.round(100 * (max - p.sija) / (max - min));
+    });
+  });
 }
 
 function applyCrmState(crmRows) {
