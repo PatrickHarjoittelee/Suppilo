@@ -428,6 +428,7 @@
           <th data-col="yhteyshenkilö">Yhteyshenkilö</th>
           <th data-col="kulutusarvio_mwh">MWh/v <span class="sa">↕</span></th>
           <th data-col="kampanja">Projekti <span class="sa">↕</span></th>
+          <th data-col="created_at">Lisätty <span class="sa">↕</span></th>
           <th></th>
         </tr></thead>
         <tbody id="tbody-lista">
@@ -472,6 +473,7 @@
           <th data-col="_tili_nimi">Tili <span class="sa">↕</span></th>
           <th data-col="puhelin">Puhelin</th>
           <th data-col="sahkoposti">Sähköposti</th>
+          <th data-col="created_at">Lisätty <span class="sa">↕</span></th>
           <th></th>
         </tr></thead>
         <tbody id="tbody-yhteyshenkilot">
@@ -719,7 +721,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-01.11';
+const BUILD_ID = '2026-08-02.1';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -1916,6 +1918,9 @@ async function loadData() {
       await addSheet(MAIN_TAB, TILIT_COLS);
     }
     const mainRows = await sheetGet(`${MAIN_TAB}!A1:AZ500`);
+    if ((mainRows[0]?.[27]||'') !== 'lisatty') {
+      await sheetPut(`${MAIN_TAB}!AB1`, [['lisatty']]);
+    }
     allProspects = parseProspects(mainRows);
     // Try fetching SWE companies from a dedicated tab if it exists
     const sweTab = tabNames.find(t => t !== MAIN_TAB && /swe/i.test(t));
@@ -2076,7 +2081,7 @@ function parseProspects(rows) {
         vaihde_puhelin:cv(c,12), yleinen_sahkoposti:cv(c,13), www:cv(c,14), signaali:cv(c,15),
         perustelu:cv(c,16), velvoiteluokka:cv(c,17), huomiot:cv(c,18), kontaktoinnin_tila:tila,
         tulos_seuraava_toimi:tulos, lahde:cv(c,21), 'yhteyshenkilö':cv(c,22), titteli:cv(c,23),
-        suora_numero:cv(c,24), henk_sahkoposti:cv(c,25), linkedin:cv(c,26),
+        suora_numero:cv(c,24), henk_sahkoposti:cv(c,25), linkedin:cv(c,26), created_at:cv(c,27),
         vaihe:detectVaihe(tila,tulos), _rowIndex:idx+1, ...blankCrm() };
       if (kampanja.startsWith('Talopakett')) {
         p.sija = parseInt(cv(c,2)||'0') || null;
@@ -2170,9 +2175,9 @@ async function saveTiliData(p) {
       p.signaali||'', p.perustelu||'', p.velvoiteluokka||'',
       p.huomiot||'', p.kontaktoinnin_tila||'', p.tulos_seuraava_toimi||'',
       p.lahde||'', p['yhteyshenkilö']||'', p.titteli||'', p.suora_numero||'',
-      p.henk_sahkoposti||'', p.linkedin||''
+      p.henk_sahkoposti||'', p.linkedin||'', p.created_at||''
     ];
-    range = `${MAIN_TAB}!A${p._rowIndex}:AA${p._rowIndex}`;
+    range = `${MAIN_TAB}!A${p._rowIndex}:AB${p._rowIndex}`;
   } else {
     row = [p.spara_id, p.yritys_nimi||'', p.y_tunnus||'', p.segmentti||'',
       p.juridinen_yhtio||'', p.osoite||'', p.postinumero||'', p.kaupunki||'',
@@ -2276,7 +2281,7 @@ function renderTable() {
   const tbody=document.getElementById('tbody-lista');
   const rows=filteredRows.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE);
   if (!rows.length) {
-    tbody.innerHTML='<tr><td colspan="8" class="empty">Ei tuloksia</td></tr>';
+    tbody.innerHTML='<tr><td colspan="9" class="empty">Ei tuloksia</td></tr>';
     document.getElementById('page-info').textContent='';
     document.getElementById('btn-prev').disabled=true;
     document.getElementById('btn-next').disabled=true;
@@ -2291,6 +2296,7 @@ function renderTable() {
       <td style="color:var(--text2)">${esc(p['yhteyshenkilö'])}</td>
       <td style="color:var(--text2);font-size:11px">${esc(p.kulutusarvio_mwh)}</td>
       <td style="color:var(--text2);font-size:11px">${kampBadge(p.kampanja)}</td>
+      <td style="color:var(--text2);font-size:11px">${fmtDateShort(p.created_at)}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openModal('${p.spara_id}')">Avaa</button></td>
     </tr>`).join('');
   const total=filteredRows.length, pages=Math.ceil(total/PAGE_SIZE);
@@ -2342,7 +2348,7 @@ function renderYhTable() {
   const tbody=document.getElementById('tbody-yhteyshenkilot');
   const rows=yhFilteredRows.slice(yhPage*YH_PAGE_SIZE,(yhPage+1)*YH_PAGE_SIZE);
   if (!rows.length) {
-    tbody.innerHTML='<tr><td colspan="6" class="empty">Ei tuloksia</td></tr>';
+    tbody.innerHTML='<tr><td colspan="7" class="empty">Ei tuloksia</td></tr>';
     document.getElementById('yh-page-info').textContent='';
     document.getElementById('yh-btn-prev').disabled=true;
     document.getElementById('yh-btn-next').disabled=true;
@@ -2356,6 +2362,7 @@ function renderYhTable() {
       <td style="color:var(--text2);font-size:11px">${p?esc(p.yritys_nimi):'–'}</td>
       <td style="color:var(--text2);font-size:11px">${esc(c.puhelin)}</td>
       <td style="color:var(--text2);font-size:11px">${esc(c.sahkoposti)}</td>
+      <td style="color:var(--text2);font-size:11px">${fmtDateShort(c.created_at)}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openYhModal('${c.id}')">Avaa</button></td>
     </tr>`;
   }).join('');
@@ -3598,7 +3605,7 @@ async function createProspectAccountsBatch(candidates, opts) {
       signaali, perustelu, '',
       '', '', '',
       c.tf_rekisteroity||'', contactName, '', '',
-      '', ''
+      '', '', ts
     ]);
 
     const p = {
@@ -3610,7 +3617,7 @@ async function createProspectAccountsBatch(candidates, opts) {
       signaali:signaali||null, perustelu:perustelu||null, velvoiteluokka:null,
       huomiot:null, kontaktoinnin_tila:null, tulos_seuraava_toimi:null,
       lahde:c.tf_rekisteroity||'', 'yhteyshenkilö':contactName, titteli:null, suora_numero:null,
-      henk_sahkoposti:'', linkedin:null,
+      henk_sahkoposti:'', linkedin:null, created_at:ts,
       vaihe:null, _isTili:true, _rowIndex:tiliRowIndex,
       ...blankCrm()
     };
@@ -3638,7 +3645,7 @@ async function createProspectAccountsBatch(candidates, opts) {
     newProspects.push(p);
   }
 
-  await sheetAppend(`${MAIN_TAB}!A:AA`, tiliRows);
+  await sheetAppend(`${MAIN_TAB}!A:AB`, tiliRows);
   await sheetAppend(`${CRM_TAB}!A:L`, crmRows);
   if (contactRows.length) await sheetAppend(`${YH_TAB}!A:H`, contactRows);
 
@@ -4122,6 +4129,7 @@ async function saveNewTili() {
   const huomiot        = document.getElementById('tf_lisatiedot')?.value.trim()||'';
   const www            = document.getElementById('tf_www')?.value.trim()||'';
   const y_tunnus       = document.getElementById('tf_ytunnus')?.value.trim()||'';
+  const nowIso = new Date().toISOString();
   const row = [
     id, kampanja, '',
     segmentti, name, yhtiömuoto,
@@ -4131,7 +4139,7 @@ async function saveNewTili() {
     '', '', '',
     huomiot, '', '',
     rekisteroity, yhteyshenkilö, '', '',
-    henk_sahkoposti, ''
+    henk_sahkoposti, '', nowIso
   ];
   const saveBtn=document.getElementById('addtili-save-btn');
   if (saveBtn?.disabled) return;
@@ -4145,7 +4153,7 @@ async function saveNewTili() {
     // juuri lisätty tili ei pääse läpi vain siksi, että tämän sivun data on vanha.
     if (!existing && normalizeBusinessId(y_tunnus)) {
       let latestRows;
-      try { latestRows=await sheetGet(`${MAIN_TAB}!A1:AA`); }
+      try { latestRows=await sheetGet(`${MAIN_TAB}!A1:AB`); }
       catch(e) { throw new Error('Y-tunnuksen duplikaattitarkistus epäonnistui: '+e.message); }
       existing=findExistingAccountByBusinessId(y_tunnus,parseProspects(latestRows));
       if (existing && !allProspects.some(p=>p.spara_id===existing.spara_id)) {
@@ -4164,7 +4172,7 @@ async function saveNewTili() {
 
     if (saveBtn) saveBtn.textContent='Tallennetaan…';
     const colA = await sheetGet(`${MAIN_TAB}!A:A`);
-    await sheetAppend(`${MAIN_TAB}!A:AA`, [row]);
+    await sheetAppend(`${MAIN_TAB}!A:AB`, [row]);
     const rowIndex = colA.length + 1;
     const p = {
       spara_id:id, kampanja, prioriteetti:null,
@@ -4175,7 +4183,7 @@ async function saveNewTili() {
       signaali:null, perustelu:null, velvoiteluokka:null,
       huomiot, kontaktoinnin_tila:null, tulos_seuraava_toimi:null,
       lahde:rekisteroity, 'yhteyshenkilö':yhteyshenkilö, titteli:null, suora_numero:null,
-      henk_sahkoposti, linkedin:null,
+      henk_sahkoposti, linkedin:null, created_at:nowIso,
       vaihe:null, _isTili:true, _rowIndex:rowIndex,
       ...blankCrm()
     };
@@ -4712,6 +4720,7 @@ function calcArvosana(p) { return p.pisteet!=null ? parseFloat((p.pisteet/10).to
 function arvosanaClass(a) { return a==null?'':a>=8.5?'score-high':a>=7.0?'score-mid':'score-low'; }
 function esc(s) { return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'):'–'; }
 function fmtDT(d) { return d?new Date(d).toLocaleString('fi-FI',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):''; }
+function fmtDateShort(d) { const t=d?Date.parse(d):NaN; return Number.isFinite(t)?new Date(t).toLocaleDateString('fi-FI',{day:'2-digit',month:'2-digit',year:'numeric'}):'–'; }
 function showToast(msg,type='') {
   const t=document.createElement('div'); t.className='toast '+type; t.textContent=msg;
   document.getElementById('toast-wrap').appendChild(t); setTimeout(()=>t.remove(),3500);
