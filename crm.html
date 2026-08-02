@@ -719,7 +719,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-01.10';
+const BUILD_ID = '2026-08-01.11';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -1807,13 +1807,56 @@ async function syncContactEmails(contactId, opts) {
 const SB = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}`;
 const auth = () => ({ Authorization: `Bearer ${accessToken}` });
 
+// Google-tunniste vanhenee (~1h) eikä uusiudu itsestään missään kohtaa
+// koodia — tavallinen klikkaus+tallennus on niin nopea ettei tämä
+// yleensä ehdi näkyä, mutta esim. Älykäs Prospektointi voi kestää
+// minuutteja (tekoälyhaku + sarja PRH-hakuja + lopuksi Sheets-tallennus),
+// jolloin tunniste ehtii vanheta kesken pitkän toiminnon ja Sheets
+// vastaa raa'alla 401:llä ("invalid authentication credentials") joka
+// näkyi käytännössä käyttäjälle täysin selittämättömänä tallennuksen
+// epäonnistumisena. tokenClientin callback on kiinnitetty
+// initTokenClient()-kutsussa — vaihdetaan se tilapäisesti omaksi
+// Promise-pohjaiseksi resolveriksi ja palautetaan heti kun uusi
+// tunniste on saatu (tai haku epäonnistuu), jotta myöhemmät oikeat
+// kirjautumiskutsut eivät jää käyttämään ylikirjoitettua callbackia.
+function silentTokenRefresh() {
+  return new Promise((resolve, reject) => {
+    if (!tokenClient) { reject(new Error('Kirjautuminen ei ole valmis uusimaan tunnistetta')); return; }
+    const originalCallback = tokenClient.callback;
+    let settled = false;
+    const finish = (fn) => { if (settled) return; settled = true; tokenClient.callback = originalCallback; fn(); };
+    tokenClient.callback = (resp) => {
+      if (resp.error) { finish(() => reject(new Error(resp.error))); return; }
+      accessToken = resp.access_token;
+      finish(() => resolve(accessToken));
+    };
+    try { tokenClient.requestAccessToken({ prompt: '' }); }
+    catch(e) { finish(() => reject(e)); }
+  });
+}
+
+// Yrittää pyynnön, ja jos Google vastaa 401:llä (vanhentunut tunniste),
+// uusii sen hiljaa taustalla ja yrittää TASAN kerran uudelleen — ei
+// silmukkaa jos uusikin yritys epäonnistuu. buildOpts() rakennetaan
+// joka yrityksellä uudelleen jotta se poimii tuoreen auth()-otsakkeen
+// eikä jää kiinni vanhentuneeseen.
+async function fetchWithTokenRetry(url, buildOpts) {
+  let r = await fetch(url, buildOpts());
+  if (r.status === 401) {
+    try { await silentTokenRefresh(); }
+    catch(e) { throw new Error('Kirjautuminen vanhentunut eikä sitä voitu uusia automaattisesti — kirjaudu sisään uudelleen. (' + e.message + ')'); }
+    r = await fetch(url, buildOpts());
+  }
+  return r;
+}
+
 async function apiGet(path) {
-  const r = await fetch(SB + path, { headers: auth() });
+  const r = await fetchWithTokenRetry(SB + path, () => ({ headers: auth() }));
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
   return r.json();
 }
 async function apiPost(path, body) {
-  const r = await fetch(SB + path, { method:'POST', headers:{...auth(),'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  const r = await fetchWithTokenRetry(SB + path, () => ({ method:'POST', headers:{...auth(),'Content-Type':'application/json'}, body:JSON.stringify(body) }));
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
   return r.json();
 }
@@ -1822,15 +1865,15 @@ async function sheetGet(range) {
   return j.values || [];
 }
 async function sheetPut(range, values) {
-  const r = await fetch(`${SB}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, {
+  const r = await fetchWithTokenRetry(`${SB}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, () => ({
     method:'PUT', headers:{...auth(),'Content-Type':'application/json'}, body:JSON.stringify({values})
-  });
+  }));
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
 }
 async function sheetAppend(range, values) {
-  const r = await fetch(`${SB}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
+  const r = await fetchWithTokenRetry(`${SB}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, () => ({
     method:'POST', headers:{...auth(),'Content-Type':'application/json'}, body:JSON.stringify({values})
-  });
+  }));
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
 }
 async function sheetBatchUpdate(data) {
