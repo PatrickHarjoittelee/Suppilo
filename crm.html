@@ -754,7 +754,23 @@
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
             <input type="checkbox" id="sm-want-new-leads" onchange="document.getElementById('sm-extra-leads-fields').style.display=this.checked?'':'none'"> Etsi myös uusia liidejä samalla ajolla
           </label>
-          <div id="sm-extra-leads-fields" style="display:none;margin-top:10px"></div>
+          <div id="sm-extra-leads-fields" style="display:none;margin-top:10px">
+            <div class="form-grid">
+              <div class="form-group full"><label>Projekti</label><select class="form-control" id="sm-nl-projekti"></select></div>
+              <div class="form-group full"><label>Segmentti</label><select class="form-control" id="sm-nl-segmentti"></select></div>
+              <div class="form-group full"><label>Montako uutta tiliä luodaan</label>
+                <select class="form-control" id="sm-nl-maara">
+                  <option value="5">5</option>
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                </select>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--text2);margin-top:6px">
+              Uudet tilit todennetaan PRH:sta ennen luontia (sama turvakerros kuin
+              Älykäs Prospektoinnissa) ja luodaan suoraan Kontaktoi-vaiheeseen.
+            </div>
+          </div>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
           <button class="btn btn-ghost" onclick="closeSignalMonitoringModal()">Peruuta</button>
@@ -773,7 +789,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-03.5';
+const BUILD_ID = '2026-08-03.6';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -3671,6 +3687,10 @@ function openSignalMonitoringModal() {
   document.getElementById('sm-stale-days').value='14';
   document.getElementById('sm-want-new-leads').checked=false;
   document.getElementById('sm-extra-leads-fields').style.display='none';
+  populateProjektiSelects();
+  document.getElementById('sm-nl-segmentti').innerHTML=
+    distinctSegments().map(s=>`<option>${esc(s)}</option>`).join('');
+  document.getElementById('sm-nl-maara').value='5';
   updateSignalMonitoringPreview();
   document.getElementById('signal-monitoring-form').style.display='';
   document.getElementById('signal-monitoring-progress').style.display='none';
@@ -4421,7 +4441,7 @@ function renderSignalMonitoringProgress(current, total, label) {
     </div>`;
 }
 
-function renderSignalMonitoringSummary(newSignalAccounts, checkedCount, errors) {
+function renderSignalMonitoringSummary(newSignalAccounts, checkedCount, errors, newLeadsPhase) {
   const el=document.getElementById('signal-monitoring-summary'); if (!el) return;
   // Sama pysyvä (ei-toast) virhepaneeli kuin prospektoinnissa — kova opittu
   // läksy tästä samasta istunnosta, kun katoava toast esti alkuperäisen
@@ -4435,12 +4455,38 @@ function renderSignalMonitoringSummary(newSignalAccounts, checkedCount, errors) 
         <div class="ytj-item-meta">${esc(p.signaali||'')}</div>
       </div>`).join('')
     : '<div style="font-size:12px;color:var(--text2)">Ei uusia signaaleja</div>';
+  // Uudet liidit omana lohkonaan VAIN kun "Etsi myös uusia liidejä" -haara
+  // todella ajettiin (newLeadsPhase!=null) — muuten tyhjä "Luotu (0)/
+  // Hylätty (0)" näkyisi turhaan jokaisella pelkällä signaaliajolla.
+  const newLeadsHtml = newLeadsPhase ? `
+    <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px">🔍 Uudet liidit</div>
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--green)">✓ Luotu (${newLeadsPhase.created.length})</div>
+      <div style="max-height:180px;overflow-y:auto;margin-bottom:16px">${
+        newLeadsPhase.created.length
+          ? newLeadsPhase.created.map(p=>`<div class="ytj-dropdown-item" style="cursor:pointer" onclick="closeSignalMonitoringModal();openModal('${p.spara_id}')">
+              <div class="ytj-item-name">${esc(p.yritys_nimi)}</div>
+              <div class="ytj-item-meta">${esc(p.spara_id)}${p.kaupunki?' · '+esc(p.kaupunki):''}</div>
+            </div>`).join('')
+          : '<div style="font-size:12px;color:var(--text2)">Ei luotuja tilejä</div>'
+      }</div>
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--red)">✕ Hylätty (${newLeadsPhase.rejected.length})</div>
+      <div style="max-height:180px;overflow-y:auto">${
+        newLeadsPhase.rejected.length
+          ? newLeadsPhase.rejected.map(r=>`<div class="ytj-dropdown-item">
+              <div class="ytj-item-name">${esc(r.name)}</div>
+              <div class="ytj-item-meta" style="color:var(--red)">${esc(r.reason)}</div>
+            </div>`).join('')
+          : '<div style="font-size:12px;color:var(--text2)">Ei hylättyjä ehdotuksia</div>'
+      }</div>
+    </div>` : '';
   el.innerHTML=`
     ${errorHtml}
     <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Tarkistettu ${checkedCount} tiliä</div>
     <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--green)">🆕 Uusi signaali (${newSignalAccounts.length})</div>
     <div style="max-height:220px;overflow-y:auto;margin-bottom:16px">${newSignalHtml}</div>
-    <div style="display:flex;justify-content:flex-end">
+    ${newLeadsHtml}
+    <div style="display:flex;justify-content:flex-end;margin-top:16px">
       <button class="btn btn-primary" onclick="closeSignalMonitoringModal()">Sulje</button>
     </div>`;
 }
@@ -4558,11 +4604,112 @@ async function runSignalMonitoringBatch() {
     }
   }
 
+  // Vaihe 5: "Etsi myös uusia liidejä" -haara ajetaan VAIN jos rasti on
+  // päällä JA käyttäjä ei perunut vaihe 1:tä — peruutus tarkoittaa "pysäytä
+  // nyt", ei "hyppää seuraavaan vaiheeseen". Vaihe 1:n aikana tapahtuneet
+  // AI/tallennusvirheet eivät sen sijaan estä vaihe 2:ta (eri, riippumaton
+  // kutsupolku samaan tekoäly-palveluun) — ne näkyvät jo batchErrors:issa.
+  let newLeadsPhase=null;
+  if (!signalMonitoringCancelled && document.getElementById('sm-want-new-leads').checked) {
+    const nlKampanja=document.getElementById('sm-nl-projekti').value;
+    const nlSegmentti=document.getElementById('sm-nl-segmentti').value;
+    const nlCount=parseInt(document.getElementById('sm-nl-maara').value,10)||5;
+    if (!nlSegmentti) {
+      batchErrors.push('Uusien liidien haku ohitettu: segmenttiä ei valittu.');
+    } else {
+      const createdLeads=[], rejectedLeads=[];
+      await runNewLeadsPhase(nlKampanja, nlSegmentti, nlCount, createdLeads, rejectedLeads, batchErrors);
+      newLeadsPhase={created:createdLeads, rejected:rejectedLeads};
+    }
+  }
+
   signalMonitoringInProgress=false;
   document.getElementById('signal-monitoring-progress').style.display='none';
   document.getElementById('signal-monitoring-summary').style.display='';
   applyFilters(); renderDashboard();
-  renderSignalMonitoringSummary(newSignalAccounts, processedCount, batchErrors);
+  renderSignalMonitoringSummary(newSignalAccounts, processedCount, batchErrors, newLeadsPhase);
+}
+
+// Vaihe 5: "Etsi myös uusia liidejä" -haara. Kutsuu TÄSMÄLLEEN samaa
+// turvakriittistä putkea kuin Älykäs Prospektointi -nappi
+// (generateProspectCandidates -> verifyCandidateAgainstYtj ->
+// checkDuplicateAccount -> createProspectAccountsBatch) — YTJ-todennusta
+// EI KOSKAAN ohiteta, vain kutsupolku on eri (signaaliseurannan modaali
+// prospektointimodaalin sijaan). wantDeal:true on OLETUKSENA päällä,
+// toisin kuin yleisessä prospektointimodaalissa, koska tämän haaran koko
+// tarkoitus on pudottaa uudet tilit suoraan Kontaktoi-vaiheeseen.
+// createdAccounts/rejectedLeads/batchErrors täytetään viittauksen kautta
+// (kutsujan omat taulukot) — ei paluuarvoa. Peruutus/edistyminen jaetaan
+// vaihe 1:n kanssa (signalMonitoringCancelled, renderSignalMonitoringProgress)
+// mutta laskuri käynnistyy 0:sta tälle vaiheelle yksinkertaisuuden vuoksi.
+async function runNewLeadsPhase(kampanja, segmentti, totalCount, createdAccounts, rejectedLeads, batchErrors) {
+  const opts={kampanja, wantContact:false, wantSignal:true, wantDeal:true, wantDraft:false};
+  const chunks=[];
+  for (let remaining=totalCount; remaining>0; remaining-=PROSPECTING_CHUNK_SIZE) {
+    chunks.push(Math.min(PROSPECTING_CHUNK_SIZE, remaining));
+  }
+
+  const acceptedThisRun=[];
+  let processedCount=0;
+  renderSignalMonitoringProgress(0, totalCount, 'Etsitään uusia liidejä…');
+
+  for (const chunkSize of chunks) {
+    if (signalMonitoringCancelled) break;
+
+    // Estä AI:ta ehdottamasta samaa yritystä uudelleen — sekä olemassa
+    // olevat tilit että tämän ajon aiemmissa lohkoissa jo hyväksytyt.
+    const excludeNames=[...new Set([
+      ...allProspects.map(p=>p.yritys_nimi),
+      ...acceptedThisRun.map(c=>c.tf_name)
+    ].filter(Boolean))];
+
+    let aiCandidates;
+    try {
+      renderSignalMonitoringProgress(processedCount, totalCount, 'Haetaan uusia liidejä tekoälyltä…');
+      aiCandidates=await generateProspectCandidates(segmentti, chunkSize, excludeNames);
+    } catch(e) {
+      const msg='Uusien liidien haku epäonnistui: '+e.message;
+      showToast(msg,'error');
+      batchErrors.push(msg);
+      break;
+    }
+
+    if (!aiCandidates.length) {
+      batchErrors.push(`Tekoäly ei ehdottanut yhtään uutta yritystä segmentille "${segmentti}" tässä erässä (ei virhe — vastaus oli tyhjä lista).`);
+      continue;
+    }
+
+    const chunkVerified=[];
+    for (const c of aiCandidates) {
+      if (signalMonitoringCancelled) break;
+      processedCount++;
+      renderSignalMonitoringProgress(processedCount, totalCount, `${c.name}: tarkistetaan YTJ:stä…`);
+      const verify=await verifyCandidateAgainstYtj({name:c.name, city:c.city});
+      if (!verify.accepted) { rejectedLeads.push({name:c.name, reason:verify.reason}); continue; }
+      if (checkDuplicateAccount(verify.data.tf_ytunnus, acceptedThisRun)) {
+        rejectedLeads.push({name:c.name, reason:'Duplikaatti — yritys on jo CRM:ssä tai tässä erässä'});
+        continue;
+      }
+      const merged={...verify.data, signaali:c.signaali, perustelu:c.perustelu,
+        openingParagraph:c.opening_paragraph,
+        contactSuggestion:c.contact_name?{nimi:c.contact_name, titteli:c.contact_title}:null};
+      chunkVerified.push(merged);
+      acceptedThisRun.push(merged);
+    }
+
+    if (chunkVerified.length) {
+      try {
+        renderSignalMonitoringProgress(processedCount, totalCount, 'Tallennetaan…');
+        const ids=await createProspectAccountsBatch(chunkVerified, opts);
+        ids.forEach(id=>{ const p=allProspects.find(x=>x.spara_id===id); if (p) createdAccounts.push(p); });
+      } catch(e) {
+        const msg='Uusien liidien tallennus epäonnistui kesken erän: '+e.message;
+        showToast(msg,'error');
+        batchErrors.push(msg);
+        break;
+      }
+    }
+  }
 }
 
 // Yhden tilin pikaversio — sama napin-sisäinen spinner -UX kuin
@@ -4921,7 +5068,7 @@ function populateProjektiSelects() {
   // projektit" -vaihtoehtoa, oletusarvo 'Muu Projekti' jos aiempi arvo
   // ei enää kelpaa.
   const muu=baseProjektiNimi('BASE_MUU');
-  ['tf_kampanja','pm-projekti'].forEach(id=>{
+  ['tf_kampanja','pm-projekti','sm-nl-projekti'].forEach(id=>{
     const sel=document.getElementById(id); if(!sel) return;
     const prev=sel.value||muu;
     sel.innerHTML=opts;
