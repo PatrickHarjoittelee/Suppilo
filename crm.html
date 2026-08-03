@@ -721,7 +721,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-03.1';
+const BUILD_ID = '2026-08-03.2';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -4001,6 +4001,127 @@ async function generateProspectCandidates(segmentti, count, excludeNames) {
   return provider==='openai'
     ? await openaiGenerateProspectCandidates(prompt, key)
     : await anthropicGenerateProspectCandidates(prompt, key);
+}
+
+// ── Mediaseuranta: signaalien päivitys olemassa oleville tileille ──────────
+// Toisin kuin PROSPECT_CANDIDATE_SCHEMA (ehdottaa UUSIA yrityksiä), tämä on
+// per-tili tulos jo NIMETYILLE, olemassa oleville tileille — AI:n tehtävä on
+// tarkistaa onko mitään UUTTA tullut, ei keksiä signaalia joka kerta kun
+// kysytään. has_new_signal on tarkoituksella pakollinen erillinen kenttä,
+// jotta "ei mitään uutta" on aidosti eri tulos kuin virhe tai tyhjä vastaus
+// — sama "hylkää mieluummin kuin arvaa väärin" -periaate kuin YTJ-todennuksessa.
+const SIGNAL_UPDATE_SCHEMA={
+  type:'object',
+  properties:{
+    updates:{
+      type:'array',
+      items:{
+        type:'object',
+        properties:{
+          company_name:{type:'string', description:'Täsmälleen sama nimi kuin syötteessä — käytetään tuloksen kohdistamiseen oikeaan tiliin'},
+          has_new_signal:{type:'boolean', description:'true VAIN jos löytyi uusi, aiemmasta poikkeava, verkkohaulla todennettava havainto; false jos ei mitään olennaista uutta'},
+          signaali:{type:'string', description:'Uusi havainto — tyhjä merkkijono jos has_new_signal on false'},
+          perustelu:{type:'string', description:'Miksi relevantti energiatehokkuuden/liiketoiminnan kannalta — tyhjä merkkijono jos has_new_signal on false'},
+          confidence:{type:'string', enum:['korkea','keskitaso','matala'], description:'Kuinka luotettava havainto on'}
+        },
+        required:['company_name','has_new_signal','signaali','perustelu','confidence'],
+        additionalProperties:false
+      }
+    }
+  },
+  required:['updates'],
+  additionalProperties:false
+};
+
+function signalUpdateRequestBody(prompt, extraMessages) {
+  return {
+    model:anthropicModel(),
+    // Pienempi kuin prospektoinnin 8192 — per-tili tuoreustarkistuksen
+    // tulos (signaali+perustelu+confidence) on paljon lyhyempi kuin uuden
+    // yrityksen koko dossier (nimi+osoite+yhteyshenkilö+avausrivi...).
+    max_tokens:4096,
+    // Per-tili tuoreustarkistus on lähempänä Anthropicin dokumentoimaa
+    // "yksinkertainen faktakysely" kuin prospektoinnin monimutkaisempaa
+    // löytämistehtävää — pienempi max_uses on siis perusteltu, ei vain
+    // kustannussäästö.
+    tools:[{...anthropicWebSearchToolDef(), max_uses:5}],
+    output_config:{format:{type:'json_schema', schema:SIGNAL_UPDATE_SCHEMA}},
+    messages:[{role:'user',content:prompt}, ...(extraMessages||[])]
+  };
+}
+
+function parseSignalUpdatesJson(text) {
+  if (!text) throw new Error('Tekoäly ei palauttanut jäsenneltyä vastausta');
+  let parsed;
+  try { parsed=JSON.parse(text); }
+  catch(e) { throw new Error('Tekoälyn vastaus ei ollut kelvollista JSONia: '+e.message); }
+  if (!parsed || !Array.isArray(parsed.updates)) throw new Error('Tekoälyn vastauksesta puuttui updates-taulukko');
+  return parsed.updates;
+}
+
+async function anthropicGenerateSignalUpdates(prompt, key) {
+  const headers={
+    'x-api-key':key,
+    'anthropic-version':'2023-06-01',
+    'anthropic-dangerous-direct-browser-access':'true',
+    'content-type':'application/json'
+  };
+  let response=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST', headers, body:JSON.stringify(signalUpdateRequestBody(prompt))
+  });
+  if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+  let data=await response.json();
+
+  // Sama pause_turn-uudelleenlähetyskaava kuin prospektoinnissa — kertaalleen
+  // uudelleen SAMALLA user+assistant-parilla, ei "jatka"-viestiä.
+  if (data.stop_reason==='pause_turn') {
+    response=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST', headers,
+      body:JSON.stringify(signalUpdateRequestBody(prompt, [{role:'assistant',content:data.content}]))
+    });
+    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+    data=await response.json();
+    if (data.stop_reason==='pause_turn') throw new Error('Tekoäly ei saanut hakua valmiiksi (jatkoyritys pysähtyi uudelleen) — kokeile pienempää määrää');
+  }
+
+  const textBlocks=(data.content||[]).filter(b=>b.type==='text');
+  if (!textBlocks.length) throw new Error('Tekoäly ei palauttanut jäsenneltyä vastausta');
+  return parseSignalUpdatesJson(textBlocks[textBlocks.length-1].text);
+}
+
+async function openaiGenerateSignalUpdates(prompt, key) {
+  const response=await fetch('https://api.openai.com/v1/responses',{
+    method:'POST',
+    headers:{
+      'Authorization':`Bearer ${key}`,
+      'content-type':'application/json'
+    },
+    body:JSON.stringify({
+      model:openaiModel(),
+      tools:[openaiWebSearchToolDef()],
+      input:prompt,
+      text:{format:{type:'json_schema', name:'signal_updates', strict:true, schema:SIGNAL_UPDATE_SCHEMA}}
+    })
+  });
+  if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+  const data=await response.json();
+  return parseSignalUpdatesJson(extractOpenaiText(data));
+}
+
+// accounts: [{name, city, existingSignaali}]. Nykyisen signaalin
+// välittäminen kehotteessa on load-bearing ero prospektoinnin
+// löytämis-kehotteeseen — ilman sitä AI keksisi saman havainnon
+// uudelleen joka ajolla sen sijaan että vertaisi siihen mitä jo tiedetään.
+async function generateSignalUpdates(accounts) {
+  const provider=aiProvider();
+  const key=activeAiApiKey();
+  if (!key) throw new Error(`Lisää ${activeAiProviderLabel()} API-avain Asetuksissa`);
+  const list=accounts.map(a=>`- ${a.name}${a.city?' ('+a.city+')':''} — nykyinen signaali: "${a.existingSignaali||'(ei aiempaa signaalia)'}"`).join('\n');
+  const prompt=`Tarkista verkkohaulla onko näistä suomalaisista yrityksistä tullut uusia, merkittäviä signaaleja (esim. uutinen, laajennus, energiahanke) viimeisen 6 kuukauden aikana. Näille on jo kirjattu alla näkyvä signaali — raportoi VAIN uutta, aiemmasta poikkeavaa havaintoa, älä toista tai muotoile uudelleen samaa asiaa. Jos et löydä mitään uutta jollekin yritykselle, merkitse sille has_new_signal=false äläkä keksi mitään. Käytä company_name-kenttään täsmälleen sama nimi kuin alla:\n\n${list}`;
+
+  return provider==='openai'
+    ? await openaiGenerateSignalUpdates(prompt, key)
+    : await anthropicGenerateSignalUpdates(prompt, key);
 }
 
 let prospectingCancelled=false;
