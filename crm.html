@@ -721,7 +721,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-03.2';
+const BUILD_ID = '2026-08-03.3';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -4122,6 +4122,47 @@ async function generateSignalUpdates(accounts) {
   return provider==='openai'
     ? await openaiGenerateSignalUpdates(prompt, key)
     : await anthropicGenerateSignalUpdates(prompt, key);
+}
+
+// "Viimeksi tarkistettu" johdetaan aktiviteettilokista, EI uudesta
+// sheet-sarakkeesta — tämä sama sheet kaatoi kerran koko sovelluksen kun
+// sen ruudukko oli liian kapea uudelle sarakkeelle (ks. commit-historia,
+// "korjaa koko sovelluksen kaatuminen lisäys-pvm-otsikosta"). 0 tarkoittaa
+// "ei koskaan tarkistettu" — vertailukelpoinen minkä tahansa oikean
+// aikaleiman kanssa (aina pienempi), joten tällaiset tilit tulevat aina
+// mukaan "N päivää vanha" -suodatukseen.
+function lastSignalCheckAt(p) {
+  const acts=parseActs(p).filter(a=>a.tyyppi==='signaali_paivitys');
+  if (!acts.length) return 0;
+  return Math.max(...acts.map(a=>Date.parse(a.created_at)||0));
+}
+
+// Budjettisuoja, ei viimeistely: Tilit!A1:AZ500-lukualue olettaa jopa ~500
+// tiliä — suodattamaton "päivitä kaikki" olisi ~100 lohkoa yhdellä
+// klikkauksella. Puhdas funktio (ei I/O) jotta samaa käytetään sekä
+// lomakkeen elävään esikatseluun että itse ajoon.
+//
+// Skoppaus: VAIN 'ID'-alkuiset tilit. 'T'-alkuisilla "Muu Projekti"
+// -riveillä ei ole pisteet/signaali/perustelu-sarakkeita lainkaan
+// (14-sarakkeinen A:N-muoto), ja Talopakettivalmistajat SWE -tilit
+// luetaan erillisestä read-only-välilehdestä eikä niillä ole koskaan
+// _rowIndex:iä — mikään olemassa oleva tallennusfunktio ei osaa
+// kirjoittaa niihin. Tämä on olemassa oleva rakenteellinen rajoitus,
+// ei tämän suunnitelman puute.
+function accountsDueForSignalCheck({stageFilter='putki', staleDays=14}={}) {
+  const now=Date.now();
+  const staleMs=staleDays*24*60*60*1000;
+  // Aktiiviset vaiheet johdetaan VAIHEET-taulukosta itsestään (ei
+  // kovakoodattua nimilistaa) jotta tämä pysyy oikeana vaikka vaiheiden
+  // nimet muuttuisivat uudelleen — sulkee pois vain päättyneen
+  // "Ei juuri nyt" -vaiheen, samaan tapaan kuin muukin koodi käsittelee
+  // sitä ainoana aidosti suljettuna tilana (VAIHE_LEGACY, VAIHEET).
+  const putkiVaiheet=new Set(VAIHEET.filter(v=>v!=='Ei juuri nyt'));
+  return allProspects.filter(p=>{
+    if (!p.spara_id || !p.spara_id.startsWith('ID')) return false;
+    if (stageFilter==='putki' && !putkiVaiheet.has(normalizeKauppaVaihe(p.vaihe))) return false;
+    return (now-lastSignalCheckAt(p))>=staleMs;
+  });
 }
 
 let prospectingCancelled=false;
