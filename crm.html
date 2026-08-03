@@ -73,8 +73,6 @@
       .quick-add-wrap { right:16px;bottom:16px; }
       .hdr-right { gap:5px; }
       .user-menu-btn { width:34px;height:34px; }
-      .summary-bar { overflow-x:auto;flex-wrap:nowrap;padding:8px 12px;scrollbar-width:none; }
-      .summary-bar::-webkit-scrollbar { display:none; }
       .card { flex:0 0 auto;min-width:88px;padding:8px 12px; }
       .card-value { font-size:16px; }
       .card-label { font-size:9px; }
@@ -90,7 +88,6 @@
       .form-group,.form-group.full { grid-column:1/-1; }
       .modal-overlay { align-items:flex-end;padding:0; }
       .modal { max-width:100%;border-radius:16px 16px 0 0; }
-      .dash-grid { grid-template-columns:1fr; }
       .kanban { padding-bottom:16px; }
     }
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
@@ -141,6 +138,16 @@
     .card-label { font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px; }
     .card-value { font-size:20px;font-weight:700; }
     .cv-blue{color:var(--blue);}.cv-orange{color:var(--orange);}.cv-green{color:var(--green);}.cv-red{color:var(--red);}
+    .hero-tile{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;flex:1;min-width:130px;text-align:center;cursor:pointer;transition:border-color .15s,transform .15s;}
+    .hero-tile:hover{border-color:var(--accent);transform:translateY(-1px);}
+    .hero-tile-icon{font-size:22px;line-height:1;margin-bottom:5px;}
+    .hero-tile-value{font-size:19px;font-weight:700;}
+    .hero-tile-label{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;margin-top:3px;}
+    @media(max-width:640px){
+      .summary-bar{overflow-x:auto;flex-wrap:nowrap;padding:8px 12px;scrollbar-width:none;}
+      .summary-bar::-webkit-scrollbar{display:none;}
+      .hero-tile{flex:0 0 118px;min-width:0;padding:10px 12px;}
+    }
 
     /* Tabs */
     .tabs { display:flex;padding:0 24px;border-bottom:1px solid var(--border);background:var(--bg2); }
@@ -315,6 +322,7 @@
 
     /* Dashboard */
     .dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;}
+    @media(max-width:640px){.dash-grid{grid-template-columns:1fr;}}
     .dash-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;}
     .dash-section-title{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;font-weight:600;}
     .pipeline-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px;}
@@ -393,12 +401,43 @@
 </header>
 
 <div class="summary-bar">
-  <div class="card"><div class="card-label">Kaikki tilit</div><div class="card-value cv-blue" id="s-total">–</div></div>
-  <div class="card"><div class="card-label" id="s-etj-label">ETJ+</div><div class="card-value cv-red" id="s-etj">–</div></div>
-  <div class="card"><div class="card-label">Talopaketit</div><div class="card-value cv-orange" id="s-talo">–</div></div>
-  <div class="card"><div class="card-label">Aktiiviset</div><div class="card-value" style="color:var(--yellow)" id="s-active">–</div></div>
-  <div class="card"><div class="card-label">Sopimukset</div><div class="card-value cv-green" id="s-sopimus">–</div></div>
-  <div class="card"><div class="card-label" id="s-muu-label">Muu Projekti</div><div class="card-value" style="color:var(--purple)" id="s-muu">–</div></div>
+  <div class="hero-tile" onclick="openHeroModal('signaalit')">
+    <div class="hero-tile-icon">📡</div>
+    <div class="hero-tile-value" id="hero-signaalit">–</div>
+    <div class="hero-tile-label">Uudet signaalit</div>
+  </div>
+  <div class="hero-tile" onclick="openHeroModal('sijoitus')">
+    <div class="hero-tile-icon">💰</div>
+    <div class="hero-tile-value" id="hero-sijoitus">–</div>
+    <div class="hero-tile-label">Sijoitusmahdollisuudet</div>
+  </div>
+  <div class="hero-tile" onclick="openHeroModal('tehtavat')">
+    <div class="hero-tile-icon">⏰</div>
+    <div class="hero-tile-value" id="hero-tehtavat">–</div>
+    <div class="hero-tile-label">Odottaa reagointia</div>
+  </div>
+  <div class="hero-tile" onclick="openHeroModal('prospektit')">
+    <div class="hero-tile-icon">🏢</div>
+    <div class="hero-tile-value" id="hero-prospektit">–</div>
+    <div class="hero-tile-label">Prospektit yhteensä</div>
+  </div>
+  <div class="hero-tile" onclick="openHeroModal('putki')">
+    <div class="hero-tile-icon">📈</div>
+    <div class="hero-tile-value" id="hero-putki">–</div>
+    <div class="hero-tile-label">Myyntiputki</div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="hero-modal" onclick="closeHeroModalMaybe(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="hero-modal-title">Tiedot</div>
+      <button class="modal-close" onclick="closeHeroModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="hero-modal-body" style="max-height:420px;overflow-y:auto"></div>
+    </div>
+  </div>
 </div>
 
 <div class="tabs">
@@ -796,7 +835,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-03.9';
+const BUILD_ID = '2026-08-03.10';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -3437,7 +3476,13 @@ function computeTopTasks() {
   const maxDealValue=Math.max(1,...eligible.map(bestOpenDealValue));
   const scored=[];
   eligible.forEach(p=>{
-    const openTasks=parseActs(p).map(normalizeTask).filter(t=>!taskIsDone(t));
+    // isTimelineTask() suodattaa pois pelkät lokimerkinnät (vaihe_muutos,
+    // signaali_paivitys, Historiaan käsin lisätyt kommentit) JOTKA EIVÄT OLE
+    // tehtäviä — normalizeTask() yksinään default-arvottaa minkä tahansa
+    // tunnistamattoman tyypin "muu"-tehtäväksi, joten ilman tätä esisuodatusta
+    // jokainen tili jolla on edes yksi lokimerkintä (esim. yksikin
+    // signaalitarkistus) laskettaisiin virheellisesti "avoimeksi tehtäväksi".
+    const openTasks=parseActs(p).filter(isTimelineTask).map(normalizeTask).filter(t=>!taskIsDone(t));
     if (!openTasks.length) return;
     let best=null,bestScore=-Infinity;
     openTasks.forEach(t=>{
@@ -3483,9 +3528,24 @@ function renderDashboardUpcoming() {
   upEl.innerHTML=rows+footer;
 }
 
+// Myyntiputken vaihekohtainen erittely — käytetään sekä Dashboard-välilehden
+// omassa "Myyntiputki – kaupat vaiheittain" -osiossa että hero-rivin
+// 📈-kuvakkeen modalissa (renderHeroPutki), jotta sama tieto ei elä kahtena
+// erillisenä kopiona.
+function pipelineStageHtml() {
+  const st=kauppaStats();
+  return VAIHEET.map(v=>{
+    const s=st[v];
+    return `<div class="pipeline-stage"><div class="pipeline-count" style="color:${V_COLORS[v]}">${s.n}</div>
+      <div class="pipeline-label">${v}</div>
+      <div style="font-size:11px;font-weight:700;margin-top:4px">${fmtEur(s.sum)}</div>
+      <div style="font-size:10px;color:var(--text2)">tn ${Math.round(VAIHE_TN[v]*100)} % → ${fmtEur(s.sum*VAIHE_TN[v])}</div>
+    </div>`;
+  }).join('');
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function renderDashboard() {
-  const VCOL=V_COLORS;
   const PCOL={'ETJ+':'var(--red)','Talopakettivalmistajat FIN':'var(--orange)',
     'Talopakettivalmistajat SWE':'var(--blue)','Muu Projekti':'var(--purple)'};
 
@@ -3506,16 +3566,7 @@ function renderDashboard() {
       kpi('Ei juuri nyt',fmtEur(st['Ei juuri nyt'].sum),'var(--red)',st['Ei juuri nyt'].n+' kauppaa');
   }
   const plEl=document.getElementById('dash-pipeline');
-  if (plEl) {
-    plEl.innerHTML=VAIHEET.map(v=>{
-      const s=st[v];
-      return `<div class="pipeline-stage"><div class="pipeline-count" style="color:${VCOL[v]}">${s.n}</div>
-        <div class="pipeline-label">${v}</div>
-        <div style="font-size:11px;font-weight:700;margin-top:4px">${fmtEur(s.sum)}</div>
-        <div style="font-size:10px;color:var(--text2)">tn ${Math.round(VAIHE_TN[v]*100)} % → ${fmtEur(s.sum*VAIHE_TN[v])}</div>
-      </div>`;
-    }).join('');
-  }
+  if (plEl) plEl.innerHTML=pipelineStageHtml();
 
   renderDashboardUpcoming();
 
@@ -5437,18 +5488,99 @@ async function deleteEmailTemplate(id) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+// Kuinka monta päivää taaksepäin "Uudet signaalit" -kuvake ja sen modal
+// katsovat — sama aikaikkuna molemmissa, jotta luku vastaa aina listan
+// pituutta.
+const HERO_SIGNAALI_PAIVAT=14;
+function newSignalActivities() {
+  const cutoff=new Date(Date.now()-HERO_SIGNAALI_PAIVAT*86400000).toISOString().substring(0,10);
+  const rows=[];
+  allProspects.forEach(p=>{
+    parseActs(p).forEach(a=>{
+      if (a.tyyppi==='signaali_paivitys' && a.teksti && a.teksti.startsWith('Uusi signaali') &&
+          a.created_at && a.created_at.substring(0,10)>=cutoff) rows.push({p,a});
+    });
+  });
+  return rows.sort((x,y)=>y.a.created_at.localeCompare(x.a.created_at));
+}
+// Hero-rivin viisi KPI-lukua — kutsutaan samoista paikoista joista
+// vanhaa summary-baria päivitettiin (kaikki tallennuksen jälkeiset
+// päivitykset), joten tämä on tarkoituksella kevyt: ei renderöi
+// modal-sisältöä, vain lukuja. Modal lasketaan vasta kun se avataan.
 function updateSummary() {
-  const etjNimi=baseProjektiNimi('BASE_ETJ_PLUS');
-  const taloNimet=new Set([baseProjektiNimi('BASE_TALO_FIN'),baseProjektiNimi('BASE_TALO_SWE')]);
-  const muuNimi=baseProjektiNimi('BASE_MUU');
-  document.getElementById('s-total').textContent  = allProspects.length;
-  document.getElementById('s-etj').textContent    = allProspects.filter(p=>p.kampanja===etjNimi).length;
-  document.getElementById('s-talo').textContent   = allProspects.filter(p=>taloNimet.has(p.kampanja)).length;
-  document.getElementById('s-active').textContent = allProspects.filter(p=>!['Sopimus','Hävitty'].includes(p.vaihe)).length;
-  document.getElementById('s-sopimus').textContent= allProspects.filter(p=>p.vaihe==='Sopimus').length;
-  document.getElementById('s-muu').textContent    = allProspects.filter(p=>p.kampanja===muuNimi).length;
-  document.getElementById('s-etj-label').textContent=etjNimi;
-  document.getElementById('s-muu-label').textContent=muuNimi;
+  const sEl=document.getElementById('hero-signaalit'); if (sEl) sEl.textContent=newSignalActivities().length;
+  const pEl=document.getElementById('hero-prospektit'); if (pEl) pEl.textContent=allProspects.length;
+  const tEl=document.getElementById('hero-tehtavat'); if (tEl) tEl.textContent=computeTopTasks().length;
+  const putkiEl=document.getElementById('hero-putki');
+  if (putkiEl) {
+    const st=kauppaStats();
+    putkiEl.textContent=fmtEur(VAIHE_AVOIN.reduce((s,v)=>s+st[v].sum,0));
+  }
+  // Sijoitusmahdollisuuksien haku ei ole vielä rakennettu (ks. renderHeroSijoitus) —
+  // "–" viestii tarkoituksella "ei vielä käytössä", ei "haettu, löytyi nolla".
+}
+
+// ── Hero-modal: viiden kuvakkeen tarkennenäkymät ─────────────────────────────
+function openHeroModal(kind) {
+  const titles={
+    signaalit:'📡 Uudet signaalit', sijoitus:'💰 Sijoitusmahdollisuudet',
+    tehtavat:'⏰ Odottaa reagointia', prospektit:'🏢 Prospektit yhteensä', putki:'📈 Myyntiputki'
+  };
+  const renderers={
+    signaalit:renderHeroSignaalit, sijoitus:renderHeroSijoitus,
+    tehtavat:renderHeroTehtavat, prospektit:renderHeroProspektit, putki:renderHeroPutki
+  };
+  document.getElementById('hero-modal-title').textContent=titles[kind]||'Tiedot';
+  document.getElementById('hero-modal-body').innerHTML=(renderers[kind]||(()=>''))();
+  document.getElementById('hero-modal').classList.remove('hidden');
+}
+function closeHeroModal() { document.getElementById('hero-modal').classList.add('hidden'); }
+function closeHeroModalMaybe(e) { if (e.target===document.getElementById('hero-modal')) closeHeroModal(); }
+
+function renderHeroSignaalit() {
+  const rows=newSignalActivities();
+  if (!rows.length) return `<div class="empty" style="padding:16px">Ei uusia signaaleja viimeisen ${HERO_SIGNAALI_PAIVAT} päivän ajalta</div>`;
+  return rows.map(({p,a})=>`<div class="dash-item" onclick="closeHeroModal();openModal('${p.spara_id}')">
+      <div class="dash-item-date">${fmtDateShort(a.created_at)}</div>
+      <div><div class="dash-item-name">${esc(p.yritys_nimi)}</div>
+      <div class="dash-item-task">${esc(a.teksti)}</div></div></div>`).join('');
+}
+// Rakenteilla: kun sijoitusmahdollisuuksien tekoälyhaku (verkkohaku +
+// hyväksy prospektiksi -jono, sama malli kuin Mediaseurannan uudet liidit)
+// on toteutettu, tämä korvataan ehdokaslistalla ja hero-sijoitus-luku
+// aletaan laskea oikeasta datasta updateSummary():ssa.
+function renderHeroSijoitus() {
+  return `<div style="font-size:13px;line-height:1.6;color:var(--text2)">
+    Sijoitusmahdollisuuksien haku on rakenteilla. Valmiina tekoäly etsii
+    verkkohaulla uusia sijoittaja-/rahastoehdokkaita Sparan profiiliin
+    sopien, ja ne voi hyväksyä tästä suoraan prospektiksi Sijoittajat-
+    projektiin — sama hyväksymisvirta kuin Mediaseurannan uusissa
+    liideissä (📡-kuvake).
+  </div>`;
+}
+function renderHeroTehtavat() {
+  const ranked=computeTopTasks();
+  if (!ranked.length) return '<div class="empty" style="padding:16px">Ei avoimia tehtäviä avoimen putken tileillä</div>';
+  const today=new Date().toISOString().substring(0,10);
+  return ranked.map(({p,task})=>{
+    const overdue=task.due_date&&task.due_date<today;
+    return `<div class="dash-item" onclick="closeHeroModal();openModal('${p.spara_id}')">
+        <div class="dash-item-date"${overdue?' style="color:var(--red)"':''}>${task.due_date?fmtDateShort(task.due_date):'–'}</div>
+        <div><div class="dash-item-name">${esc(p.yritys_nimi)}</div>
+        <div class="dash-item-task">${TASK_ICON[task.tyyppi]||''} ${esc(task.aihe||TASK_LABEL[task.tyyppi]||'–')}</div></div></div>`;
+  }).join('');
+}
+function renderHeroProspektit() {
+  const byKampanja={};
+  allProspects.forEach(p=>{ const k=p.kampanja||'(Tuntematon)'; byKampanja[k]=(byKampanja[k]||0)+1; });
+  const rows=Object.entries(byKampanja).sort((a,b)=>b[1]-a[1]);
+  const list=rows.map(([k,n])=>`<div class="dash-item" style="cursor:default">
+      <div style="flex:1">${kampBadge(k)}</div>
+      <div style="font-weight:700">${n}</div></div>`).join('');
+  return `<div style="font-size:12px;color:var(--text2);margin-bottom:10px">${allProspects.length} prospektia yhteensä</div>${list}`;
+}
+function renderHeroPutki() {
+  return `<div class="pipeline-row" style="margin-bottom:4px">${pipelineStageHtml()}</div>`;
 }
 // Segmenteillä ei ole hallittua listaa (toisin kuin projekteilla) — ne
 // johdetaan aina suoraan olemassa olevasta datasta.
