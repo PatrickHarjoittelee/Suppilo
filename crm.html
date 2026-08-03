@@ -721,7 +721,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-02.2';
+const BUILD_ID = '2026-08-02.3';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -1919,7 +1919,29 @@ async function loadData() {
     }
     const mainRows = await sheetGet(`${MAIN_TAB}!A1:AZ500`);
     if ((mainRows[0]?.[27]||'') !== 'lisatty') {
-      await sheetPut(`${MAIN_TAB}!AB1`, [['lisatty']]);
+      // Sheetsin values.append kasvattaa rivimäärän automaattisesti mutta EI
+      // sarakemäärää — jos ruudukko on rajattu tarkalleen nykyiseen
+      // sarakemäärään (esim. 27, kuten käytännössä havaittiin: "Range
+      // (Tilit!AB1) exceeds grid limits. Max columns: 27"), kirjoitus
+      // 28. sarakkeeseen epäonnistuu 400:lla — ei vain otsikkorivin
+      // synkronointi vaan MYÖS oikeat created_at-kirjoitukset (saveNewTili,
+      // createProspectAccountsBatch, saveTiliData) kunnes ruudukkoa
+      // laajennetaan. Tehdään se tässä, kerran, ennen mitään kirjoitusta.
+      // Koko lohko on omassa try/catchissaan — pelkkä otsikon synkronointi
+      // ei saa KOSKAAN estää koko datan latautumista (aiempi versio kaatoi
+      // koko loadData()-kutsun kun kirjoitus epäonnistui yllättäen).
+      try {
+        const mainSheetMeta = sheets.find(s => s.properties.title === MAIN_TAB);
+        const mainSheetId = mainSheetMeta?.properties.sheetId;
+        const currentCols = mainSheetMeta?.properties.gridProperties?.columnCount || 0;
+        if (mainSheetId != null && currentCols < 28) {
+          await apiPost(':batchUpdate', { requests:[{ updateSheetProperties:{
+            properties:{ sheetId:mainSheetId, gridProperties:{ columnCount:28 } },
+            fields:'gridProperties.columnCount'
+          } }] });
+        }
+        await sheetPut(`${MAIN_TAB}!AB1`, [['lisatty']]);
+      } catch(e) { console.warn('Lisätty-otsikon synkronointi epäonnistui (ei kriittinen, data latautuu silti):', e.message); }
     }
     allProspects = parseProspects(mainRows);
     // Try fetching SWE companies from a dedicated tab if it exists
