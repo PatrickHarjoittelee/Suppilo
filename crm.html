@@ -2762,7 +2762,7 @@ function editTask(taskId) {
   const t=parseActs(p).find(a=>a.id===taskId); if(!t) return;
   openTaskForm(t.tyyppi);
   document.getElementById('task-edit-id').value=taskId;
-  const sel=document.getElementById('task-tila'); if(sel) sel.value=t.tila||'';
+  const sel=document.getElementById('task-tila'); if(sel) sel.value=t.tyyppi==='kauppa'?normalizeKauppaVaihe(t.tila):t.tila||'';
   const aihe=document.getElementById('task-aihe'); if(aihe) aihe.value=t.aihe||'';
   const arvo=document.getElementById('task-arvo'); if(arvo) arvo.value=t.arvo??'';
   populateHandlerSelect(t.tekija||'');
