@@ -789,7 +789,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-03.6';
+const BUILD_ID = '2026-08-03.7';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -3093,11 +3093,11 @@ function timelineAvatarHtml(actor) {
 }
 function timelineTypeLabel(item) {
   if(item.isTask) return TASK_LABEL[item.task.tyyppi]||'Tehtävä';
-  return ({kommentti:'Kommentti',puhelu:'Puhelu',sahkoposti:'Sähköposti',tapaaminen:'Tapaaminen',tarjous:'Tarjous',vaihe_muutos:'Vaiheen muutos'}[item.raw.tyyppi]||item.raw.tyyppi||'Merkintä');
+  return ({kommentti:'Kommentti',puhelu:'Puhelu',sahkoposti:'Sähköposti',tapaaminen:'Tapaaminen',tarjous:'Tarjous',vaihe_muutos:'Vaiheen muutos',signaali_paivitys:'Signaalipäivitys'}[item.raw.tyyppi]||item.raw.tyyppi||'Merkintä');
 }
 function timelineColor(item) {
   if(item.isTask) return TASK_COLOR[item.task.tyyppi]||'var(--accent)';
-  return ({kommentti:'var(--blue)',puhelu:'var(--green)',sahkoposti:'var(--orange)',tapaaminen:'var(--purple)',tarjous:'var(--yellow)',vaihe_muutos:'var(--accent)'}[item.raw.tyyppi]||'var(--accent)');
+  return ({kommentti:'var(--blue)',puhelu:'var(--green)',sahkoposti:'var(--orange)',tapaaminen:'var(--purple)',tarjous:'var(--yellow)',vaihe_muutos:'var(--accent)',signaali_paivitys:'var(--blue)'}[item.raw.tyyppi]||'var(--accent)');
 }
 function timelineDateText(item) {
   if(item.upcoming) return item.raw.due_date?'Eräpäivä '+new Date(item.raw.due_date+'T12:00:00').toLocaleDateString('fi-FI'):'Ei eräpäivää';
@@ -3186,7 +3186,7 @@ async function addActivity() {
     renderActivities(p); showToast('Lisätty ✓','success');
   } catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
-const actIcon=t=>({kommentti:'💬',puhelu:'📞',sahkoposti:'✉️',tapaaminen:'🤝',vaihe_muutos:'🔄'}[t]||'📝');
+const actIcon=t=>({kommentti:'💬',puhelu:'📞',sahkoposti:'✉️',tapaaminen:'🤝',vaihe_muutos:'🔄',signaali_paivitys:'📡'}[t]||'📝');
 
 // ── PRH / YTJ API v3 (lainattu Talorekkari/dashboard/etj-plus.html) ──────────
 const PRH_V3 = 'https://avoindata.prh.fi/opendata-ytj-api/v3/companies';
