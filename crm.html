@@ -505,7 +505,7 @@
     </div>
     <div class="dash-grid">
       <div class="dash-section">
-        <div class="dash-section-title">Seuraavat toimenpiteet <span style="font-weight:400;text-transform:none">(30 pv)</span></div>
+        <div class="dash-section-title">Seuraavat toimenpiteet <span style="font-weight:400;text-transform:none">(tärkeysjärjestyksessä)</span></div>
         <div id="dash-upcoming"><div class="empty" style="padding:16px">Ladataan…</div></div>
       </div>
       <div class="dash-section">
@@ -796,7 +796,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-03.8';
+const BUILD_ID = '2026-08-03.9';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -2507,6 +2507,10 @@ const VAIHEET=['Kontaktoi','Selvitä tarve','Sovi tapaaminen','Tarjous työn all
 const VAIHE_LEGACY={'Liidi':'Kontaktoi','Mahdollisuus':'Selvitä tarve','Tapaaminen':'Sovi tapaaminen','Tarjous':'Tarjous työn alla','Päätös odottaa':'Tarjous työn alla','Sopimus':'Sopimus syntynyt','Voitettu':'Sopimus syntynyt','Hävitty':'Ei juuri nyt'};
 const V_COLORS={'Kontaktoi':'var(--blue)','Selvitä tarve':'var(--orange)','Sovi tapaaminen':'var(--purple)','Tarjous työn alla':'var(--yellow)','Sopimus syntynyt':'var(--green)','Ei juuri nyt':'var(--red)'};
 const VAIHE_TN={'Kontaktoi':.05,'Selvitä tarve':.20,'Sovi tapaaminen':.40,'Tarjous työn alla':.60,'Sopimus syntynyt':1,'Ei juuri nyt':0};
+// Vaiheet joissa kauppa on vielä auki (ei voitettu eikä hävitty) — sama
+// määritelmä jota "Avoin putki"-KPI (renderDashboard) ja seuraavien
+// toimenpiteiden priorisointi (computeTopTasks) molemmat käyttävät.
+const VAIHE_AVOIN=['Kontaktoi','Selvitä tarve','Sovi tapaaminen','Tarjous työn alla'];
 function normalizeKauppaVaihe(v) { return VAIHE_LEGACY[v] || v || 'Kontaktoi'; }
 const fmtEur=n=>Math.round(n).toLocaleString('fi-FI')+' €';
 function kauppaStats(){
@@ -3375,6 +3379,110 @@ async function fetchAndFillYTJ(context) {
   }
 }
 
+// ── Dashboard: seuraavat toimenpiteet, priorisoituna ────────────────────────
+// Tilin oma paras (arvokkain) avoin kauppa-tehtävä — käytetään arvon
+// paikkamerkkinä kun näytettävä tehtävä itse ei ole kauppa-tyyppiä (esim.
+// soitto), jotta esim. "soita Ville Vastaaville" ei näytä arvottomalta
+// pelkästään koska arvo on kirjattu tilin toiselle, kauppa-tyyppiselle
+// tehtävälle.
+function bestOpenDealValue(p) {
+  const arvot=parseActs(p).map(normalizeTask)
+    .filter(t=>t.tyyppi==='kauppa'&&!taskIsDone(t))
+    .map(t=>Number(t.arvo)||0);
+  return arvot.length?Math.max(...arvot):0;
+}
+// Painotettu pistemäärä yhdelle avoimelle tehtävälle. Neljä tekijää:
+//  - Kiireellisyys (40 %): erääntynyt/tänään suurin paino, kasvaa vielä
+//    hieman mitä pidempään erääntyneenä. Ei-eräpäivällistä tehtävää ei
+//    jätetä kokonaan pois (kuten nearestTask() tekee), vaan sille annetaan
+//    matala perustaso, jotta arvokas/pitkälle edennyt kauppa voi silti
+//    nousta listalle vaikka sille ei ole vielä asetettu eräpäivää.
+//  - Kaupan arvo (25 %): suhteutettu suurimpaan avoimeen kauppaan koko
+//    putkessa, jottei absoluuttinen euromäärä yksin ratkaise.
+//  - Vaiheen läheisyys päätökseen (20 %): sama VAIHE_TN jota "Painotettu
+//    ennuste" -KPI jo käyttää — lähellä päätöstä oleva kauppa kannattaa
+//    viedä maaliin ennen uuden liidin työstämistä.
+//  - Liidin pisteytys (15 %): tämän istunnon aiemmin yhtenäistetty
+//    0-100-pisteytys (ETJ+/Talopaketti) — parempilaatuinen prospekti
+//    voittaa muuten samanarvoisen tehtävän.
+// Lisäksi kiinteä +10 bonus manuaalisesti A-prioriteetiksi merkityille
+// tileille (tuontivaiheessa merkitty "korkea prioriteetti").
+function taskPriorityScore(task, p, maxDealValue) {
+  const today=new Date().toISOString().substring(0,10);
+  let urgency;
+  if (!task.due_date) urgency=.15;
+  else if (task.due_date<=today) {
+    const overdueDays=(Date.parse(today)-Date.parse(task.due_date))/86400000;
+    urgency=1+Math.min(overdueDays,30)/30*.3;
+  } else {
+    const daysUntil=(Date.parse(task.due_date)-Date.parse(today))/86400000;
+    urgency=Math.max(0,1-daysUntil/14);
+  }
+  const dealValue=task.tyyppi==='kauppa'?(Number(task.arvo)||0):bestOpenDealValue(p);
+  const valueScore=maxDealValue>0?Math.min(dealValue/maxDealValue,1):0;
+  const stageScore=VAIHE_TN[normalizeKauppaVaihe(p.vaihe)]||0;
+  const qualityScore=p.pisteet!=null?p.pisteet/100:0;
+  const prioBonus=p.prioriteetti==='A'?10:0;
+  return urgency*40+valueScore*25+stageScore*20+qualityScore*15+prioBonus;
+}
+// Yksi rivi per tili (ei per tehtävä) — sama tili näkyisi muuten listassa
+// useaan kertaan jos sillä on monta avointa tehtävää, mikä olisi hämmentävää
+// kun klikkaus vie joka tapauksessa aina samaan tilimodaaliin. Tilin
+// edustajaksi valitaan sen korkeimman pistemäärän saanut avoin tehtävä.
+// Vain avoimen putken tilit (VAIHE_AVOIN) huomioidaan — jo voitettu tai
+// hävitty kauppa ei enää palvele "saadaan kauppoja syntymään tehokkaasti"
+// -tavoitetta, vaikka tilillä olisikin unohtunut avoin tehtävä.
+function computeTopTasks() {
+  const eligible=allProspects.filter(p=>VAIHE_AVOIN.includes(normalizeKauppaVaihe(p.vaihe)));
+  const maxDealValue=Math.max(1,...eligible.map(bestOpenDealValue));
+  const scored=[];
+  eligible.forEach(p=>{
+    const openTasks=parseActs(p).map(normalizeTask).filter(t=>!taskIsDone(t));
+    if (!openTasks.length) return;
+    let best=null,bestScore=-Infinity;
+    openTasks.forEach(t=>{
+      const s=taskPriorityScore(t,p,maxDealValue);
+      if (s>bestScore) { bestScore=s; best=t; }
+    });
+    scored.push({p,task:best,score:bestScore});
+  });
+  return scored.sort((a,b)=>b.score-a.score);
+}
+let dashUpcomingPage=0;
+const DASH_UPCOMING_PAGE_SIZE=5;
+// Kevyt osittaisrenderöinti — kutsutaan sekä renderDashboard():n sisältä
+// (näyttää aina tuoreimman top 5:n) että "Hae seuraavat" -napista (siirtyy
+// seuraavaan viiden erään, kiertää takaisin alkuun lopussa). Ei laske koko
+// dashboardia uudelleen, jotta napin klikkaus on välitön.
+function renderDashboardUpcoming() {
+  const upEl=document.getElementById('dash-upcoming'); if (!upEl) return;
+  const ranked=computeTopTasks();
+  const pages=Math.max(1,Math.ceil(ranked.length/DASH_UPCOMING_PAGE_SIZE));
+  if (dashUpcomingPage>=pages) dashUpcomingPage=0;
+  const start=dashUpcomingPage*DASH_UPCOMING_PAGE_SIZE;
+  const items=ranked.slice(start,start+DASH_UPCOMING_PAGE_SIZE);
+  const today=new Date().toISOString().substring(0,10);
+  const rows=items.length?items.map(({p,task})=>{
+    const overdue=task.due_date&&task.due_date<today;
+    const dateLabel=task.due_date?new Date(task.due_date+'T12:00:00').toLocaleDateString('fi-FI',{day:'numeric',month:'numeric'}):'–';
+    const reasons=[];
+    if (overdue) reasons.push('⏰ erääntynyt');
+    if (task.tyyppi==='kauppa'&&task.arvo) reasons.push(fmtEur(Number(task.arvo)));
+    if (p.prioriteetti==='A') reasons.push('A-prioriteetti');
+    return `<div class="dash-item" onclick="openModal('${p.spara_id}')">
+        <div class="dash-item-date"${overdue?' style="color:var(--red)"':''}>${dateLabel}</div>
+        <div><div class="dash-item-name">${esc(p.yritys_nimi)}</div>
+        <div class="dash-item-task">${TASK_ICON[task.tyyppi]||''} ${esc(task.aihe||TASK_LABEL[task.tyyppi]||'–')}${reasons.length?' · '+esc(reasons.join(' · ')):''}</div></div></div>`;
+  }).join(''):'<div class="empty" style="padding:16px">Ei avoimia tehtäviä avoimen putken tileillä</div>';
+  const footer=ranked.length>DASH_UPCOMING_PAGE_SIZE
+    ?`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 2px 0;font-size:11px;color:var(--text2)">
+        <span>${start+1}-${Math.min(start+DASH_UPCOMING_PAGE_SIZE,ranked.length)} / ${ranked.length}</span>
+        <button class="btn btn-ghost btn-sm" onclick="dashUpcomingPage++;renderDashboardUpcoming()">🔄 Hae seuraavat</button>
+      </div>`
+    :'';
+  upEl.innerHTML=rows+footer;
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function renderDashboard() {
   const VCOL=V_COLORS;
@@ -3383,10 +3491,9 @@ function renderDashboard() {
 
   // KPIs + pipeline euroineen ja todennäköisyyksineen
   const st=kauppaStats();
-  const OPEN=['Kontaktoi','Selvitä tarve','Sovi tapaaminen','Tarjous työn alla'];
-  const openSum=OPEN.reduce((s,v)=>s+st[v].sum,0);
-  const openN=OPEN.reduce((s,v)=>s+st[v].n,0);
-  const weighted=OPEN.reduce((s,v)=>s+st[v].sum*VAIHE_TN[v],0);
+  const openSum=VAIHE_AVOIN.reduce((s,v)=>s+st[v].sum,0);
+  const openN=VAIHE_AVOIN.reduce((s,v)=>s+st[v].n,0);
+  const weighted=VAIHE_AVOIN.reduce((s,v)=>s+st[v].sum*VAIHE_TN[v],0);
   const kpiEl=document.getElementById('dash-kpis');
   if (kpiEl) {
     const kpi=(label,val,color,sub)=>`<div class="card"><div class="card-label">${label}</div>
@@ -3410,21 +3517,7 @@ function renderDashboard() {
     }).join('');
   }
 
-  // Upcoming actions (next 30 days)
-  const upEl=document.getElementById('dash-upcoming');
-  if (upEl) {
-    const today=new Date().toISOString().substring(0,10);
-    const cut=new Date(Date.now()+30*86400000).toISOString().substring(0,10);
-    const items=allProspects
-      .filter(p=>p.seuraava_pvm&&p.seuraava_pvm>=today&&p.seuraava_pvm<=cut)
-      .sort((a,b)=>a.seuraava_pvm.localeCompare(b.seuraava_pvm)).slice(0,12);
-    upEl.innerHTML=items.length
-      ?items.map(p=>`<div class="dash-item" onclick="openModal('${p.spara_id}')">
-          <div class="dash-item-date">${p.seuraava_pvm.substring(5)}</div>
-          <div><div class="dash-item-name">${esc(p.yritys_nimi)}</div>
-          <div class="dash-item-task">${esc(p.seuraava_toimenpide||'–')}</div></div></div>`).join('')
-      :'<div class="empty" style="padding:16px">Ei tulevia toimenpiteitä 30 pv:n sisällä</div>';
-  }
+  renderDashboardUpcoming();
 
   // Project distribution with stacked vaihe bars
   const prEl=document.getElementById('dash-projects');
