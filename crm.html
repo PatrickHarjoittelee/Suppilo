@@ -773,7 +773,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-03.4';
+const BUILD_ID = '2026-08-03.5';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -4402,6 +4402,202 @@ async function runProspectingBatch() {
   document.getElementById('prospecting-progress').style.display='none';
   document.getElementById('prospecting-summary').style.display='';
   renderProspectingSummary(createdAccounts, rejected, batchErrors);
+}
+
+// ── Mediaseuranta: orkestrointi ──────────────────────────────────────────────
+let signalMonitoringCancelled=false;
+function cancelSignalMonitoringBatch() { signalMonitoringCancelled=true; }
+
+function renderSignalMonitoringProgress(current, total, label) {
+  const el=document.getElementById('signal-monitoring-progress'); if (!el) return;
+  const pct=total?Math.round(current/total*100):0;
+  el.innerHTML=`
+    <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Käsitellään ${current}/${total}${label?' — '+esc(label):''}</div>
+    <div style="background:var(--bg3);border-radius:8px;height:8px;overflow:hidden;margin-bottom:14px">
+      <div style="background:var(--accent);height:100%;width:${pct}%;transition:width .2s"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" onclick="cancelSignalMonitoringBatch()">Peruuta</button>
+    </div>`;
+}
+
+function renderSignalMonitoringSummary(newSignalAccounts, checkedCount, errors) {
+  const el=document.getElementById('signal-monitoring-summary'); if (!el) return;
+  // Sama pysyvä (ei-toast) virhepaneeli kuin prospektoinnissa — kova opittu
+  // läksy tästä samasta istunnosta, kun katoava toast esti alkuperäisen
+  // 401-virheen diagnosoinnin.
+  const errorHtml=(errors&&errors.length)
+    ? `<div style="background:color-mix(in srgb,var(--red) 15%,transparent);border:1px solid var(--red);border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:12px;color:var(--red)">⚠ ${errors.map(e=>esc(e)).join('<br>⚠ ')}</div>`
+    : '';
+  const newSignalHtml=newSignalAccounts.length
+    ? newSignalAccounts.map(p=>`<div class="ytj-dropdown-item" style="cursor:pointer" onclick="closeSignalMonitoringModal();openModal('${p.spara_id}')">
+        <div class="ytj-item-name">${esc(p.yritys_nimi)}</div>
+        <div class="ytj-item-meta">${esc(p.signaali||'')}</div>
+      </div>`).join('')
+    : '<div style="font-size:12px;color:var(--text2)">Ei uusia signaaleja</div>';
+  el.innerHTML=`
+    ${errorHtml}
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Tarkistettu ${checkedCount} tiliä</div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--green)">🆕 Uusi signaali (${newSignalAccounts.length})</div>
+    <div style="max-height:220px;overflow-y:auto;margin-bottom:16px">${newSignalHtml}</div>
+    <div style="display:flex;justify-content:flex-end">
+      <button class="btn btn-primary" onclick="closeSignalMonitoringModal()">Sulje</button>
+    </div>`;
+}
+
+// Kohdistaa AI:n palauttaman company_name:n oikeaan p-olioon sumealla
+// täsmäytyksellä (normalizeCompanyName/stringSimilarity, jo olemassa YTJ-
+// todennuksesta) — vaikka kehote pyytää täsmälleen samaa nimeä, AI saattaa
+// muotoilla sen hieman uudelleen. Etsitään VAIN candidates-joukosta (yhden
+// lohkon tilit, tai yksi tili refreshSingleAccountSignal():ssa), ei koko
+// allProspects:ista, jotta väärä osuma toisesta lohkosta ei ole mahdollinen.
+function matchSignalUpdateToAccount(update, candidates) {
+  const normTarget=normalizeCompanyName(update.company_name);
+  let best=null, bestScore=-1;
+  candidates.forEach(p=>{
+    const score=stringSimilarity(normTarget, normalizeCompanyName(p.yritys_nimi));
+    if (score>bestScore) { bestScore=score; best=p; }
+  });
+  return bestScore>=0.85 ? best : null;
+}
+
+const SIGNAL_CHUNK_SIZE=5;
+// Lohkottaa valitut tilit 5 kappaleen erissä ja SITOUTTAA jokaisen lohkon
+// Sheetsiin heti kun se on valmis, ei vasta koko ajon lopussa — sama
+// durability-periaate kuin runProspectingBatch():ssa. Kirjoittaa VAIN
+// muuttuneet sarakkeet (sheetBatchUpdate) — Tilit!P:Q signaalille/
+// perustelulle, CRM-tila!G:H aktiviteeteille/updated_at:lle — ei koko rivin
+// ylikirjoitusta (saveTiliData/saveCrmState) per tili.
+async function runSignalMonitoringBatch() {
+  if (signalMonitoringInProgress) return;
+  const stageFilter=document.getElementById('sm-stage-filter').value;
+  const staleDays=parseInt(document.getElementById('sm-stale-days').value,10)||0;
+  const targets=accountsDueForSignalCheck({stageFilter, staleDays});
+  if (!targets.length) { showToast('Ei täsmääviä tilejä valituilla ehdoilla','error'); return; }
+
+  signalMonitoringCancelled=false;
+  signalMonitoringInProgress=true;
+  document.getElementById('signal-monitoring-form').style.display='none';
+  document.getElementById('signal-monitoring-summary').style.display='none';
+  document.getElementById('signal-monitoring-progress').style.display='';
+  renderSignalMonitoringProgress(0, targets.length, 'Aloitetaan…');
+
+  const chunks=[];
+  for (let i=0;i<targets.length;i+=SIGNAL_CHUNK_SIZE) chunks.push(targets.slice(i,i+SIGNAL_CHUNK_SIZE));
+
+  const newSignalAccounts=[], batchErrors=[];
+  let processedCount=0;
+
+  for (const chunk of chunks) {
+    if (signalMonitoringCancelled) break;
+
+    let updates;
+    try {
+      renderSignalMonitoringProgress(processedCount, targets.length, 'Haetaan signaaleja tekoälyltä…');
+      updates=await generateSignalUpdates(chunk.map(p=>({name:p.yritys_nimi, city:p.kaupunki, existingSignaali:p.signaali||''})));
+    } catch(e) {
+      const msg='Tekoälyn haku epäonnistui: '+e.message;
+      showToast(msg,'error');
+      batchErrors.push(msg);
+      break;
+    }
+
+    // Sama periaate kuin prospektoinnissa: tyhjä updates-taulukko on validi
+    // ei-virhe-tulos, mutta on silti näytettävä käyttäjälle ettei se ole
+    // hiljainen onnistuminen.
+    if (!updates.length) {
+      batchErrors.push(`Tekoäly ei palauttanut yhtään tulosta tälle erälle (${chunk.length} tiliä, ei virhe — vastaus oli tyhjä lista).`);
+      processedCount+=chunk.length;
+      continue;
+    }
+
+    const tiliUpdates=[], crmRowUpdates=[], needsFirstCrmWrite=[];
+    for (const u of updates) {
+      if (signalMonitoringCancelled) break;
+      processedCount++;
+      renderSignalMonitoringProgress(processedCount, targets.length, `${u.company_name}: käsitellään…`);
+      const p=matchSignalUpdateToAccount(u, chunk);
+      if (!p) { batchErrors.push(`AI:n palauttamaa nimeä "${u.company_name}" ei voitu kohdistaa varmasti mihinkään erän tiliin — ohitettu.`); continue; }
+
+      if (u.has_new_signal) {
+        p.signaali=u.signaali; p.perustelu=u.perustelu;
+        tiliUpdates.push({range:`${MAIN_TAB}!P${p._rowIndex}:Q${p._rowIndex}`, values:[[p.signaali,p.perustelu]]});
+        newSignalAccounts.push(p);
+      }
+      addActToProspect(p, 'signaali_paivitys',
+        u.has_new_signal ? `Uusi signaali (${u.confidence}): ${u.signaali}` : 'Tarkistettu — ei uutta signaalia',
+        'Mediaseuranta');
+      if (p._crmRow) crmRowUpdates.push({range:`${CRM_TAB}!G${p._crmRow}:H${p._crmRow}`, values:[[p.aktiviteetit,new Date().toISOString()]]});
+      else needsFirstCrmWrite.push(p);
+    }
+
+    try {
+      renderSignalMonitoringProgress(processedCount, targets.length, 'Tallennetaan…');
+      if (tiliUpdates.length) await sheetBatchUpdate(tiliUpdates);
+      if (crmRowUpdates.length) await sheetBatchUpdate(crmRowUpdates);
+      if (needsFirstCrmWrite.length) {
+        // Sama malli kuin initKaupat():ssa — yksi sheetAppend kaikille joilla
+        // ei vielä ole CRM-tila-riviä, sitten yksi uudelleenhaku joka asettaa
+        // _crmRow:n kaikille kerralla, ei erillistä saveCrmState()-kutsua
+        // per tili.
+        const ts=new Date().toISOString();
+        const rows=needsFirstCrmWrite.map(p=>{
+          const ov=p.tili_override&&Object.keys(p.tili_override).length?JSON.stringify(p.tili_override):'';
+          return [p.spara_id,p.vaihe||'',p.omistaja||'',p.seuraava_toimenpide||'',
+            p.seuraava_pvm||'',p.muistiinpanot||'',p.aktiviteetit,ts,p.crm_status||'Prospekti',ov,'',''];
+        });
+        await sheetAppend(`${CRM_TAB}!A:L`, rows);
+        const crmRows=await sheetGet(`${CRM_TAB}!A:L`);
+        applyCrmState(crmRows);
+      }
+    } catch(e) {
+      const msg='Tallennus epäonnistui kesken erän: '+e.message;
+      showToast(msg,'error');
+      batchErrors.push(msg);
+      break;
+    }
+  }
+
+  signalMonitoringInProgress=false;
+  document.getElementById('signal-monitoring-progress').style.display='none';
+  document.getElementById('signal-monitoring-summary').style.display='';
+  applyFilters(); renderDashboard();
+  renderSignalMonitoringSummary(newSignalAccounts, processedCount, batchErrors);
+}
+
+// Yhden tilin pikaversio — sama napin-sisäinen spinner -UX kuin
+// openAiOpenerPanel():ssa, ei isoa modaalia. stillCurrent()-tyylinen
+// tarkistus (currentId===sid) ennen UI-päivitystä, koska käyttäjä on
+// voinut vaihtaa tiliä tai sulkea modaalin kesken AI-kutsun.
+async function refreshSingleAccountSignal(sid) {
+  const p=allProspects.find(x=>x.spara_id===sid); if (!p) return;
+  const btn=document.getElementById('signal-refresh-btn');
+  const originalText=btn?btn.textContent:'';
+  if (btn) { btn.disabled=true; btn.textContent='⏳ Tarkistetaan…'; }
+  try {
+    const updates=await generateSignalUpdates([{name:p.yritys_nimi, city:p.kaupunki, existingSignaali:p.signaali||''}]);
+    const u=updates.length ? updates[0] : null;
+    const match=u ? matchSignalUpdateToAccount(u, [p]) : null;
+    if (!match) throw new Error('Tekoäly ei palauttanut tulosta tälle tilille');
+    if (u.has_new_signal) {
+      p.signaali=u.signaali; p.perustelu=u.perustelu;
+      await sheetBatchUpdate([{range:`${MAIN_TAB}!P${p._rowIndex}:Q${p._rowIndex}`, values:[[p.signaali,p.perustelu]]}]);
+    }
+    addActToProspect(p,'signaali_paivitys',
+      u.has_new_signal ? `Uusi signaali (${u.confidence}): ${u.signaali}` : 'Tarkistettu — ei uutta signaalia',
+      'Mediaseuranta');
+    if (p._crmRow) await sheetBatchUpdate([{range:`${CRM_TAB}!G${p._crmRow}:H${p._crmRow}`, values:[[p.aktiviteetit,new Date().toISOString()]]}]);
+    else await saveCrmState(p);
+    if (currentId===sid) { applyFilters(); renderDashboard(); openModal(sid); }
+    showToast(u.has_new_signal?'Uusi signaali löytyi ✓':'Tarkistettu — ei uutta signaalia ✓','success');
+  } catch(e) {
+    showToast('Signaalin päivitys epäonnistui: '+e.message,'error');
+  } finally {
+    if (currentId===sid) {
+      const btn2=document.getElementById('signal-refresh-btn');
+      if (btn2) { btn2.disabled=false; btn2.textContent=originalText||'📡 Päivitä signaali'; }
+    }
+  }
 }
 
 // ── Tilit ─────────────────────────────────────────────────────────────────────
