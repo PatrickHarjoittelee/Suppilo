@@ -365,6 +365,7 @@
       <button class="btn btn-primary btn-sm" onclick="toggleQuickAdd(event)" title="Lisää" aria-label="Lisää">+</button>
       <div class="quick-add-menu" id="quick-add-menu" style="display:none">
         <button class="qa-item" onclick="openProspectingModal();closeQuickAdd()">🔍 Älykäs prospektointi</button>
+        <button class="qa-item" onclick="openSignalMonitoringModal();closeQuickAdd()">📡 Signaaliseuranta</button>
         <button class="qa-item" onclick="openAddTili();closeQuickAdd()">🏢 Uusi tili</button>
         <button class="qa-item" onclick="openGlobalContact();closeQuickAdd()">👤 Uusi yhteystieto</button>
         <button class="qa-item" onclick="openGlobalTask();closeQuickAdd()">📋 Uusi tehtävä</button>
@@ -417,6 +418,7 @@
       <div class="spacer"></div>
       <span class="result-count" id="result-count"></span>
       <button class="btn btn-ghost btn-sm" id="btn-etj-init" onclick="initKaupat()" title="Lisää Kauppa-tehtävä kaikille tileille joilla ei vielä ole kauppaa">🤝 Alusta kaupat</button>
+      <button class="btn btn-ghost btn-sm" onclick="openSignalMonitoringModal()" title="Tarkista verkkohaulla uusia signaaleja olemassa oleville tileille">📡 Signaaliseuranta</button>
     </div>
     <div class="table-wrap">
       <table id="tbl-lista">
@@ -539,6 +541,7 @@
           <select class="form-control" id="tili-projekti" style="padding:3px 8px;font-size:12px;min-width:150px"></select>
           <button class="btn btn-ghost btn-sm" id="tili-projekti-btn" onclick="saveTiliProjekti()">Tallenna</button>
           <div style="flex:1;min-width:0"></div>
+          <button class="btn btn-ghost btn-sm" id="signal-refresh-btn" onclick="refreshSingleAccountSignal(currentId)" title="Tarkista verkkohaulla uusia signaaleja tälle tilille" style="display:none">📡 Päivitä signaali</button>
           <button class="btn btn-ghost btn-sm" onclick="toggleTiliEdit()" id="tili-edit-btn">✏️ Muokkaa</button>
         </div>
         <div id="mt-info-edit" style="display:none;padding:12px;border-bottom:1px solid var(--border)"></div>
@@ -715,13 +718,62 @@
   </div>
 </div>
 
+<div class="modal-overlay hidden" id="signal-monitoring-modal" onclick="closeSignalMonitoringMaybe(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">📡 Signaaliseuranta</div>
+      <button class="modal-close" onclick="closeSignalMonitoringModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="signal-monitoring-form">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.5">
+          Tekoäly tarkistaa verkkohaulla onko valituista, jo olemassa olevista
+          tileistä tullut uusia signaaleja — vain uudet, aiemmasta poikkeavat
+          havainnot kirjataan, ei toisteta vanhaa. Koskee vain ETJ+/Talopaketti
+          FIN -tilejä (ei "Muu Projekti" -rivejä eikä SWE-tilejä, joilla ei ole
+          signaalikenttää).
+        </div>
+        <div class="form-grid">
+          <div class="form-group full"><label>Laajuus</label>
+            <select class="form-control" id="sm-stage-filter" onchange="updateSignalMonitoringPreview()">
+              <option value="putki">Vain aktiiviset putken tilit</option>
+              <option value="kaikki">Kaikki tilit</option>
+            </select>
+          </div>
+          <div class="form-group full"><label>Tarkista tilit joita ei ole päivitetty</label>
+            <select class="form-control" id="sm-stale-days" onchange="updateSignalMonitoringPreview()">
+              <option value="7">7 päivään</option>
+              <option value="14" selected>14 päivään</option>
+              <option value="30">30 päivään</option>
+              <option value="0">Tarkista kaikki riippumatta viime tarkistuksesta</option>
+            </select>
+          </div>
+        </div>
+        <div id="sm-preview-count" style="font-size:12px;color:var(--text2);margin-top:4px"></div>
+        <div style="margin-top:14px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="sm-want-new-leads" onchange="document.getElementById('sm-extra-leads-fields').style.display=this.checked?'':'none'"> Etsi myös uusia liidejä samalla ajolla
+          </label>
+          <div id="sm-extra-leads-fields" style="display:none;margin-top:10px"></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
+          <button class="btn btn-ghost" onclick="closeSignalMonitoringModal()">Peruuta</button>
+          <button class="btn btn-primary" onclick="runSignalMonitoringBatch()">Aloita</button>
+        </div>
+      </div>
+      <div id="signal-monitoring-progress" style="display:none"></div>
+      <div id="signal-monitoring-summary" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
 <div class="toast-wrap" id="toast-wrap"></div>
 
 <script>
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-03.3';
+const BUILD_ID = '2026-08-03.4';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -2679,6 +2731,12 @@ function openModal(sid) {
   document.getElementById('mt-info-edit').style.display='none';
   document.getElementById('info-grid').style.display='';
   document.getElementById('tili-edit-btn').textContent='✏️ Muokkaa';
+  // Signaaliseuranta koskee vain ID-alkuisia tilejä (ks. accountsDueForSignalCheck-
+  // kommentti) — T-alkuisilla "Muu Projekti" -riveillä ei ole signaali/perustelu-
+  // sarakkeita lainkaan, joten nappi piilotetaan niiltä kokonaan eikä vain
+  // näytetä epäonnistuvana.
+  const sigBtn=document.getElementById('signal-refresh-btn');
+  if (sigBtn) sigBtn.style.display=(activeAiApiKey() && p.spara_id.startsWith('ID'))?'':'none';
   closeTaskForm();
   document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
@@ -3599,6 +3657,35 @@ function closeProspectingModal() {
   document.getElementById('prospecting-modal').classList.add('hidden');
 }
 function closeProspectingMaybe(e) { if (e.target===document.getElementById('prospecting-modal')) closeProspectingModal(); }
+
+function updateSignalMonitoringPreview() {
+  const stageFilter=document.getElementById('sm-stage-filter').value;
+  const staleDays=parseInt(document.getElementById('sm-stale-days').value,10)||0;
+  const n=accountsDueForSignalCheck({stageFilter, staleDays}).length;
+  document.getElementById('sm-preview-count').textContent=
+    n===0 ? 'Ei täsmääviä tilejä valituilla ehdoilla' : `${n} tiliä täsmää valintaan`;
+}
+
+function openSignalMonitoringModal() {
+  document.getElementById('sm-stage-filter').value='putki';
+  document.getElementById('sm-stale-days').value='14';
+  document.getElementById('sm-want-new-leads').checked=false;
+  document.getElementById('sm-extra-leads-fields').style.display='none';
+  updateSignalMonitoringPreview();
+  document.getElementById('signal-monitoring-form').style.display='';
+  document.getElementById('signal-monitoring-progress').style.display='none';
+  document.getElementById('signal-monitoring-summary').style.display='none';
+  document.getElementById('signal-monitoring-modal').classList.remove('hidden');
+}
+// Sama suoja kuin prospectingInProgress: erä käynnissä -tila estää sulkemisen,
+// muuten ikkuna piiloutuisi mutta taustalla käynnissä oleva erä jatkaisi silti
+// Sheets-kirjoituksia käyttäjän luullessa peruuttaneensa jotain.
+let signalMonitoringInProgress=false;
+function closeSignalMonitoringModal() {
+  if (signalMonitoringInProgress) { showToast('Erä on käynnissä — käytä Peruuta-nappia pysäyttääksesi','error'); return; }
+  document.getElementById('signal-monitoring-modal').classList.add('hidden');
+}
+function closeSignalMonitoringMaybe(e) { if (e.target===document.getElementById('signal-monitoring-modal')) closeSignalMonitoringModal(); }
 
 // Rakentaa KAIKKI rivit muistissa ja kirjoittaa jokaiseen tauluun VAIN
 // kerran per kutsu (initKaupat():n todistettu kaava, rivi ~2629) — naiivi
