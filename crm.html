@@ -697,7 +697,7 @@
               <input type="checkbox" id="pm-want-signal" checked> b. Signaali ja perustelu
             </label>
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
-              <input type="checkbox" id="pm-want-deal"> c. Kauppa Liidi-vaiheeseen
+              <input type="checkbox" id="pm-want-deal"> c. Kauppa Kontaktoi-vaiheeseen
             </label>
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
               <input type="checkbox" id="pm-want-draft"> d. Avaussähköposti luonnoksena (ei lähetetä automaattisesti)
@@ -721,7 +721,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-02.3';
+const BUILD_ID = '2026-08-03.1';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -2055,10 +2055,10 @@ async function initVirtualKaupat() {
     if (p.kampanja === etjNimi) { aihe=etjNimi; arvo=299; }
     else if (taloNimet.has(p.kampanja)) { aihe=p.kampanja; arvo=7000; }
     else return;
-    acts.push({id:'TKv_'+p.spara_id, tyyppi:'kauppa', tila:'Liidi', aihe, arvo,
+    acts.push({id:'TKv_'+p.spara_id, tyyppi:'kauppa', tila:'Kontaktoi', aihe, arvo,
       tekija:null, muistiinpanot:p.signaali||null, created_at:ts, due_date:null, done:false});
     p.aktiviteetit = JSON.stringify(acts);
-    if (!p.vaihe) p.vaihe = 'Liidi';
+    if (!p.vaihe) p.vaihe = 'Kontaktoi';
     if (!p._crmRow) {
       const ov = p.tili_override&&Object.keys(p.tili_override).length?JSON.stringify(p.tili_override):'';
       newRows.push([p.spara_id, p.vaihe||'', p.omistaja||'', p.seuraava_toimenpide||'',
@@ -2081,9 +2081,10 @@ const cn = (a,i) => { const v=cv(a,i); if(!v) return null; const m=v.replace(/[\
 
 function detectVaihe(tila, tulos) {
   const s = `${tila||''} ${tulos||''}`.toLowerCase();
-  if (s.includes('sopimus')||s.includes('kauppa')) return 'Sopimus';
-  if (s.includes('tarjous')) return 'Tarjous';
-  if (s.includes('tapaaminen')||s.includes('sovittu')) return 'Tapaaminen';
+  if (s.includes('sopimus')||s.includes('kauppa')) return 'Voitettu';
+  if (s.includes('päätös')||s.includes('paatos')) return 'Päätös odottaa';
+  if (s.includes('tarjous')) return 'Tarjous työn alla';
+  if (s.includes('tapaaminen')||s.includes('sovittu')) return 'Sovi tapaaminen';
   return null;
 }
 
@@ -2181,7 +2182,7 @@ function applyCrmState(crmRows) {
   allProspects.forEach(p => {
     const s = map[p.spara_id];
     if (!s) return;
-    if (s.vaihe) p.vaihe = s.vaihe;
+    if (s.vaihe) p.vaihe = normalizeKauppaVaihe(s.vaihe);
     const ov = s.tili_override || {};
     Object.assign(p, { omistaja:s.omistaja, seuraava_toimenpide:s.seuraava_toimenpide,
       seuraava_pvm:s.seuraava_pvm, muistiinpanot:s.muistiinpanot,
@@ -2428,27 +2429,29 @@ function renderYhTable() {
 function changeYhPage(d) { yhPage+=d; renderYhTable(); }
 
 // ── Kanban ─────────────────────────────────────────────────────────────────────
-const VAIHEET=['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'];
-const V_COLORS={Liidi:'var(--blue)',Mahdollisuus:'var(--orange)',Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)',Hävitty:'var(--red)'};
-const VAIHE_TN={Liidi:.05,Mahdollisuus:.20,Tapaaminen:.40,Tarjous:.60,Sopimus:1,'Hävitty':0};
+const VAIHEET=['Kontaktoi','Selvitä tarve','Sovi tapaaminen','Tarjous työn alla','Päätös odottaa','Voitettu','Ei juuri nyt'];
+const VAIHE_LEGACY={'Liidi':'Kontaktoi','Mahdollisuus':'Selvitä tarve','Tapaaminen':'Sovi tapaaminen','Tarjous':'Tarjous työn alla','Sopimus':'Voitettu','Hävitty':'Ei juuri nyt'};
+const V_COLORS={'Kontaktoi':'var(--blue)','Selvitä tarve':'var(--orange)','Sovi tapaaminen':'var(--purple)','Tarjous työn alla':'var(--yellow)','Päätös odottaa':'var(--orange)','Voitettu':'var(--green)','Ei juuri nyt':'var(--red)'};
+const VAIHE_TN={'Kontaktoi':.05,'Selvitä tarve':.20,'Sovi tapaaminen':.40,'Tarjous työn alla':.60,'Päätös odottaa':.80,'Voitettu':1,'Ei juuri nyt':0};
+function normalizeKauppaVaihe(v) { return VAIHE_LEGACY[v] || v || 'Kontaktoi'; }
 const fmtEur=n=>Math.round(n).toLocaleString('fi-FI')+' €';
 function kauppaStats(){
   const st={}; VAIHEET.forEach(v=>st[v]={n:0,sum:0});
   allProspects.forEach(p=>parseActs(p).forEach(a=>{
     if(a.tyyppi!=='kauppa') return;
-    const tila=a.tila||'Liidi';
+    const tila=normalizeKauppaVaihe(a.tila);
     if(!st[tila]) return;
     st[tila].n++; st[tila].sum+=Number(a.arvo)||0;
   }));
   return st;
 }
 const TASK_TILA={
-  kauppa:    ['Liidi','Mahdollisuus','Tapaaminen','Tarjous','Sopimus','Hävitty'],
+  kauppa:    VAIHEET,
   soitto:    ['Uusi','Vastaamaton','Viesti vastaajaan','SMS-viesti','Tavoitettu'],
   sahkoposti:['Uusi','Luonnos','Hylkäys','Lomavastaaja','Toimitettu'],
   muu:       ['Uusi','Aloitettu','Odottaa lisätietoa','Valmis']
 };
-const TASK_DONE={kauppa:['Sopimus','Hävitty'],soitto:['Tavoitettu'],sahkoposti:['Toimitettu'],muu:['Valmis']};
+const TASK_DONE={kauppa:['Voitettu','Ei juuri nyt'],soitto:['Tavoitettu'],sahkoposti:['Toimitettu'],muu:['Valmis']};
 const TASK_ICON={kauppa:'🤝',soitto:'📞',sahkoposti:'✉️',muu:'📝'};
 const TASK_LABEL={kauppa:'Kauppa',soitto:'Soitto',sahkoposti:'Sähköposti',muu:'Muu tehtävä'};
 
@@ -2512,7 +2515,11 @@ function updateGtTilaOptions() {
   if(wrap) wrap.style.display=tyyppi==='kauppa'?'':'none';
 }
 function taskIsDone(t){return t.done||(TASK_DONE[t.tyyppi]||[]).includes(t.tila);}
-function normalizeTask(a){return{...a,aihe:a.aihe||a.teksti||'',tila:a.tila||(a.tyyppi==='kauppa'?'Tarjous':'Uusi'),tyyppi:TASK_TILA[a.tyyppi]?a.tyyppi:'muu'};}
+function normalizeTask(a){
+  const tyyppi=TASK_TILA[a.tyyppi]?a.tyyppi:'muu';
+  const tila=a.tila ? (tyyppi==='kauppa'?normalizeKauppaVaihe(a.tila):a.tila) : (tyyppi==='kauppa'?'Tarjous työn alla':'Uusi');
+  return {...a,aihe:a.aihe||a.teksti||'',tila,tyyppi};
+}
 function nearestTask(p){return parseActs(p).map(normalizeTask).filter(a=>a.due_date&&!taskIsDone(a)).sort((a,b)=>a.due_date.localeCompare(b.due_date))[0];}
 
 function getAllKaupat(filterKampanja) {
@@ -2794,8 +2801,8 @@ async function updateTaskEdit(taskId) {
     due_date:document.getElementById('task-due')?.value||task.due_date||null,
     done,updated_at:new Date().toISOString(),completed_at:done?(wasDone?task.completed_at||new Date().toISOString():new Date().toISOString()):null});
   if(tyyppi==='kauppa'&&tila&&tila!==prevTila){
-    const prev=p.vaihe; p.vaihe=tila;
-    if(prev!==tila) addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${tila}`,tekija);
+    const prev=p.vaihe; p.vaihe=normalizeKauppaVaihe(tila);
+    if(prev!==p.vaihe) addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${p.vaihe}`,tekija);
   }
   p.aktiviteetit=JSON.stringify(acts);
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
@@ -2825,7 +2832,7 @@ async function addTask() {
   const created_at=new Date().toISOString();
   acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,tekija,muistiinpanot:taskNote,created_at,due_date,done,completed_at:done?created_at:null});
   p.aktiviteetit=JSON.stringify(acts);
-  if(tyyppi==='kauppa'&&tila){const prev=p.vaihe;p.vaihe=tila;if(prev!==tila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${tila}`,tekija);}
+  if(tyyppi==='kauppa'&&tila){const prev=p.vaihe;const normTila=normalizeKauppaVaihe(tila);p.vaihe=normTila;if(prev!==normTila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${normTila}`,tekija);}
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
   document.getElementById('e-toimenpide').value=p.seuraava_toimenpide||'';
   document.getElementById('e-pvm').value=p.seuraava_pvm||'';
@@ -2888,6 +2895,7 @@ async function updateTaskTila(taskId, newTila) {
   const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return;
   const acts=parseActs(p); const task=acts.find(a=>a.id===taskId); if(!task) return;
   const wasDone=taskIsDone(normalizeTask(task));
+  if (task.tyyppi==='kauppa') newTila=normalizeKauppaVaihe(newTila);
   task.tila=newTila; task.done=(TASK_DONE[task.tyyppi]||[]).includes(newTila); task.updated_at=new Date().toISOString();
   task.completed_at=task.done?(wasDone?task.completed_at||task.updated_at:task.updated_at):null;
   if(task.tyyppi==='kauppa'){const prev=p.vaihe;p.vaihe=newTila;if(prev!==newTila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${newTila}`,p.omistaja);}
@@ -2904,7 +2912,7 @@ async function completeTask(taskId) {
   task.done=true; task.updated_at=new Date().toISOString(); task.completed_at=task.completed_at||task.updated_at;
   const doneStates=TASK_DONE[task.tyyppi]||[];
   if(doneStates.length&&!doneStates.includes(task.tila)) task.tila=doneStates[doneStates.length-1];
-  if(task.tyyppi==='kauppa'){const prev=p.vaihe;p.vaihe=task.tila;if(prev!==task.tila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${task.tila}`,p.omistaja);}
+  if(task.tyyppi==='kauppa'){const prev=p.vaihe;p.vaihe=normalizeKauppaVaihe(task.tila);if(prev!==p.vaihe)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${p.vaihe}`,p.omistaja);}
   p.aktiviteetit=JSON.stringify(acts);
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
   document.getElementById('e-toimenpide').value=p.seuraava_toimenpide||'';
@@ -3289,13 +3297,13 @@ async function fetchAndFillYTJ(context) {
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function renderDashboard() {
-  const VCOL={Liidi:'var(--blue)',Mahdollisuus:'var(--orange)',Tapaaminen:'var(--purple)',Tarjous:'var(--yellow)',Sopimus:'var(--green)','Hävitty':'var(--red)'};
+  const VCOL=V_COLORS;
   const PCOL={'ETJ+':'var(--red)','Talopakettivalmistajat FIN':'var(--orange)',
     'Talopakettivalmistajat SWE':'var(--blue)','Muu Projekti':'var(--purple)'};
 
   // KPIs + pipeline euroineen ja todennäköisyyksineen
   const st=kauppaStats();
-  const OPEN=['Liidi','Mahdollisuus','Tapaaminen','Tarjous'];
+  const OPEN=['Kontaktoi','Selvitä tarve','Sovi tapaaminen','Tarjous työn alla','Päätös odottaa'];
   const openSum=OPEN.reduce((s,v)=>s+st[v].sum,0);
   const openN=OPEN.reduce((s,v)=>s+st[v].n,0);
   const weighted=OPEN.reduce((s,v)=>s+st[v].sum*VAIHE_TN[v],0);
@@ -3307,8 +3315,8 @@ function renderDashboard() {
     kpiEl.innerHTML=
       kpi('Avoin putki',fmtEur(openSum),'var(--blue)',openN+' avointa kauppaa')+
       kpi('Painotettu ennuste',fmtEur(weighted),'var(--orange)','vaiheiden tn:llä painotettu')+
-      kpi('Sopimukset',fmtEur(st['Sopimus'].sum),'var(--green)',st['Sopimus'].n+' voitettua')+
-      kpi('Hävitty',fmtEur(st['Hävitty'].sum),'var(--red)',st['Hävitty'].n+' kauppaa');
+      kpi('Voitetut',fmtEur(st['Voitettu'].sum),'var(--green)',st['Voitettu'].n+' voitettua')+
+      kpi('Ei juuri nyt',fmtEur(st['Ei juuri nyt'].sum),'var(--red)',st['Ei juuri nyt'].n+' kauppaa');
   }
   const plEl=document.getElementById('dash-pipeline');
   if (plEl) {
@@ -3346,7 +3354,7 @@ function renderDashboard() {
       const tilit=allProspects.filter(p=>p.kampanja===proj);
       const n=tilit.length||1;
       const segs=VAIHEET.map(v=>{
-        const cnt=tilit.filter(p=>p.vaihe===v).length;
+        const cnt=tilit.filter(p=>normalizeKauppaVaihe(p.vaihe)===v).length;
         return {v,cnt,pct:Math.round(cnt/n*100)};
       }).filter(s=>s.cnt>0);
       const bars=segs.map(s=>
@@ -3680,9 +3688,9 @@ async function createProspectAccountsBatch(candidates, opts) {
     const acts=[];
     if (opts.wantDeal) {
       acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
-        tyyppi:'kauppa',tila:'Liidi',aihe:opts.kampanja,arvo:0,tekija:null,
+        tyyppi:'kauppa',tila:'Kontaktoi',aihe:opts.kampanja,arvo:0,tekija:null,
         muistiinpanot:signaali||null,created_at:ts,due_date:null,done:false});
-      p.vaihe='Liidi';
+      p.vaihe='Kontaktoi';
     }
     if (opts.wantDraft) {
       const opener=(c.openingParagraph||'').trim();
