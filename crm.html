@@ -196,6 +196,41 @@
     .pagination button:disabled{opacity:.35;cursor:default;}
     .pagination span{font-size:12px;color:var(--text2);min-width:100px;text-align:center;}
 
+    /* Tilit-välilehti — Spara-teema (Vaihe 3). table/th/td ovat paljaita
+       tag-valitsimia joita käyttää identtisellä rakenteella myös
+       Yhteyshenkilöt-taulu, ja .toolbar/.pagination/.empty/.btn* ovat
+       laajasti jaettuja koko sovelluksen kanssa — siksi kaikki tässä
+       rajattu #tab-lista-ID:llä. .score-high/-mid/-low sen sijaan
+       rajattu vain teemalla (ei ID:llä), koska ne ovat pieniä
+       inline-vieressä olevia värejä jotka sopivat teemattua myös
+       tilimodaalin Arvosana-kentässä (Vaihe 5) ennen kuin sen kehys on
+       vielä uudelleenteemoitettu — puhtaasti kosmeettinen, turvallinen
+       jakaa etukäteen. */
+    [data-dash-theme="spara"] .score-high{color:var(--spara-gold-light);}
+    [data-dash-theme="spara"] .score-mid{color:var(--spara-gold);}
+    [data-dash-theme="spara"] .score-low{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #tab-lista .toolbar input,
+    [data-dash-theme="spara"] #tab-lista .toolbar select{background:var(--spara-charcoal);border-color:var(--spara-hairline);color:var(--spara-on-dark);}
+    [data-dash-theme="spara"] #tab-lista .toolbar input:focus,
+    [data-dash-theme="spara"] #tab-lista .toolbar select:focus{border-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #tab-lista .result-count{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #tab-lista .btn-ghost{color:var(--spara-on-dark-soft);border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #tab-lista .btn-ghost:hover{color:var(--spara-on-dark);border-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #tab-lista .table-wrap{border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #tab-lista table{font-family:'Source Sans Pro',sans-serif;}
+    [data-dash-theme="spara"] #tab-lista thead tr{background:var(--spara-navy);border-bottom-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #tab-lista th{color:var(--spara-on-dark-faint);font-family:'Fjalla One',sans-serif;font-weight:400;letter-spacing:.05em;}
+    [data-dash-theme="spara"] #tab-lista th:hover{color:var(--spara-on-dark);}
+    [data-dash-theme="spara"] #tab-lista th.sorted .sa{color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #tab-lista td{border-bottom-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #tab-lista tr:hover td{background:var(--spara-lavender-wash);}
+    [data-dash-theme="spara"] #tab-lista .loading,
+    [data-dash-theme="spara"] #tab-lista .empty{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #tab-lista .spinner{border-color:var(--spara-hairline);border-top-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #tab-lista .pagination button{background:var(--spara-charcoal);border-color:var(--spara-hairline);color:var(--spara-on-dark);}
+    [data-dash-theme="spara"] #tab-lista .pagination button:hover:not(:disabled){background:var(--spara-navy);border-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #tab-lista .pagination span{color:var(--spara-on-dark-faint);}
+
     /* Kanban */
     .kanban{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;}
     @media(max-width:640px){.kanban{padding-bottom:16px;}}
@@ -912,7 +947,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-04.3';
+const BUILD_ID = '2026-08-04.4';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2535,17 +2570,8 @@ document.querySelectorAll('#tbl-lista th[data-col]').forEach(th => {
   });
 });
 
-function renderTable() {
-  const tbody=document.getElementById('tbody-lista');
-  const rows=filteredRows.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE);
-  if (!rows.length) {
-    tbody.innerHTML='<tr><td colspan="9" class="empty">Ei tuloksia</td></tr>';
-    document.getElementById('page-info').textContent='';
-    document.getElementById('btn-prev').disabled=true;
-    document.getElementById('btn-next').disabled=true;
-    return;
-  }
-  tbody.innerHTML = rows.map(p=>`
+function tableRowHtml(p) {
+  return `
     <tr onclick="openModal('${p.spara_id}')">
       <td class="${arvosanaClass(calcArvosana(p))}">${calcArvosana(p)??'–'}</td>
       <td title="${esc(p.yritys_nimi)}"><strong>${esc(p.yritys_nimi)}</strong></td>
@@ -2556,7 +2582,38 @@ function renderTable() {
       <td style="color:var(--text2);font-size:11px">${kampBadge(p.kampanja)}</td>
       <td style="color:var(--text2);font-size:11px">${fmtDateShort(p.created_at)}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openModal('${p.spara_id}')">Avaa</button></td>
-    </tr>`).join('');
+    </tr>`;
+}
+// Sama rakenne ja sarakkeet kuin tableRowHtml():ssä — vain rivin
+// toissijaisen tekstin inline-väri (ei luokka, joten CSS ei riitä) on
+// vaihdettu --text2:sta --spara-on-dark-faintiin.
+function tableRowSparaHtml(p) {
+  return `
+    <tr onclick="openModal('${p.spara_id}')">
+      <td class="${arvosanaClass(calcArvosana(p))}">${calcArvosana(p)??'–'}</td>
+      <td title="${esc(p.yritys_nimi)}"><strong>${esc(p.yritys_nimi)}</strong></td>
+      <td style="color:var(--spara-on-dark-faint)">${esc(p.segmentti)}</td>
+      <td>${esc(p.kaupunki)}</td>
+      <td style="color:var(--spara-on-dark-faint)">${esc(p['yhteyshenkilö'])}</td>
+      <td style="color:var(--spara-on-dark-faint);font-size:11px">${esc(p.kulutusarvio_mwh)}</td>
+      <td style="color:var(--spara-on-dark-faint);font-size:11px">${kampBadge(p.kampanja)}</td>
+      <td style="color:var(--spara-on-dark-faint);font-size:11px">${fmtDateShort(p.created_at)}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openModal('${p.spara_id}')">Avaa</button></td>
+    </tr>`;
+}
+function renderTable() {
+  applyDashboardThemeAttr();
+  const tbody=document.getElementById('tbody-lista');
+  const rows=filteredRows.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE);
+  if (!rows.length) {
+    tbody.innerHTML='<tr><td colspan="9" class="empty">Ei tuloksia</td></tr>';
+    document.getElementById('page-info').textContent='';
+    document.getElementById('btn-prev').disabled=true;
+    document.getElementById('btn-next').disabled=true;
+    return;
+  }
+  const rowFn = dashboardTheme()==='spara' ? tableRowSparaHtml : tableRowHtml;
+  tbody.innerHTML = rows.map(rowFn).join('');
   const total=filteredRows.length, pages=Math.ceil(total/PAGE_SIZE);
   document.getElementById('page-info').textContent=`${page+1} / ${pages} (${total})`;
   document.getElementById('btn-prev').disabled=page===0;
@@ -5891,10 +5948,15 @@ function buildSegmentFilter() {
 }
 function kampBadge(k) {
   if (!k) return '–';
-  if (k===baseProjektiNimi('BASE_ETJ_PLUS')) return `<span style="color:var(--red)">${esc(k)}</span>`;
-  if (k===baseProjektiNimi('BASE_TALO_FIN')) return `<span style="color:var(--orange)">🇫🇮 ${esc(k)}</span>`;
-  if (k===baseProjektiNimi('BASE_TALO_SWE')) return `<span style="color:var(--blue)">🇸🇪 ${esc(k)}</span>`;
-  if (k===baseProjektiNimi('BASE_MUU')) return `<span style="color:var(--purple)">${esc(k)}</span>`;
+  // Väri on inline-tyylitetty (ei luokka) joten pelkkä CSS-skoopatus ei
+  // riitä — funktio lukee aktiivisen teeman itse. Molemmat paletit tässä
+  // samassa funktiossa (ei kahta kopiota); classic-haara täysin
+  // muuttumaton alkuperäisestä.
+  const spara=dashboardTheme()==='spara';
+  if (k===baseProjektiNimi('BASE_ETJ_PLUS')) return `<span style="color:${spara?'var(--spara-gold-light)':'var(--red)'}">${esc(k)}</span>`;
+  if (k===baseProjektiNimi('BASE_TALO_FIN')) return `<span style="color:${spara?'var(--spara-lavender)':'var(--orange)'}">🇫🇮 ${esc(k)}</span>`;
+  if (k===baseProjektiNimi('BASE_TALO_SWE')) return `<span style="color:${spara?'var(--spara-on-dark-soft)':'var(--blue)'}">🇸🇪 ${esc(k)}</span>`;
+  if (k===baseProjektiNimi('BASE_MUU')) return `<span style="color:${spara?'var(--spara-lavender-deep)':'var(--purple)'}">${esc(k)}</span>`;
   return esc(k);
 }
 function scoreClass(s) { return !s?'':s>=85?'score-high':s>=70?'score-mid':'score-low'; }
