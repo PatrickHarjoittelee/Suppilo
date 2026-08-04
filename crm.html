@@ -231,6 +231,51 @@
     [data-dash-theme="spara"] #tab-lista .pagination button:hover:not(:disabled){background:var(--spara-navy);border-color:var(--spara-lavender);}
     [data-dash-theme="spara"] #tab-lista .pagination span{color:var(--spara-on-dark-faint);}
 
+    /* Yhteyshenkilöt-välilehti — Spara-teema (Vaihe 4). Sama rajauskaava
+       kuin Tilit-taulussa (Vaihe 3): table/th/td/.toolbar/.pagination/
+       .empty ovat samat jaetut geneeriset valitsimet joita
+       Yhteyshenkilöt-taulu käyttää identtisellä rakenteella — kaikki
+       rajattu #tab-yhteyshenkilot-ID:llä. */
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .toolbar input,
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .toolbar select{background:var(--spara-charcoal);border-color:var(--spara-hairline);color:var(--spara-on-dark);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .toolbar input:focus,
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .toolbar select:focus{border-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .result-count{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .btn-ghost{color:var(--spara-on-dark-soft);border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .btn-ghost:hover{color:var(--spara-on-dark);border-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .table-wrap{border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot table{font-family:'Source Sans Pro',sans-serif;}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot thead tr{background:var(--spara-navy);border-bottom-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot th{color:var(--spara-on-dark-faint);font-family:'Fjalla One',sans-serif;font-weight:400;letter-spacing:.05em;}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot th:hover{color:var(--spara-on-dark);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot th.sorted .sa{color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot td{border-bottom-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot tr:hover td{background:var(--spara-lavender-wash);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .loading,
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .empty{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .spinner{border-color:var(--spara-hairline);border-top-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .pagination button{background:var(--spara-charcoal);border-color:var(--spara-hairline);color:var(--spara-on-dark);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .pagination button:hover:not(:disabled){background:var(--spara-navy);border-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .pagination span{color:var(--spara-on-dark-faint);}
+    /* Yhteyshenkilön oma modaali — täysin eri elementti kuin tilimodaali
+       (#modal-overlay, Vaihe 5). Kehys ID-rajattu samalla kaavalla kuin
+       hero-modal Vaihe 1:ssä. .yh-link-card/.act-item/.act-meta/.act-text
+       ovat käytössä yksinomaan tässä modaalissa (tarkistettu koko
+       tiedostosta) — turvallista teemoittaa täydestä, muu sisältö
+       (.info-grid/.cs-title, muutama pienempi inline-teksti) jätetty
+       tarkoituksella koskematta, sama harkinta kuin Tilit-taulun
+       tavallisilla soluilla Vaihe 3:ssa: sivun body{color:var(--text)}
+       ja --text2 lukevat riittävän hyvin tummaa taustaa vasten ilman
+       erillistä ylikirjoitusta. */
+    [data-dash-theme="spara"] #yhmodal-overlay .modal{background:var(--spara-charcoal);border:1px solid var(--spara-hairline);}
+    [data-dash-theme="spara"] #yhmodal-overlay .modal-header{border-bottom-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #yhmodal-overlay .modal-title{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.04em;color:var(--spara-on-dark);}
+    [data-dash-theme="spara"] #yhmodal-overlay .modal-close{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #yhmodal-overlay .yh-link-card{background:var(--spara-navy);border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #yhmodal-overlay .yh-link-card:hover{border-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #yhmodal-overlay .act-item{background:var(--spara-navy);border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #yhmodal-overlay .act-meta{color:var(--spara-on-dark-faint);}
+
     /* Kanban */
     .kanban{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;}
     @media(max-width:640px){.kanban{padding-bottom:16px;}}
@@ -651,7 +696,7 @@
           <th></th>
         </tr></thead>
         <tbody id="tbody-yhteyshenkilot">
-          <tr><td colspan="6" class="loading"><div class="spinner"></div><br>Kirjaudu sisään ladataksesi data…</td></tr>
+          <tr><td colspan="7" class="loading"><div class="spinner"></div><br>Kirjaudu sisään ladataksesi data…</td></tr>
         </tbody>
       </table>
     </div>
@@ -947,7 +992,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-04.4';
+const BUILD_ID = '2026-08-04.5';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2659,7 +2704,35 @@ document.querySelectorAll('#tbl-yhteyshenkilot th[data-col]').forEach(th => {
   });
 });
 
+function yhRowHtml(c) {
+  const p=allProspects.find(x=>x.spara_id===c.tili_id);
+  return `<tr onclick="openYhModal('${c.id}')">
+      <td><strong>${esc(c.nimi)}</strong></td>
+      <td style="color:var(--text2)">${esc(c.titteli)}</td>
+      <td style="color:var(--text2);font-size:11px">${p?esc(p.yritys_nimi):'–'}</td>
+      <td style="color:var(--text2);font-size:11px">${esc(c.puhelin)}</td>
+      <td style="color:var(--text2);font-size:11px">${esc(c.sahkoposti)}</td>
+      <td style="color:var(--text2);font-size:11px">${fmtDateShort(c.created_at)}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openYhModal('${c.id}')">Avaa</button></td>
+    </tr>`;
+}
+// Sama rakenne kuin yhRowHtml():ssä — vain toissijaisen tekstin
+// inline-väri vaihdettu --text2:sta --spara-on-dark-faintiin, sama syy
+// kuin tableRowSparaHtml():ssa (Vaihe 3).
+function yhRowSparaHtml(c) {
+  const p=allProspects.find(x=>x.spara_id===c.tili_id);
+  return `<tr onclick="openYhModal('${c.id}')">
+      <td><strong>${esc(c.nimi)}</strong></td>
+      <td style="color:var(--spara-on-dark-faint)">${esc(c.titteli)}</td>
+      <td style="color:var(--spara-on-dark-faint);font-size:11px">${p?esc(p.yritys_nimi):'–'}</td>
+      <td style="color:var(--spara-on-dark-faint);font-size:11px">${esc(c.puhelin)}</td>
+      <td style="color:var(--spara-on-dark-faint);font-size:11px">${esc(c.sahkoposti)}</td>
+      <td style="color:var(--spara-on-dark-faint);font-size:11px">${fmtDateShort(c.created_at)}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openYhModal('${c.id}')">Avaa</button></td>
+    </tr>`;
+}
 function renderYhTable() {
+  applyDashboardThemeAttr();
   const tbody=document.getElementById('tbody-yhteyshenkilot');
   const rows=yhFilteredRows.slice(yhPage*YH_PAGE_SIZE,(yhPage+1)*YH_PAGE_SIZE);
   if (!rows.length) {
@@ -2669,18 +2742,8 @@ function renderYhTable() {
     document.getElementById('yh-btn-next').disabled=true;
     return;
   }
-  tbody.innerHTML = rows.map(c=>{
-    const p=allProspects.find(x=>x.spara_id===c.tili_id);
-    return `<tr onclick="openYhModal('${c.id}')">
-      <td><strong>${esc(c.nimi)}</strong></td>
-      <td style="color:var(--text2)">${esc(c.titteli)}</td>
-      <td style="color:var(--text2);font-size:11px">${p?esc(p.yritys_nimi):'–'}</td>
-      <td style="color:var(--text2);font-size:11px">${esc(c.puhelin)}</td>
-      <td style="color:var(--text2);font-size:11px">${esc(c.sahkoposti)}</td>
-      <td style="color:var(--text2);font-size:11px">${fmtDateShort(c.created_at)}</td>
-      <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openYhModal('${c.id}')">Avaa</button></td>
-    </tr>`;
-  }).join('');
+  const rowFn = dashboardTheme()==='spara' ? yhRowSparaHtml : yhRowHtml;
+  tbody.innerHTML = rows.map(rowFn).join('');
   const total=yhFilteredRows.length, pages=Math.ceil(total/YH_PAGE_SIZE);
   document.getElementById('yh-page-info').textContent=`${yhPage+1} / ${pages} (${total})`;
   document.getElementById('yh-btn-prev').disabled=yhPage===0;
