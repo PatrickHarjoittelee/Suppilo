@@ -196,127 +196,130 @@
     .pagination button:disabled{opacity:.35;cursor:default;}
     .pagination span{font-size:12px;color:var(--text2);min-width:100px;text-align:center;}
 
-    /* Tilit-välilehti — Spara-teema (Vaihe 3). table/th/td ovat paljaita
+    /* Tilit-välilehti — Spara-teema (korjattu). table/th/td ovat paljaita
        tag-valitsimia joita käyttää identtisellä rakenteella myös
        Yhteyshenkilöt-taulu, ja .toolbar/.pagination/.empty/.btn* ovat
        laajasti jaettuja koko sovelluksen kanssa — siksi kaikki tässä
        rajattu #tab-lista-ID:llä. .score-high/-mid/-low sen sijaan
        rajattu vain teemalla (ei ID:llä), koska ne ovat pieniä
        inline-vieressä olevia värejä jotka sopivat teemattua myös
-       tilimodaalin Arvosana-kentässä (Vaihe 5) ennen kuin sen kehys on
-       vielä uudelleenteemoitettu — puhtaasti kosmeettinen, turvallinen
-       jakaa etukäteen. */
-    [data-dash-theme="spara"] .score-high{color:var(--spara-gold-light);}
-    [data-dash-theme="spara"] .score-mid{color:var(--spara-gold);}
-    [data-dash-theme="spara"] .score-low{color:var(--spara-on-dark-faint);}
+       tilimodaalin Arvosana-kentässä ennen kuin sen kehys on vielä
+       uudelleenteemoitettu. Korkea arvosana = kulta (ansaitsee huomion,
+       sama semantiikka kuin "erääntynyt"), matala = harmaa, keskitaso
+       neutraali ink — ei liikennevalo-paletti. */
+    [data-dash-theme="spara"] .score-high{color:var(--spara-gold);font-weight:700;}
+    [data-dash-theme="spara"] .score-mid{color:var(--spara-ink-soft);}
+    [data-dash-theme="spara"] .score-low{color:var(--spara-quiet);}
     [data-dash-theme="spara"] #tab-lista .toolbar input,
-    [data-dash-theme="spara"] #tab-lista .toolbar select{background:var(--spara-charcoal);border-color:var(--spara-hairline);color:var(--spara-on-dark);}
+    [data-dash-theme="spara"] #tab-lista .toolbar select{background:var(--spara-paper);border-color:var(--spara-hairline);color:var(--spara-ink);}
     [data-dash-theme="spara"] #tab-lista .toolbar input:focus,
     [data-dash-theme="spara"] #tab-lista .toolbar select:focus{border-color:var(--spara-lavender);}
-    [data-dash-theme="spara"] #tab-lista .result-count{color:var(--spara-on-dark-faint);}
-    [data-dash-theme="spara"] #tab-lista .btn-ghost{color:var(--spara-on-dark-soft);border-color:var(--spara-hairline);}
-    [data-dash-theme="spara"] #tab-lista .btn-ghost:hover{color:var(--spara-on-dark);border-color:var(--spara-lavender);}
-    [data-dash-theme="spara"] #tab-lista .table-wrap{border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #tab-lista .result-count{color:var(--spara-ink-faint);}
+    [data-dash-theme="spara"] #tab-lista .btn-ghost{background:transparent;color:var(--spara-navy);border-color:var(--spara-navy);}
+    [data-dash-theme="spara"] #tab-lista .btn-ghost:hover{color:var(--spara-paper);background:var(--spara-navy);}
+    [data-dash-theme="spara"] #tab-lista .table-wrap{border-color:var(--spara-hairline);background:var(--spara-paper);}
     [data-dash-theme="spara"] #tab-lista table{font-family:'Source Sans Pro',sans-serif;}
-    [data-dash-theme="spara"] #tab-lista thead tr{background:var(--spara-navy);border-bottom-color:var(--spara-hairline);}
-    [data-dash-theme="spara"] #tab-lista th{color:var(--spara-on-dark-faint);font-family:'Fjalla One',sans-serif;font-weight:400;letter-spacing:.05em;}
-    [data-dash-theme="spara"] #tab-lista th:hover{color:var(--spara-on-dark);}
-    [data-dash-theme="spara"] #tab-lista th.sorted .sa{color:var(--spara-lavender);}
-    [data-dash-theme="spara"] #tab-lista td{border-bottom-color:var(--spara-hairline);}
-    [data-dash-theme="spara"] #tab-lista tr:hover td{background:var(--spara-lavender-wash);}
+    [data-dash-theme="spara"] #tab-lista thead tr{background:var(--spara-cream);border-bottom-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #tab-lista th{color:var(--spara-ink-faint);font-family:'Fjalla One',sans-serif;font-weight:400;letter-spacing:.05em;}
+    [data-dash-theme="spara"] #tab-lista th:hover{color:var(--spara-ink);}
+    [data-dash-theme="spara"] #tab-lista th.sorted .sa{color:var(--spara-lavender-deep);}
+    [data-dash-theme="spara"] #tab-lista td{border-bottom-color:var(--spara-hairline);color:var(--spara-ink-soft);}
+    [data-dash-theme="spara"] #tab-lista td.score-high{color:var(--spara-gold);}
+    [data-dash-theme="spara"] #tab-lista td.score-mid{color:var(--spara-ink-soft);}
+    [data-dash-theme="spara"] #tab-lista td.score-low{color:var(--spara-quiet);}
+    [data-dash-theme="spara"] #tab-lista tr:hover td{background:#fbfaf7;}
     [data-dash-theme="spara"] #tab-lista .loading,
-    [data-dash-theme="spara"] #tab-lista .empty{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #tab-lista .empty{color:var(--spara-ink-faint);}
     [data-dash-theme="spara"] #tab-lista .spinner{border-color:var(--spara-hairline);border-top-color:var(--spara-lavender);}
-    [data-dash-theme="spara"] #tab-lista .pagination button{background:var(--spara-charcoal);border-color:var(--spara-hairline);color:var(--spara-on-dark);}
-    [data-dash-theme="spara"] #tab-lista .pagination button:hover:not(:disabled){background:var(--spara-navy);border-color:var(--spara-lavender);}
-    [data-dash-theme="spara"] #tab-lista .pagination span{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #tab-lista .pagination button{background:var(--spara-paper);border-color:var(--spara-hairline);color:var(--spara-ink);}
+    [data-dash-theme="spara"] #tab-lista .pagination button:hover:not(:disabled){background:var(--spara-cream);border-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #tab-lista .pagination span{color:var(--spara-ink-faint);}
 
-    /* Yhteyshenkilöt-välilehti — Spara-teema (Vaihe 4). Sama rajauskaava
-       kuin Tilit-taulussa (Vaihe 3): table/th/td/.toolbar/.pagination/
-       .empty ovat samat jaetut geneeriset valitsimet joita
-       Yhteyshenkilöt-taulu käyttää identtisellä rakenteella — kaikki
-       rajattu #tab-yhteyshenkilot-ID:llä. */
+    /* Yhteyshenkilöt-välilehti — Spara-teema (korjattu). Sama rajauskaava
+       kuin Tilit-taulussa: table/th/td/.toolbar/.pagination/.empty ovat
+       samat jaetut geneeriset valitsimet joita Yhteyshenkilöt-taulu
+       käyttää identtisellä rakenteella — kaikki rajattu
+       #tab-yhteyshenkilot-ID:llä. */
     [data-dash-theme="spara"] #tab-yhteyshenkilot .toolbar input,
-    [data-dash-theme="spara"] #tab-yhteyshenkilot .toolbar select{background:var(--spara-charcoal);border-color:var(--spara-hairline);color:var(--spara-on-dark);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .toolbar select{background:var(--spara-paper);border-color:var(--spara-hairline);color:var(--spara-ink);}
     [data-dash-theme="spara"] #tab-yhteyshenkilot .toolbar input:focus,
     [data-dash-theme="spara"] #tab-yhteyshenkilot .toolbar select:focus{border-color:var(--spara-lavender);}
-    [data-dash-theme="spara"] #tab-yhteyshenkilot .result-count{color:var(--spara-on-dark-faint);}
-    [data-dash-theme="spara"] #tab-yhteyshenkilot .btn-ghost{color:var(--spara-on-dark-soft);border-color:var(--spara-hairline);}
-    [data-dash-theme="spara"] #tab-yhteyshenkilot .btn-ghost:hover{color:var(--spara-on-dark);border-color:var(--spara-lavender);}
-    [data-dash-theme="spara"] #tab-yhteyshenkilot .table-wrap{border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .result-count{color:var(--spara-ink-faint);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .btn-ghost{background:transparent;color:var(--spara-navy);border-color:var(--spara-navy);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .btn-ghost:hover{color:var(--spara-paper);background:var(--spara-navy);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .table-wrap{border-color:var(--spara-hairline);background:var(--spara-paper);}
     [data-dash-theme="spara"] #tab-yhteyshenkilot table{font-family:'Source Sans Pro',sans-serif;}
-    [data-dash-theme="spara"] #tab-yhteyshenkilot thead tr{background:var(--spara-navy);border-bottom-color:var(--spara-hairline);}
-    [data-dash-theme="spara"] #tab-yhteyshenkilot th{color:var(--spara-on-dark-faint);font-family:'Fjalla One',sans-serif;font-weight:400;letter-spacing:.05em;}
-    [data-dash-theme="spara"] #tab-yhteyshenkilot th:hover{color:var(--spara-on-dark);}
-    [data-dash-theme="spara"] #tab-yhteyshenkilot th.sorted .sa{color:var(--spara-lavender);}
-    [data-dash-theme="spara"] #tab-yhteyshenkilot td{border-bottom-color:var(--spara-hairline);}
-    [data-dash-theme="spara"] #tab-yhteyshenkilot tr:hover td{background:var(--spara-lavender-wash);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot thead tr{background:var(--spara-cream);border-bottom-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot th{color:var(--spara-ink-faint);font-family:'Fjalla One',sans-serif;font-weight:400;letter-spacing:.05em;}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot th:hover{color:var(--spara-ink);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot th.sorted .sa{color:var(--spara-lavender-deep);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot td{border-bottom-color:var(--spara-hairline);color:var(--spara-ink-soft);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot tr:hover td{background:#fbfaf7;}
     [data-dash-theme="spara"] #tab-yhteyshenkilot .loading,
-    [data-dash-theme="spara"] #tab-yhteyshenkilot .empty{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .empty{color:var(--spara-ink-faint);}
     [data-dash-theme="spara"] #tab-yhteyshenkilot .spinner{border-color:var(--spara-hairline);border-top-color:var(--spara-lavender);}
-    [data-dash-theme="spara"] #tab-yhteyshenkilot .pagination button{background:var(--spara-charcoal);border-color:var(--spara-hairline);color:var(--spara-on-dark);}
-    [data-dash-theme="spara"] #tab-yhteyshenkilot .pagination button:hover:not(:disabled){background:var(--spara-navy);border-color:var(--spara-lavender);}
-    [data-dash-theme="spara"] #tab-yhteyshenkilot .pagination span{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .pagination button{background:var(--spara-paper);border-color:var(--spara-hairline);color:var(--spara-ink);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .pagination button:hover:not(:disabled){background:var(--spara-cream);border-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #tab-yhteyshenkilot .pagination span{color:var(--spara-ink-faint);}
     /* Yhteyshenkilön oma modaali — täysin eri elementti kuin tilimodaali
-       (#modal-overlay, Vaihe 5). Kehys ID-rajattu samalla kaavalla kuin
-       hero-modal Vaihe 1:ssä. .yh-link-card/.act-item/.act-meta/.act-text
-       ovat käytössä yksinomaan tässä modaalissa (tarkistettu koko
-       tiedostosta) — turvallista teemoittaa täydestä, muu sisältö
-       (.info-grid/.cs-title, muutama pienempi inline-teksti) jätetty
-       tarkoituksella koskematta, sama harkinta kuin Tilit-taulun
-       tavallisilla soluilla Vaihe 3:ssa: sivun body{color:var(--text)}
-       ja --text2 lukevat riittävän hyvin tummaa taustaa vasten ilman
-       erillistä ylikirjoitusta. */
-    [data-dash-theme="spara"] #yhmodal-overlay .modal{background:var(--spara-charcoal);border:1px solid var(--spara-hairline);}
+       (#modal-overlay). Kehys ID-rajattu samalla kaavalla kuin
+       hero-modal. .yh-link-card/.act-item/.act-meta/.act-text ovat
+       käytössä yksinomaan tässä modaalissa (tarkistettu koko
+       tiedostosta) — turvallista teemoittaa täydestä. Loppusisällön
+       (.info-grid, pienemmät inline-tekstit) --bg3/--text2-viittaukset
+       hoituvat alempana olevalla token-turvaverkolla, EI enää
+       "perii riittävän hyvin" -oletuksella (se oletus oli virheellinen
+       inline-tyylitetyille riveille — ks. kommentti alla). */
+    [data-dash-theme="spara"] #yhmodal-overlay .modal{background:var(--spara-paper);border:1px solid var(--spara-hairline);color:var(--spara-ink);}
     [data-dash-theme="spara"] #yhmodal-overlay .modal-header{border-bottom-color:var(--spara-hairline);}
-    [data-dash-theme="spara"] #yhmodal-overlay .modal-title{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.04em;color:var(--spara-on-dark);}
-    [data-dash-theme="spara"] #yhmodal-overlay .modal-close{color:var(--spara-on-dark-faint);}
-    [data-dash-theme="spara"] #yhmodal-overlay .yh-link-card{background:var(--spara-navy);border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #yhmodal-overlay .modal-title{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.04em;color:var(--spara-navy);}
+    [data-dash-theme="spara"] #yhmodal-overlay .modal-close{color:var(--spara-ink-faint);}
+    [data-dash-theme="spara"] #yhmodal-overlay .yh-link-card{background:var(--spara-cream);border-color:var(--spara-hairline);}
     [data-dash-theme="spara"] #yhmodal-overlay .yh-link-card:hover{border-color:var(--spara-lavender);}
-    [data-dash-theme="spara"] #yhmodal-overlay .act-item{background:var(--spara-navy);border-color:var(--spara-hairline);}
-    [data-dash-theme="spara"] #yhmodal-overlay .act-meta{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #yhmodal-overlay .act-item{background:var(--spara-cream);border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #yhmodal-overlay .act-meta{color:var(--spara-ink-faint);}
 
-    /* Jaetut modaalit — Spara-teema (Vaihe 5). Sama ID-rajattu kaava
+    /* Jaetut modaalit — Spara-teema (korjattu). Sama ID-rajattu kaava
        toistettu jokaiselle modaalille kehyksen (.modal/.modal-header/
        .modal-title/.modal-close) ja lomakekentän (.form-control) osalta
        — EI koskaan paljaana, koska molemmat ovat jaettuja kymmenien
        modaalien/näkymien kanssa (mm. #settings-modal, joka pysyy
        tarkoituksella aina classic-ulkoasussa eikä ole koskaan mukana
-       näissä listoissa). #hero-modal (Vaihe 1) ja #yhmodal-overlay
-       (Vaihe 4) saivat kehyksensä jo aiemmin; #yhmodal-overlay on
-       kuitenkin mukana form-control-listassa koska sen muokkaustila
-       (yhmodal-edit) ei vielä saanut lomakekenttien teemaa Vaihe 4:ssä.
-       label/.form-grid/.form-group jätetty koskematta — pelkkä layout
-       tai jo ennalta hyvin lukuva --text2, sama harkinta kuin Tilit/
-       Yhteyshenkilöt-taulujen tavallisilla soluilla (Vaihe 3/4). */
+       näissä listoissa). .modal saa myös color:var(--spara-ink) —
+       muuten sisällön --text2-väritetyt/tyylittelemättömät osat (mm.
+       .info-label/.info-value) perisivät sivun body{color:var(--text)}:n
+       (vaalea, luotu tummalle taustalle) ja katoaisivat lähes näkymättömiin
+       nyt kun modaalin tausta on paperinvalkoinen — ei enää ongelma
+       tummalla hiili-taustalla kuten ensimmäisessä (virheellisessä)
+       toteutuksessa. */
     [data-dash-theme="spara"] #modal-overlay .modal,
     [data-dash-theme="spara"] #addtili-modal .modal,
     [data-dash-theme="spara"] #addcontact-modal .modal,
     [data-dash-theme="spara"] #addtask-modal .modal,
     [data-dash-theme="spara"] #prospecting-modal .modal,
     [data-dash-theme="spara"] #signal-monitoring-modal .modal,
-    [data-dash-theme="spara"] #email-modal .modal{background:var(--spara-charcoal);border:1px solid var(--spara-hairline);}
+    [data-dash-theme="spara"] #email-modal .modal{background:var(--spara-paper);border:1px solid var(--spara-hairline);color:var(--spara-ink);}
     [data-dash-theme="spara"] #modal-overlay .modal-header,
     [data-dash-theme="spara"] #addtili-modal .modal-header,
     [data-dash-theme="spara"] #addcontact-modal .modal-header,
     [data-dash-theme="spara"] #addtask-modal .modal-header,
     [data-dash-theme="spara"] #prospecting-modal .modal-header,
     [data-dash-theme="spara"] #signal-monitoring-modal .modal-header,
-    [data-dash-theme="spara"] #email-modal .modal-header{border-bottom-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #email-modal .modal-header{border-bottom-color:var(--spara-hairline);background:var(--spara-paper);}
     [data-dash-theme="spara"] #modal-overlay .modal-title,
     [data-dash-theme="spara"] #addtili-modal .modal-title,
     [data-dash-theme="spara"] #addcontact-modal .modal-title,
     [data-dash-theme="spara"] #addtask-modal .modal-title,
     [data-dash-theme="spara"] #prospecting-modal .modal-title,
     [data-dash-theme="spara"] #signal-monitoring-modal .modal-title,
-    [data-dash-theme="spara"] #email-modal .modal-title{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.04em;color:var(--spara-on-dark);}
+    [data-dash-theme="spara"] #email-modal .modal-title{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.04em;color:var(--spara-navy);}
     [data-dash-theme="spara"] #modal-overlay .modal-close,
     [data-dash-theme="spara"] #addtili-modal .modal-close,
     [data-dash-theme="spara"] #addcontact-modal .modal-close,
     [data-dash-theme="spara"] #addtask-modal .modal-close,
     [data-dash-theme="spara"] #prospecting-modal .modal-close,
     [data-dash-theme="spara"] #signal-monitoring-modal .modal-close,
-    [data-dash-theme="spara"] #email-modal .modal-close{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #email-modal .modal-close{color:var(--spara-ink-faint);}
     [data-dash-theme="spara"] #modal-overlay .form-control,
     [data-dash-theme="spara"] #addtili-modal .form-control,
     [data-dash-theme="spara"] #addcontact-modal .form-control,
@@ -324,17 +327,102 @@
     [data-dash-theme="spara"] #prospecting-modal .form-control,
     [data-dash-theme="spara"] #signal-monitoring-modal .form-control,
     [data-dash-theme="spara"] #email-modal .form-control,
-    [data-dash-theme="spara"] #yhmodal-overlay .form-control{background:var(--spara-navy);border-color:var(--spara-hairline);color:var(--spara-on-dark);}
+    [data-dash-theme="spara"] #yhmodal-overlay .form-control{background:var(--spara-cream);border-color:var(--spara-hairline);color:var(--spara-ink);}
     /* #modal-overlay:in oma sisäinen välilehtipalkki (.mtabs/.mtab) ja
        tehtävätyyppipainikkeet (.task-type-btn) — molemmat käytössä
        yksinomaan tässä modaalissa (tarkistettu koko tiedostosta). */
     [data-dash-theme="spara"] #modal-overlay .mtabs{border-bottom-color:var(--spara-hairline);}
-    [data-dash-theme="spara"] #modal-overlay .mtab{color:var(--spara-on-dark-faint);}
-    [data-dash-theme="spara"] #modal-overlay .mtab:hover{color:var(--spara-on-dark);}
-    [data-dash-theme="spara"] #modal-overlay .mtab.active{color:var(--spara-lavender);border-bottom-color:var(--spara-lavender);}
-    [data-dash-theme="spara"] #modal-overlay .task-type-btn{background:var(--spara-navy);border-color:var(--spara-hairline);color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #modal-overlay .mtab{color:var(--spara-ink-faint);}
+    [data-dash-theme="spara"] #modal-overlay .mtab:hover{color:var(--spara-ink);}
+    [data-dash-theme="spara"] #modal-overlay .mtab.active{color:var(--spara-navy);border-bottom-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #modal-overlay .task-type-btn{background:var(--spara-cream);border-color:var(--spara-hairline);color:var(--spara-ink-faint);}
     [data-dash-theme="spara"] #modal-overlay .task-type-btn:hover,
-    [data-dash-theme="spara"] #modal-overlay .task-type-btn.active{border-color:var(--spara-lavender);color:var(--spara-on-dark);background:var(--spara-navy);}
+    [data-dash-theme="spara"] #modal-overlay .task-type-btn.active{border-color:var(--spara-lavender);color:var(--spara-ink);background:var(--spara-cream);}
+    /* .task-add-form-box/.task-card olivat aiemmin inline- tai
+       classic-luokkatyylitettyjä (--bg3) — tumma laatikko jäi näkyviin
+       valkoisen modaalin sisään ensimmäisessä (virheellisessä)
+       toteutuksessa koska inline-tyyli ei koskaan noussut esiin CSS:n
+       kautta. .task-add-form-box muutettu luokaksi juuri tätä varten. */
+    [data-dash-theme="spara"] #modal-overlay .task-add-form-box{background:var(--spara-cream);border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #modal-overlay .task-card{background:var(--spara-cream);border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #modal-overlay .task-card-type{color:var(--spara-ink-faint);}
+    /* .info-block/.info-label/.info-value/.info-grid — käytössä VAIN
+       #modal-overlay:in Tiedot-välilehdellä ja #yhmodal-overlay:in
+       tiedonäytössä (tarkistettu koko tiedostosta, EI Asetuksissa) —
+       turvallista teemoittaa ilman ID-rajausta, jaetaan molempien
+       modaalien kesken. */
+    [data-dash-theme="spara"] .info-label{color:var(--spara-ink-faint);}
+    [data-dash-theme="spara"] .info-value{color:var(--spara-ink);}
+    /* .p-A/.p-B (Prioriteetti-kentän pieni badge) — ainoa käyttö
+       #modal-overlay:in info-gridissä. A-prioriteetti on nimenomaisesti
+       lavender väriopin mukaan ("lavender = prioriteetti"), B neutraali. */
+    [data-dash-theme="spara"] #modal-overlay .p-A{background:var(--spara-lavender-wash);color:var(--spara-lavender-deep);}
+    [data-dash-theme="spara"] #modal-overlay .p-B{background:var(--spara-cream);color:var(--spara-ink-faint);}
+    /* .timeline-*, #tili-status-bar, .yh-item/.yh-add-form ovat
+       #modal-overlay:in rikkaan Historia-aikajanan ja upotetun
+       Yhteyshenkilöt-alavälilehden (renderContactsInTiedot) käytössä.
+       .yh-item/.yh-add-form ovat KUITENKIN myös Asetusten Projektit/
+       Sähköpostimallit-osioiden käytössä (tarkistettu) — siksi ID-rajattu
+       #modal-overlay:iin, EI koskaan paljaana. */
+    [data-dash-theme="spara"] #modal-overlay .timeline-card{background:var(--spara-cream);border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #modal-overlay .timeline-card-head{color:var(--spara-ink);}
+    [data-dash-theme="spara"] #modal-overlay .timeline-card-meta{color:var(--spara-ink-faint);}
+    [data-dash-theme="spara"] #modal-overlay .timeline-card-body{border-top-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #modal-overlay .timeline-avatar{background:var(--spara-lavender-wash);border-color:var(--spara-hairline);color:var(--spara-lavender-deep);}
+    [data-dash-theme="spara"] #modal-overlay .timeline-group{background:var(--spara-paper);color:var(--spara-ink-faint);}
+    [data-dash-theme="spara"] #tili-status-bar{background:var(--spara-cream);border-bottom-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #tili-status-bar span{color:var(--spara-ink-faint);}
+    [data-dash-theme="spara"] #modal-overlay .yh-item{background:var(--spara-cream);border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #modal-overlay .yh-item:hover{border-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #modal-overlay .yh-item-name{color:var(--spara-ink);}
+    [data-dash-theme="spara"] #modal-overlay .yh-add-form{background:var(--spara-cream);border-color:var(--spara-hairline);}
+    /* PRH-hakulaatikko (addtili-modal) ja liitteet/AI-avaus-vaihtoehdot
+       (email-modal) — molemmat inline- tai luokkatyylitettyjä --bg3:lla,
+       sama korjauskaava. */
+    [data-dash-theme="spara"] #addtili-modal .ytj-search-box{background:var(--spara-cream);border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #email-modal .ai-opener-option{background:var(--spara-cream);border-color:var(--spara-hairline);color:var(--spara-ink);}
+    [data-dash-theme="spara"] #email-modal .email-attachment-chip{background:var(--spara-cream);border-color:var(--spara-hairline);}
+    /* Turvaverkko: kymmenet jaettujen modaalien rivit (tehtävälistat,
+       historia-yhteenvedot, prospektoinnin/signaaliseurannan tilastot,
+       yhteystietokortit, tili-status-rivi) kirjoittavat toissijaisen
+       tekstin/taustan SUORAAN inline-tyylinä (style="color:var(--text2)"
+       tms.) ilman omaa luokkaa — yksittäinen CSS-sääntö ei voi koskaan
+       voittaa inline-tyyliä spesifisyydellä. CSS-muuttujat kuitenkin
+       ratkeavat perinnän kautta riippumatta SIITÄ MISSÄ var()-viittaus
+       kirjoitetaan (inline vai tyylilehti) — siksi näiden peruskielen
+       tokenien uudelleenmäärittely tässä, rajattuna vain näihin
+       modaaleihin (ei koskaan #settings-modal, joka ei ole minkään
+       näistä jälkeläinen eikä päinvastoin), korjaa jokaisen inline-
+       tapauksen kerralla sen sijaan että jokainen pitäisi jäljittää ja
+       luokittaa erikseen. --accent vastaa mockupin :focus/:hover-
+       lavender-käytäntöä (ei enää vihreä egenoletus). */
+    [data-dash-theme="spara"] #modal-overlay,
+    [data-dash-theme="spara"] #yhmodal-overlay,
+    [data-dash-theme="spara"] #hero-modal,
+    [data-dash-theme="spara"] #addtili-modal,
+    [data-dash-theme="spara"] #addcontact-modal,
+    [data-dash-theme="spara"] #addtask-modal,
+    [data-dash-theme="spara"] #prospecting-modal,
+    [data-dash-theme="spara"] #signal-monitoring-modal,
+    [data-dash-theme="spara"] #email-modal {
+      --bg2:var(--spara-paper); --bg3:var(--spara-cream); --bg4:var(--spara-lavender-wash);
+      --text:var(--spara-ink); --text2:var(--spara-ink-faint); --border:var(--spara-hairline);
+      --accent:var(--spara-lavender);
+    }
+    /* .btn-primary käyttäisi yllä olevaa --accent:ia täyttönä
+       (background:var(--accent);color:#fff) — lavender on tarkoitettu
+       ohuille focus/hover-reunoille, ei suurille täytetyille napeille
+       (kontrasti valkoisella tekstillä jäisi heikoksi). Tallenna/Lisää/
+       Aloita-painikkeet joka modaalissa saavat siis oman, navy-täyttöisen
+       ylikirjoituksen — sama väri jota ghost-napin hover-tila jo käyttää. */
+    [data-dash-theme="spara"] #modal-overlay .btn-primary,
+    [data-dash-theme="spara"] #yhmodal-overlay .btn-primary,
+    [data-dash-theme="spara"] #addtili-modal .btn-primary,
+    [data-dash-theme="spara"] #addcontact-modal .btn-primary,
+    [data-dash-theme="spara"] #addtask-modal .btn-primary,
+    [data-dash-theme="spara"] #prospecting-modal .btn-primary,
+    [data-dash-theme="spara"] #signal-monitoring-modal .btn-primary,
+    [data-dash-theme="spara"] #email-modal .btn-primary{background:var(--spara-navy);color:var(--spara-on-dark);}
 
     /* Kanban */
     .kanban{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;}
@@ -351,22 +439,26 @@
     .kc-prio{display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:4px;vertical-align:middle;}
     .dot-A{background:var(--red);} .dot-B{background:var(--orange);}
 
-    /* Kanban — Spara-teema (Vaihe 2). Jokainen kanban-, kcard-, kc- ja
+    /* Kanban — Spara-teema (korjattu). Jokainen kanban-, kcard-, kc- ja
        dot-alkuinen luokka on käytössä yksinomaan Kanban-välilehdellä
        (tarkistettu koko tiedostosta) — turvallista rajata suoraan
-       attribuuttivalitsimella ilman erillistä #tab-kanban-ID:tä. */
-    [data-dash-theme="spara"] .kanban-col{background:var(--spara-charcoal);border-color:var(--spara-hairline);}
+       attribuuttivalitsimella ilman erillistä #tab-kanban-ID:tä.
+       Pylväiden otsikot EIVÄT enää saa omaa väriään vaiheittain (se oli
+       virhe, ei koskaan hyväksytty) — kaikki sama ink-soft, järjestys
+       viestii vaiheen, sama logiikka kuin suppilossa jossa vain
+       "Ei juuri nyt" erottuu muista. */
+    [data-dash-theme="spara"] .kanban-col{background:var(--spara-paper);border-color:var(--spara-hairline);}
     [data-dash-theme="spara"] .kanban-header{border-bottom-color:var(--spara-hairline);}
-    [data-dash-theme="spara"] .kanban-title{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.04em;font-size:11px;}
-    [data-dash-theme="spara"] .kanban-cnt{background:var(--spara-navy);color:var(--spara-on-dark-soft);}
+    [data-dash-theme="spara"] .kanban-title{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.04em;font-size:11px;color:var(--spara-ink-soft);}
+    [data-dash-theme="spara"] .kanban-cnt{background:var(--spara-cream);color:var(--spara-ink-faint);}
     [data-dash-theme="spara"] .kanban-body.drop-hover{background:var(--spara-lavender-wash);outline-color:var(--spara-lavender);}
-    [data-dash-theme="spara"] .kcard{background:var(--spara-navy);border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] .kcard{background:var(--spara-paper);border-color:var(--spara-hairline);}
     [data-dash-theme="spara"] .kcard:hover{border-color:var(--spara-lavender);}
-    [data-dash-theme="spara"] .kc-name{color:var(--spara-on-dark);font-family:'Source Sans Pro',sans-serif;}
-    [data-dash-theme="spara"] .kc-meta{color:var(--spara-on-dark-faint);}
-    [data-dash-theme="spara"] .dot-A{background:var(--spara-gold);}
-    [data-dash-theme="spara"] .dot-B{background:var(--spara-on-dark-faint);}
-    [data-dash-theme="spara"] .spara-kanban-empty{font-family:'Source Sans Pro',sans-serif;font-size:11px;color:var(--spara-on-dark-faint);text-align:center;padding:12px;}
+    [data-dash-theme="spara"] .kc-name{color:var(--spara-ink);font-family:'Source Sans Pro',sans-serif;}
+    [data-dash-theme="spara"] .kc-meta{color:var(--spara-ink-faint);}
+    [data-dash-theme="spara"] .dot-A{background:var(--spara-lavender-deep);}
+    [data-dash-theme="spara"] .dot-B{background:var(--spara-ink-faint);}
+    [data-dash-theme="spara"] .spara-kanban-empty{font-family:'Source Sans Pro',sans-serif;font-size:11px;color:var(--spara-ink-faint);text-align:center;padding:12px;}
 
     /* Modal */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;}
@@ -450,6 +542,8 @@
     .task-type-btn:hover,.task-type-btn.active{border-color:var(--accent);color:var(--text);background:var(--bg4);}
     .task-cards{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px;}
     @media(max-width:520px){.task-cards{grid-template-columns:1fr;}}
+    .task-add-form-box{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:14px;}
+    .ytj-search-box{background:var(--bg3);border:1px solid var(--border);}
     .task-card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;transition:opacity .15s;}
     .task-card.done-card{opacity:.38;}
     .task-card-hdr{display:flex;align-items:center;gap:5px;margin-bottom:5px;}
@@ -512,36 +606,50 @@
     .yh-link-card:hover{border-color:var(--accent);}
     .source-badge{display:inline-block;font-size:9px;background:var(--bg4);color:var(--text2);padding:1px 6px;border-radius:8px;vertical-align:middle;margin-left:5px;}
 
-    /* ── Spara-teema (Vaihe 1: hero + Dashboard-välilehti) ──────────────────
-       Erilliset --spara-*-tokenit, EI KOSKAAN olemassa olevien --bg/--accent/
-       --text/--red/--orange/--green/--blue/--purple/--yellow -tokenien
-       uudelleenmäärittelyä missään [data-dash-theme="spara"] -lohkossa —
-       ne valuisivat koko sovellukseen (125+ käyttöä), eivät vain tähän
-       teemaan. Koko Spara-teema pysyy tarkoituksella tummana (ei Cream-
-       taustaa millään pinnalla) jotta siirtymä Kanban/Tilit/Yhteyshenkilöt-
-       välilehdille (jotka eivät vielä ole Spara-teemattu) ei väläytä
-       vaalea→tumma joka klikkauksella ennen kuin loputkin vaiheet on
-       mergetty. */
+    /* ── Spara-teema (korjattu revisio) ──────────────────────────────────
+       Alkuperäinen hyväksytty mockup (erillinen /ui-ux-pro-konsepti) käyttää
+       KEVYTTÄ kermanvalkoista sisältöaluetta tumman navy/indigo-heron alla —
+       vaaleat kortit, valkoiset paneelit. Ensimmäinen toteutus tähän
+       tiedostoon (Vaiheet 1-5) käytti virheellisesti KAUTTALINJAISESTI
+       TUMMAA hiili-paneelia joka pinnalla — yksipuolinen päätös jota
+       käyttäjä ei koskaan hyväksynyt, ja jonka takia Kanban/Tilit/
+       Yhteyshenkilöt/modaalit saivat keksityn, keskenään sopimattoman
+       oman tumma-paletin. Tämä revisio korjaa koko teeman vastaamaan
+       mockuppia: hero pysyy tummana (navy/indigo, ennallaan), KAIKKI muu
+       sisältö (Dashboard/Kanban/Tilit/Yhteyshenkilöt/modaalit) on nyt
+       vaalea paperi kermanvalkoisella pohjalla, ja koko sovelluksessa on
+       vain KAKSI aksenttiväriä: kulta = kiireellisyys/huomio, lavendeli =
+       prioriteetti/eteneminen. EI yhtä väriä per pipeline-vaihe tai
+       projekti — järjestys/sijainti viestii, ei väri.
+       EI KOSKAAN olemassa olevien --bg/--accent/--text/--red/--orange/
+       --green/--blue/--purple/--yellow -tokenien uudelleenmäärittelyä
+       missään [data-dash-theme="spara"] -lohkossa — ne valuisivat koko
+       sovellukseen (125+ käyttöä), eivät vain tähän teemaan. */
     :root {
-      --spara-navy:#191970; --spara-indigo:#100145; --spara-charcoal:#161616;
-      --spara-cream:#FAF9F5; --spara-near-black:#0A0A0A;
-      --spara-lavender:#9E9AC2; --spara-lavender-deep:#6f6a97; --spara-lavender-wash:rgba(158,154,194,.16);
-      --spara-gold:#a97a34; --spara-gold-light:#e0bd85; --spara-quiet:#4a4560;
+      --spara-navy:#191970; --spara-indigo:#100145;
+      --spara-cream:#FAF9F5; --spara-paper:#ffffff;
+      --spara-ink:#14121f; --spara-ink-soft:#55506c; --spara-ink-faint:#8b86a0;
+      --spara-hairline:#e6e1ee; --spara-hairline-dark:rgba(245,243,251,.14);
+      --spara-lavender:#9E9AC2; --spara-lavender-deep:#6f6a97; --spara-lavender-wash:#edeaf5;
+      --spara-gold:#a97a34; --spara-gold-wash:#f2e6cf; --spara-gold-light:#e0bd85;
+      --spara-quiet:#a9a4bb;
       --spara-on-dark:#f5f3fb; --spara-on-dark-soft:#c7c2dc; --spara-on-dark-faint:#8d87ab;
-      --spara-hairline:rgba(245,243,251,.14);
     }
     .spara-display{font-family:'Fjalla One',sans-serif;font-weight:400;}
 
-    /* Hero */
-    [data-dash-theme="spara"] #hero-area{background:linear-gradient(180deg,var(--spara-indigo) 0%,var(--spara-navy) 100%);padding:0;border-bottom:1px solid var(--spara-hairline);display:block;}
-    .spara-hero-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:1px;background:var(--spara-hairline);}
+    /* Hero — koskematon paitsi --spara-hairline → --spara-hairline-dark,
+       koska hairline-tokenin merkitys muuttui yllä (nyt vaalean pinnan
+       reunaväri) mutta hero pysyy tummana ja tarvitsee oman tumman
+       jakoviivavärinsä. */
+    [data-dash-theme="spara"] #hero-area{background:linear-gradient(180deg,var(--spara-indigo) 0%,var(--spara-navy) 100%);padding:0;border-bottom:1px solid var(--spara-hairline-dark);display:block;}
+    .spara-hero-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:1px;background:var(--spara-hairline-dark);}
     @media(max-width:860px){.spara-hero-grid{grid-template-columns:1fr;}}
     .spara-hero-featured{background:var(--spara-indigo);padding:26px 28px;cursor:pointer;transition:background .15s;font-family:'Source Sans Pro',sans-serif;color:var(--spara-on-dark);}
     .spara-hero-featured:hover{background:#170a5c;}
     .spara-hero-eyebrow{font-family:'Fjalla One',sans-serif;text-transform:uppercase;letter-spacing:.1em;font-size:11px;color:var(--spara-gold-light);}
     .spara-hero-num{font-family:'Fjalla One',sans-serif;font-size:52px;line-height:.95;color:#fff;margin-top:8px;}
     .spara-hero-sub{margin-top:8px;font-size:13px;color:var(--spara-on-dark-soft);max-width:38ch;}
-    .spara-hero-mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--spara-hairline);}
+    .spara-hero-mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--spara-hairline-dark);}
     .spara-hero-mini{background:var(--spara-navy);padding:16px 18px;cursor:pointer;transition:background .15s;display:flex;flex-direction:column;gap:7px;}
     .spara-hero-mini:hover{background:#201f80;}
     .spara-hero-mini-icon{color:var(--spara-on-dark-soft);}
@@ -554,58 +662,70 @@
       .spara-hero-num{font-size:38px;}
     }
 
+    /* Jaettu välilehtikuori (uusi tässä revisiossa) — .tabs/.tab ovat
+       käytössä yksinomaan tässä yhdessä globaalissa välilehtipalkissa
+       (ei sekoiteta tilimodaalin omaan .mtabs/.mtab-pariin). main on
+       ainoa sisältöalueen kääre koko tiedostossa — sen kermanvalkoinen
+       tausta ulottuu automaattisesti kaikkiin neljään välilehteen. */
+    [data-dash-theme="spara"] main{background:var(--spara-cream);}
+    [data-dash-theme="spara"] .tabs{background:var(--spara-paper);border-bottom-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] .tab{color:var(--spara-ink-faint);}
+    [data-dash-theme="spara"] .tab:hover{color:var(--spara-ink);}
+    [data-dash-theme="spara"] .tab.active{color:var(--spara-navy);border-bottom-color:var(--spara-lavender);}
+
     /* Dashboard-välilehti */
     #dash-body{font-family:inherit;}
     [data-dash-theme="spara"] #dash-body{font-family:'Source Sans Pro',sans-serif;}
-    .spara-kpi-row{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-charcoal);overflow:hidden;margin-bottom:20px;}
+    .spara-kpi-row{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-paper);overflow:hidden;margin-bottom:20px;}
     @media(max-width:720px){.spara-kpi-row{grid-template-columns:1fr 1fr;}}
     .spara-kpi-cell{padding:16px 20px;border-right:1px solid var(--spara-hairline);}
     .spara-kpi-cell:last-child{border-right:none;}
-    .spara-kpi-eyebrow{font-family:'Fjalla One',sans-serif;text-transform:uppercase;letter-spacing:.08em;font-size:10px;color:var(--spara-on-dark-faint);}
-    .spara-kpi-num{font-family:'Fjalla One',sans-serif;font-size:22px;color:var(--spara-on-dark);margin-top:6px;}
-    .spara-kpi-num.is-quiet{color:var(--spara-on-dark-faint);}
-    .spara-kpi-sub{font-size:11.5px;color:var(--spara-on-dark-faint);margin-top:3px;}
-    .spara-section-title{font-family:'Fjalla One',sans-serif;text-transform:uppercase;letter-spacing:.05em;font-size:14px;color:var(--spara-on-dark);margin-bottom:14px;}
-    .spara-funnel{border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-charcoal);margin-bottom:24px;}
+    .spara-kpi-eyebrow{font-family:'Fjalla One',sans-serif;text-transform:uppercase;letter-spacing:.08em;font-size:10px;color:var(--spara-ink-faint);}
+    .spara-kpi-num{font-family:'Fjalla One',sans-serif;font-size:22px;color:var(--spara-navy);margin-top:6px;}
+    .spara-kpi-num.is-quiet{color:var(--spara-quiet);}
+    .spara-kpi-sub{font-size:11.5px;color:var(--spara-ink-faint);margin-top:3px;}
+    .spara-section-title{font-family:'Fjalla One',sans-serif;text-transform:uppercase;letter-spacing:.05em;font-size:14px;color:var(--spara-navy);margin-bottom:14px;}
+    .spara-funnel{border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-paper);margin-bottom:24px;}
     .spara-funnel-row{display:grid;grid-template-columns:140px 1fr 90px 130px;align-items:center;gap:14px;padding:11px 18px;border-bottom:1px solid var(--spara-hairline);}
     .spara-funnel-row:last-child{border-bottom:none;}
     .spara-funnel-row.is-lost{opacity:.6;}
     @media(max-width:720px){.spara-funnel-row{grid-template-columns:100px 1fr 70px;}.spara-funnel-row>div:nth-child(4){display:none;}}
-    .spara-funnel-name{font-size:12.5px;font-weight:600;color:var(--spara-on-dark);}
-    .spara-funnel-name .n{color:var(--spara-on-dark-faint);font-weight:400;margin-left:5px;}
+    .spara-funnel-name{font-size:12.5px;font-weight:600;color:var(--spara-ink);}
+    .spara-funnel-name .n{color:var(--spara-ink-faint);font-weight:400;margin-left:5px;}
     .spara-funnel-track{height:7px;background:var(--spara-lavender-wash);border-radius:4px;overflow:hidden;}
-    .spara-funnel-fill{height:100%;background:var(--spara-lavender);border-radius:4px;}
+    .spara-funnel-fill{height:100%;background:var(--spara-lavender-deep);border-radius:4px;}
     .spara-funnel-fill.is-lost{background:var(--spara-quiet);}
-    .spara-funnel-count{font-family:'Fjalla One',sans-serif;font-size:15px;color:var(--spara-on-dark);text-align:right;}
-    .spara-funnel-forecast{font-size:11px;color:var(--spara-on-dark-faint);text-align:right;}
-    .spara-funnel-forecast strong{color:var(--spara-on-dark-soft);font-weight:600;}
+    .spara-funnel-count{font-family:'Fjalla One',sans-serif;font-size:15px;color:var(--spara-navy);text-align:right;}
+    .spara-funnel-forecast{font-size:11px;color:var(--spara-ink-faint);text-align:right;}
+    .spara-funnel-forecast strong{color:var(--spara-ink-soft);font-weight:600;}
     .spara-dash-split{display:grid;grid-template-columns:1.35fr 1fr;gap:20px;}
     @media(max-width:860px){.spara-dash-split{grid-template-columns:1fr;}}
-    .spara-dash-panel{border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-charcoal);}
+    .spara-dash-panel{border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-paper);}
     .spara-dash-panel-head{padding:14px 18px;border-bottom:1px solid var(--spara-hairline);display:flex;align-items:baseline;justify-content:space-between;}
-    .spara-dash-panel-head h3{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.05em;font-size:12px;color:var(--spara-on-dark);margin:0;}
-    .spara-dash-panel-note{font-size:11px;color:var(--spara-on-dark-faint);}
+    .spara-dash-panel-head h3{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.05em;font-size:12px;color:var(--spara-navy);margin:0;}
+    .spara-dash-panel-note{font-size:11px;color:var(--spara-ink-faint);}
     .spara-proj-row{display:flex;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid var(--spara-hairline);}
     .spara-proj-row:last-child{border-bottom:none;}
-    .spara-proj-name{font-size:12px;font-weight:600;width:140px;flex:0 0 auto;color:var(--spara-on-dark);}
+    .spara-proj-name{font-size:12px;font-weight:600;width:140px;flex:0 0 auto;color:var(--spara-ink);}
     .spara-proj-track{flex:1;height:6px;background:var(--spara-hairline);border-radius:4px;overflow:hidden;display:flex;}
-    .spara-proj-count{font-family:'Fjalla One',sans-serif;font-size:12px;color:var(--spara-on-dark-soft);width:26px;text-align:right;}
+    .spara-proj-fill{height:100%;background:var(--spara-lavender-deep);border-radius:4px;}
+    .spara-proj-count{font-family:'Fjalla One',sans-serif;font-size:12px;color:var(--spara-ink-soft);width:26px;text-align:right;}
     /* dash-item on jaettu Dashboardin "Seuraavat toimenpiteet"-listan JA
        hero-modalin kolmen näkymän (signaalit/tehtävät/prospektit) kesken —
        tarkistettu ettei sitä käytetä muualla, turvallinen rajata tässä. */
     [data-dash-theme="spara"] .dash-item{border-bottom-color:var(--spara-hairline);}
     [data-dash-theme="spara"] .dash-item:hover{opacity:.85;}
-    [data-dash-theme="spara"] .dash-item-date{color:var(--spara-lavender);font-family:'Fjalla One',sans-serif;font-weight:400;}
-    [data-dash-theme="spara"] .dash-item-name{color:var(--spara-on-dark);font-family:'Source Sans Pro',sans-serif;}
-    [data-dash-theme="spara"] .dash-item-task{color:var(--spara-on-dark-faint);}
-    .spara-pill{display:inline-flex;align-items:center;font-size:10px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;padding:2px 7px;border-radius:9px;margin-top:5px;background:rgba(169,122,52,.22);color:var(--spara-gold-light);}
+    [data-dash-theme="spara"] .dash-item-date{color:var(--spara-ink-soft);font-family:'Fjalla One',sans-serif;font-weight:400;}
+    [data-dash-theme="spara"] .dash-item-name{color:var(--spara-ink);font-family:'Source Sans Pro',sans-serif;}
+    [data-dash-theme="spara"] .dash-item-task{color:var(--spara-ink-faint);}
+    .spara-pill{display:inline-flex;align-items:center;font-size:10px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;padding:2px 7px;border-radius:9px;margin-top:5px;background:var(--spara-gold-wash);color:var(--spara-gold);}
     /* Hero-modal saa Spara-kehyksen kun teema aktiivinen — ID-rajattu koska
        #hero-modal jakaa .modal/.modal-header/.modal-title-luokat 9 muun
        modaalin kanssa koko tiedostossa. */
-    [data-dash-theme="spara"] #hero-modal .modal{background:var(--spara-charcoal);border:1px solid var(--spara-hairline);}
+    [data-dash-theme="spara"] #hero-modal .modal{background:var(--spara-paper);border:1px solid var(--spara-hairline);color:var(--spara-ink);}
     [data-dash-theme="spara"] #hero-modal .modal-header{border-bottom-color:var(--spara-hairline);}
-    [data-dash-theme="spara"] #hero-modal .modal-title{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.04em;color:var(--spara-on-dark);}
-    [data-dash-theme="spara"] #hero-modal .modal-close{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #hero-modal .modal-title{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.04em;color:var(--spara-navy);}
+    [data-dash-theme="spara"] #hero-modal .modal-close{color:var(--spara-ink-faint);}
   </style>
 </head>
 <body>
@@ -822,7 +942,7 @@
           <button class="task-type-btn" data-type="muu" onclick="openTaskForm('muu')">📝 Muu</button>
         </div>
         <!-- Lomake – näkyy vasta tyypin valinnan jälkeen -->
-        <div id="task-add-form" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:14px">
+        <div id="task-add-form" class="task-add-form-box" style="display:none">
           <div id="task-form-label" style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
             <select class="form-control" id="task-tila" style="grid-column:1/-1"></select>
@@ -891,7 +1011,7 @@
     </div>
     <div class="modal-body">
       <!-- PRH search -->
-      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px;position:relative">
+      <div class="ytj-search-box" style="border-radius:var(--radius);padding:14px;margin-bottom:14px;position:relative">
         <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Hae yritystiedot PRH:n avoimesta rekisteristä (avoindata.prh.fi)</div>
         <div class="ytj-row">
           <input type="text" class="form-control" id="addtili-ytj-input" placeholder="Y-tunnus tai yrityksen nimi" autocomplete="off"
@@ -1052,7 +1172,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-04.6';
+const BUILD_ID = '2026-08-04.8';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2691,18 +2811,18 @@ function tableRowHtml(p) {
 }
 // Sama rakenne ja sarakkeet kuin tableRowHtml():ssä — vain rivin
 // toissijaisen tekstin inline-väri (ei luokka, joten CSS ei riitä) on
-// vaihdettu --text2:sta --spara-on-dark-faintiin.
+// vaihdettu --text2:sta --spara-ink-faintiin.
 function tableRowSparaHtml(p) {
   return `
     <tr onclick="openModal('${p.spara_id}')">
       <td class="${arvosanaClass(calcArvosana(p))}">${calcArvosana(p)??'–'}</td>
       <td title="${esc(p.yritys_nimi)}"><strong>${esc(p.yritys_nimi)}</strong></td>
-      <td style="color:var(--spara-on-dark-faint)">${esc(p.segmentti)}</td>
+      <td style="color:var(--spara-ink-faint)">${esc(p.segmentti)}</td>
       <td>${esc(p.kaupunki)}</td>
-      <td style="color:var(--spara-on-dark-faint)">${esc(p['yhteyshenkilö'])}</td>
-      <td style="color:var(--spara-on-dark-faint);font-size:11px">${esc(p.kulutusarvio_mwh)}</td>
-      <td style="color:var(--spara-on-dark-faint);font-size:11px">${kampBadge(p.kampanja)}</td>
-      <td style="color:var(--spara-on-dark-faint);font-size:11px">${fmtDateShort(p.created_at)}</td>
+      <td style="color:var(--spara-ink-faint)">${esc(p['yhteyshenkilö'])}</td>
+      <td style="color:var(--spara-ink-faint);font-size:11px">${esc(p.kulutusarvio_mwh)}</td>
+      <td style="color:var(--spara-ink-faint);font-size:11px">${kampBadge(p.kampanja)}</td>
+      <td style="color:var(--spara-ink-faint);font-size:11px">${fmtDateShort(p.created_at)}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openModal('${p.spara_id}')">Avaa</button></td>
     </tr>`;
 }
@@ -2777,17 +2897,17 @@ function yhRowHtml(c) {
     </tr>`;
 }
 // Sama rakenne kuin yhRowHtml():ssä — vain toissijaisen tekstin
-// inline-väri vaihdettu --text2:sta --spara-on-dark-faintiin, sama syy
-// kuin tableRowSparaHtml():ssa (Vaihe 3).
+// inline-väri vaihdettu --text2:sta --spara-ink-faintiin, sama syy
+// kuin tableRowSparaHtml():ssa.
 function yhRowSparaHtml(c) {
   const p=allProspects.find(x=>x.spara_id===c.tili_id);
   return `<tr onclick="openYhModal('${c.id}')">
       <td><strong>${esc(c.nimi)}</strong></td>
-      <td style="color:var(--spara-on-dark-faint)">${esc(c.titteli)}</td>
-      <td style="color:var(--spara-on-dark-faint);font-size:11px">${p?esc(p.yritys_nimi):'–'}</td>
-      <td style="color:var(--spara-on-dark-faint);font-size:11px">${esc(c.puhelin)}</td>
-      <td style="color:var(--spara-on-dark-faint);font-size:11px">${esc(c.sahkoposti)}</td>
-      <td style="color:var(--spara-on-dark-faint);font-size:11px">${fmtDateShort(c.created_at)}</td>
+      <td style="color:var(--spara-ink-faint)">${esc(c.titteli)}</td>
+      <td style="color:var(--spara-ink-faint);font-size:11px">${p?esc(p.yritys_nimi):'–'}</td>
+      <td style="color:var(--spara-ink-faint);font-size:11px">${esc(c.puhelin)}</td>
+      <td style="color:var(--spara-ink-faint);font-size:11px">${esc(c.sahkoposti)}</td>
+      <td style="color:var(--spara-ink-faint);font-size:11px">${fmtDateShort(c.created_at)}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openYhModal('${c.id}')">Avaa</button></td>
     </tr>`;
 }
@@ -2815,10 +2935,10 @@ function changeYhPage(d) { yhPage+=d; renderYhTable(); }
 const VAIHEET=['Kontaktoi','Selvitä tarve','Sovi tapaaminen','Tarjous työn alla','Sopimus syntynyt','Ei juuri nyt'];
 const VAIHE_LEGACY={'Liidi':'Kontaktoi','Mahdollisuus':'Selvitä tarve','Tapaaminen':'Sovi tapaaminen','Tarjous':'Tarjous työn alla','Päätös odottaa':'Tarjous työn alla','Sopimus':'Sopimus syntynyt','Voitettu':'Sopimus syntynyt','Hävitty':'Ei juuri nyt'};
 const V_COLORS={'Kontaktoi':'var(--blue)','Selvitä tarve':'var(--orange)','Sovi tapaaminen':'var(--purple)','Tarjous työn alla':'var(--yellow)','Sopimus syntynyt':'var(--green)','Ei juuri nyt':'var(--red)'};
-// Erillinen väripaletti Spara-teemalle — EI KOSKAAN sama olio kuin
-// V_COLORS. kanbanColHtml()/pipelineBoxesHtml() käyttävät V_COLORSia,
-// kanbanColSparaHtml()/pipelineFunnelHtml() tätä samaa V_COLORS_SPARAa.
-const V_COLORS_SPARA={'Kontaktoi':'var(--spara-on-dark-faint)','Selvitä tarve':'var(--spara-lavender-deep)','Sovi tapaaminen':'var(--spara-lavender)','Tarjous työn alla':'var(--spara-gold)','Sopimus syntynyt':'var(--spara-gold-light)','Ei juuri nyt':'var(--spara-quiet)'};
+// Spara-teemalla EI ole omaa väripalettia vaiheittain (V_COLORS_SPARA
+// poistettu tässä korjauksessa) — pylväiden/suppilon värit eivät enää
+// vaihtele vaiheittain, vain "Ei juuri nyt" erottuu muista (harmaana).
+// Katso Kanban-CSS-lohkon ja projectDistributionHtml():n kommentit.
 const VAIHE_TN={'Kontaktoi':.05,'Selvitä tarve':.20,'Sovi tapaaminen':.40,'Tarjous työn alla':.60,'Sopimus syntynyt':1,'Ei juuri nyt':0};
 // Vaiheet joissa kauppa on vielä auki (ei voitettu eikä hävitty) — sama
 // määritelmä jota "Avoin putki"-KPI (renderDashboard) ja seuraavien
@@ -2940,15 +3060,18 @@ function kanbanCardSparaHtml(k) {
   const arvo=Number(task.arvo)||0;
   return `<div class="kcard" draggable="true" data-sid="${p.spara_id}" data-task-id="${task.id}" onclick="openKauppa('${p.spara_id}','${task.id}')">
         <div class="kc-name"><span class="kc-prio dot-${p.prioriteetti||'B'}"></span>${esc(p.yritys_nimi)} – ${esc(task.aihe||'–')}</div>
-        <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--spara-lavender);font-weight:700">${fmtEur(arvo)}</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
+        <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--spara-ink);font-weight:700">${fmtEur(arvo)}</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
       </div>`;
 }
 function kanbanColHtml(v, cards, colSum) {
   return `<div class="kanban-header"><span class="kanban-title" style="color:${V_COLORS[v]}">${v}</span><span class="kanban-cnt">${cards.length}${colSum?' · '+fmtEur(colSum):''}</span></div>
       <div class="kanban-body" data-vaihe="${v}">${cards.length?cards.map(kanbanCardHtml).join(''):'<div style="font-size:11px;color:var(--text2);text-align:center;padding:12px">–</div>'}</div>`;
 }
+// Pylvään otsikko EI enää saa omaa väriään vaiheittain (ei inline style
+// lainkaan) — pelkkä .kanban-title-luokan ink-soft-väri kaikille
+// vaiheille, järjestys viestii vaiheen. Katso Kanban-CSS-lohkon kommentti.
 function kanbanColSparaHtml(v, cards, colSum) {
-  return `<div class="kanban-header"><span class="kanban-title" style="color:${V_COLORS_SPARA[v]}">${v}</span><span class="kanban-cnt">${cards.length}${colSum?' · '+fmtEur(colSum):''}</span></div>
+  return `<div class="kanban-header"><span class="kanban-title">${v}</span><span class="kanban-cnt">${cards.length}${colSum?' · '+fmtEur(colSum):''}</span></div>
       <div class="kanban-body" data-vaihe="${v}">${cards.length?cards.map(kanbanCardSparaHtml).join(''):'<div class="spara-kanban-empty">–</div>'}</div>`;
 }
 
@@ -3274,21 +3397,29 @@ function renderTaskList(p) {
   });
   const el=document.getElementById('task-list'); if(!el) return;
   if(!tasks.length){el.innerHTML='<div style="text-align:center;padding:18px 0;font-size:12px;color:var(--text2)">Ei tehtäviä</div>';return;}
+  // Spara: ei enää yhtä väriä per tehtävätyyppi (sama "ei rainbow'ia
+  // kategorioittain" -periaate kuin Kanban-pylväiden otsikoissa ja
+  // kampBadge():ssä — TASK_ICON/TASK_LABEL erottavat tyypin jo ilman
+  // väriä). Myöhässä/tänään-päivämäärät ja rahamäärä käyttävät samaa
+  // gold=kiireellisyys/ink=neutraali-kielioppia kuin muualla sovelluksessa.
+  const spara=dashboardTheme()==='spara';
   el.innerHTML=`<div class="task-cards">${tasks.map(t=>{
     const done=taskIsDone(t);
     const late=!done&&t.due_date<today;
     const isToday=!done&&t.due_date===today;
     const tilaOpts=(TASK_TILA[t.tyyppi]||TASK_TILA.muu).map(o=>`<option${o===t.tila?' selected':''}>${esc(o)}</option>`).join('');
-    const color=TASK_COLOR[t.tyyppi]||'var(--accent)';
-    const dueColor=late?'var(--red)':isToday?'var(--orange)':'var(--text2)';
+    const color=spara?'var(--spara-hairline)':(TASK_COLOR[t.tyyppi]||'var(--accent)');
+    const dueColor=spara?((late||isToday)?'var(--spara-gold)':'var(--spara-ink-faint)'):(late?'var(--red)':isToday?'var(--orange)':'var(--text2)');
+    const arvoColor=spara?'var(--spara-ink)':'var(--green)';
     const lastMsg=t.thread&&t.thread.length?t.thread[t.thread.length-1]:null;
     const waitingReply=lastMsg&&lastMsg.dir==='in';
-    const threadBadge=lastMsg?`<div style="font-size:11px;margin-top:3px;color:${waitingReply?'var(--orange)':'var(--text2)'}">${waitingReply?'↩️':'💬'} ${t.thread.length} viesti${t.thread.length===1?'':'ä'}${waitingReply?' · odottaa vastausta':''}</div>`:'';
+    const waitColor=spara?'var(--spara-gold)':'var(--orange)';
+    const threadBadge=lastMsg?`<div style="font-size:11px;margin-top:3px;color:${waitingReply?waitColor:'var(--text2)'}">${waitingReply?'↩️':'💬'} ${t.thread.length} viesti${t.thread.length===1?'':'ä'}${waitingReply?' · odottaa vastausta':''}</div>`:'';
     return `<div class="task-card${done?' done-card':''}" style="border-top:2px solid ${color}">
       <div class="task-card-hdr">
         <span style="font-size:13px">${TASK_ICON[t.tyyppi]||'📝'}</span>
         <span class="task-card-type">${TASK_LABEL[t.tyyppi]}</span>
-        ${t.arvo?`<span style="font-size:11px;color:var(--green);font-weight:700">${Number(t.arvo).toLocaleString('fi')} €</span>`:''}
+        ${t.arvo?`<span style="font-size:11px;color:${arvoColor};font-weight:700">${Number(t.arvo).toLocaleString('fi')} €</span>`:''}
       </div>
       <div class="task-card-aihe">${esc(t.aihe)||'–'}</div>
       ${threadBadge}
@@ -3439,6 +3570,12 @@ function timelineTypeLabel(item) {
   return ({kommentti:'Kommentti',puhelu:'Puhelu',sahkoposti:'Sähköposti',tapaaminen:'Tapaaminen',tarjous:'Tarjous',vaihe_muutos:'Vaiheen muutos',signaali_paivitys:'Signaalipäivitys'}[item.raw.tyyppi]||item.raw.tyyppi||'Merkintä');
 }
 function timelineColor(item) {
+  // Spara: ei väriä per aktiviteettityyppi (7 eri sävyä olisi sama
+  // rainbow-per-kategoria-ongelma kuin muualla) — käytetään sen sijaan
+  // aikajanan omaa, jo olemassa olevaa Tulevat tehtävät/Historia-jakoa:
+  // lavender-deep (prioriteetti/eteneminen) tuleville, quiet (ohitettu/
+  // mennyt) historialle.
+  if (dashboardTheme()==='spara') return item.upcoming?'var(--spara-lavender-deep)':'var(--spara-quiet)';
   if(item.isTask) return TASK_COLOR[item.task.tyyppi]||'var(--accent)';
   return ({kommentti:'var(--blue)',puhelu:'var(--green)',sahkoposti:'var(--orange)',tapaaminen:'var(--purple)',tarjous:'var(--yellow)',vaihe_muutos:'var(--accent)',signaali_paivitys:'var(--blue)'}[item.raw.tyyppi]||'var(--accent)');
 }
@@ -3809,7 +3946,7 @@ function renderDashboardUpcoming() {
     if (task.tyyppi==='kauppa'&&task.arvo) reasons.push(fmtEur(Number(task.arvo)));
     if (p.prioriteetti==='A') reasons.push('A-prioriteetti');
     return `<div class="dash-item" onclick="openModal('${p.spara_id}')">
-        <div class="dash-item-date"${overdue?' style="color:var(--red)"':''}>${dateLabel}</div>
+        <div class="dash-item-date"${overdue?` style="color:${dashboardTheme()==='spara'?'var(--spara-gold)':'var(--red)'}"`:''}>${dateLabel}</div>
         <div><div class="dash-item-name">${esc(p.yritys_nimi)}</div>
         <div class="dash-item-task">${TASK_ICON[task.tyyppi]||''} ${esc(task.aihe||TASK_LABEL[task.tyyppi]||'–')}${reasons.length?' · '+esc(reasons.join(' · ')):''}</div></div></div>`;
   }).join(''):'<div class="empty" style="padding:16px">Ei avoimia tehtäviä avoimen putken tileillä</div>';
@@ -3893,13 +4030,21 @@ function projectDistributionSegs(proj) {
 function projectDistributionHtml(colorForStage) {
   const projects=[...new Set(allProspects.map(p=>p.kampanja))].filter(Boolean);
   if (dashboardTheme()==='spara') {
-    return projects.map(proj=>{
-      const {tilit,segs}=projectDistributionSegs(proj);
-      const bars=segs.map(s=>`<div class="proj-bar-seg" style="flex:0 0 ${s.pct}%;background:${colorForStage(s.v)}" title="${s.v}: ${s.cnt} (${s.pct}%)"></div>`).join('');
+    // Yksi täyttöpalkki per projekti (tilimäärä suhteessa suurimpaan
+    // projektiin), EI vaihekohtaisesti segmentoitu — sama yksinkertainen
+    // kuvio kuin hyväksytyssä mockupissa. Vaihekohtainen värisegmentointi
+    // (classic-haara alla) vaatisi oman värin per vaihe, mikä oli juuri se
+    // virhe joka aiheutti värisotkun — classic säilyttää rikkaamman
+    // näkymän koskemattomana, spara valitsee tarkoituksella yksinkertaisemman.
+    const counts=projects.map(proj=>projectDistributionSegs(proj).tilit.length);
+    const max=Math.max(1,...counts);
+    return projects.map((proj,i)=>{
+      const n=counts[i];
+      const pct=Math.max(4,Math.round(n/max*100));
       return `<div class="spara-proj-row">
         <div class="spara-proj-name">${esc(proj)}</div>
-        <div class="spara-proj-track">${bars}</div>
-        <div class="spara-proj-count">${tilit.length}</div>
+        <div class="spara-proj-track"><div class="spara-proj-fill" style="width:${pct}%"></div></div>
+        <div class="spara-proj-count">${n}</div>
       </div>`;
     }).join('');
   }
@@ -3974,7 +4119,7 @@ function renderDashboard() {
   renderDashboardUpcoming();
 
   const prEl=document.getElementById('dash-projects');
-  if (prEl) prEl.innerHTML=projectDistributionHtml(theme==='spara' ? (v=>V_COLORS_SPARA[v]) : (v=>V_COLORS[v]));
+  if (prEl) prEl.innerHTML=projectDistributionHtml(v=>V_COLORS[v]);
 }
 
 // ── Contacts (Yhteyshenkilöt) ─────────────────────────────────────────────────
@@ -4094,7 +4239,7 @@ function openYhModal(cid) {
           <div class="act-text">${esc(a.teksti||a.aihe||'')}</div>
         </div>`).join('')
       : '<div class="empty" style="padding:10px;font-size:12px">Ei merkintöjä</div>';
-    html+=`<div class="yh-link-card" style="text-align:center;font-size:12px;color:var(--blue);margin-top:4px" onclick="openTiliHistoryFromYh('${p.spara_id}')">Näytä koko historia →</div>`;
+    html+=`<div class="yh-link-card" style="text-align:center;font-size:12px;color:${dashboardTheme()==='spara'?'var(--spara-navy)':'var(--blue)'};margin-top:4px" onclick="openTiliHistoryFromYh('${p.spara_id}')">Näytä koko historia →</div>`;
   }
 
   html+=`<div style="margin-top:18px;border-top:1px solid var(--border);padding-top:12px">
@@ -6042,7 +6187,7 @@ function renderHeroTehtavat() {
   return ranked.map(({p,task})=>{
     const overdue=task.due_date&&task.due_date<today;
     return `<div class="dash-item" onclick="closeHeroModal();openModal('${p.spara_id}')">
-        <div class="dash-item-date"${overdue?' style="color:var(--red)"':''}>${task.due_date?fmtDateShort(task.due_date):'–'}</div>
+        <div class="dash-item-date"${overdue?` style="color:${dashboardTheme()==='spara'?'var(--spara-gold)':'var(--red)'}"`:''}>${task.due_date?fmtDateShort(task.due_date):'–'}</div>
         <div><div class="dash-item-name">${esc(p.yritys_nimi)}</div>
         <div class="dash-item-task">${TASK_ICON[task.tyyppi]||''} ${esc(task.aihe||TASK_LABEL[task.tyyppi]||'–')}</div></div></div>`;
   }).join('');
@@ -6071,15 +6216,20 @@ function buildSegmentFilter() {
 }
 function kampBadge(k) {
   if (!k) return '–';
-  // Väri on inline-tyylitetty (ei luokka) joten pelkkä CSS-skoopatus ei
-  // riitä — funktio lukee aktiivisen teeman itse. Molemmat paletit tässä
-  // samassa funktiossa (ei kahta kopiota); classic-haara täysin
-  // muuttumaton alkuperäisestä.
-  const spara=dashboardTheme()==='spara';
-  if (k===baseProjektiNimi('BASE_ETJ_PLUS')) return `<span style="color:${spara?'var(--spara-gold-light)':'var(--red)'}">${esc(k)}</span>`;
-  if (k===baseProjektiNimi('BASE_TALO_FIN')) return `<span style="color:${spara?'var(--spara-lavender)':'var(--orange)'}">🇫🇮 ${esc(k)}</span>`;
-  if (k===baseProjektiNimi('BASE_TALO_SWE')) return `<span style="color:${spara?'var(--spara-on-dark-soft)':'var(--blue)'}">🇸🇪 ${esc(k)}</span>`;
-  if (k===baseProjektiNimi('BASE_MUU')) return `<span style="color:${spara?'var(--spara-lavender-deep)':'var(--purple)'}">${esc(k)}</span>`;
+  // classic-haara täysin muuttumaton (oma väri per projekti). Spara-
+  // haara (korjattu) EI enää väritä projektinimeä — pelkkä ink-soft
+  // teksti (peritty), samoin kuin muutkin ei-korostetut sarakkeet. Vain
+  // maalippu säilyy FIN/SWE-tunnistuksen informatiivisena vihjeenä, ei
+  // väriä. Yksi funktio, ei kahta kopiota.
+  if (dashboardTheme()==='spara') {
+    if (k===baseProjektiNimi('BASE_TALO_FIN')) return `🇫🇮 ${esc(k)}`;
+    if (k===baseProjektiNimi('BASE_TALO_SWE')) return `🇸🇪 ${esc(k)}`;
+    return esc(k);
+  }
+  if (k===baseProjektiNimi('BASE_ETJ_PLUS')) return `<span style="color:var(--red)">${esc(k)}</span>`;
+  if (k===baseProjektiNimi('BASE_TALO_FIN')) return `<span style="color:var(--orange)">🇫🇮 ${esc(k)}</span>`;
+  if (k===baseProjektiNimi('BASE_TALO_SWE')) return `<span style="color:var(--blue)">🇸🇪 ${esc(k)}</span>`;
+  if (k===baseProjektiNimi('BASE_MUU')) return `<span style="color:var(--purple)">${esc(k)}</span>`;
   return esc(k);
 }
 function scoreClass(s) { return !s?'':s>=85?'score-high':s>=70?'score-mid':'score-low'; }
