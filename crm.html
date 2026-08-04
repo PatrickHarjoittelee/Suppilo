@@ -276,6 +276,66 @@
     [data-dash-theme="spara"] #yhmodal-overlay .act-item{background:var(--spara-navy);border-color:var(--spara-hairline);}
     [data-dash-theme="spara"] #yhmodal-overlay .act-meta{color:var(--spara-on-dark-faint);}
 
+    /* Jaetut modaalit — Spara-teema (Vaihe 5). Sama ID-rajattu kaava
+       toistettu jokaiselle modaalille kehyksen (.modal/.modal-header/
+       .modal-title/.modal-close) ja lomakekentän (.form-control) osalta
+       — EI koskaan paljaana, koska molemmat ovat jaettuja kymmenien
+       modaalien/näkymien kanssa (mm. #settings-modal, joka pysyy
+       tarkoituksella aina classic-ulkoasussa eikä ole koskaan mukana
+       näissä listoissa). #hero-modal (Vaihe 1) ja #yhmodal-overlay
+       (Vaihe 4) saivat kehyksensä jo aiemmin; #yhmodal-overlay on
+       kuitenkin mukana form-control-listassa koska sen muokkaustila
+       (yhmodal-edit) ei vielä saanut lomakekenttien teemaa Vaihe 4:ssä.
+       label/.form-grid/.form-group jätetty koskematta — pelkkä layout
+       tai jo ennalta hyvin lukuva --text2, sama harkinta kuin Tilit/
+       Yhteyshenkilöt-taulujen tavallisilla soluilla (Vaihe 3/4). */
+    [data-dash-theme="spara"] #modal-overlay .modal,
+    [data-dash-theme="spara"] #addtili-modal .modal,
+    [data-dash-theme="spara"] #addcontact-modal .modal,
+    [data-dash-theme="spara"] #addtask-modal .modal,
+    [data-dash-theme="spara"] #prospecting-modal .modal,
+    [data-dash-theme="spara"] #signal-monitoring-modal .modal,
+    [data-dash-theme="spara"] #email-modal .modal{background:var(--spara-charcoal);border:1px solid var(--spara-hairline);}
+    [data-dash-theme="spara"] #modal-overlay .modal-header,
+    [data-dash-theme="spara"] #addtili-modal .modal-header,
+    [data-dash-theme="spara"] #addcontact-modal .modal-header,
+    [data-dash-theme="spara"] #addtask-modal .modal-header,
+    [data-dash-theme="spara"] #prospecting-modal .modal-header,
+    [data-dash-theme="spara"] #signal-monitoring-modal .modal-header,
+    [data-dash-theme="spara"] #email-modal .modal-header{border-bottom-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #modal-overlay .modal-title,
+    [data-dash-theme="spara"] #addtili-modal .modal-title,
+    [data-dash-theme="spara"] #addcontact-modal .modal-title,
+    [data-dash-theme="spara"] #addtask-modal .modal-title,
+    [data-dash-theme="spara"] #prospecting-modal .modal-title,
+    [data-dash-theme="spara"] #signal-monitoring-modal .modal-title,
+    [data-dash-theme="spara"] #email-modal .modal-title{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.04em;color:var(--spara-on-dark);}
+    [data-dash-theme="spara"] #modal-overlay .modal-close,
+    [data-dash-theme="spara"] #addtili-modal .modal-close,
+    [data-dash-theme="spara"] #addcontact-modal .modal-close,
+    [data-dash-theme="spara"] #addtask-modal .modal-close,
+    [data-dash-theme="spara"] #prospecting-modal .modal-close,
+    [data-dash-theme="spara"] #signal-monitoring-modal .modal-close,
+    [data-dash-theme="spara"] #email-modal .modal-close{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #modal-overlay .form-control,
+    [data-dash-theme="spara"] #addtili-modal .form-control,
+    [data-dash-theme="spara"] #addcontact-modal .form-control,
+    [data-dash-theme="spara"] #addtask-modal .form-control,
+    [data-dash-theme="spara"] #prospecting-modal .form-control,
+    [data-dash-theme="spara"] #signal-monitoring-modal .form-control,
+    [data-dash-theme="spara"] #email-modal .form-control,
+    [data-dash-theme="spara"] #yhmodal-overlay .form-control{background:var(--spara-navy);border-color:var(--spara-hairline);color:var(--spara-on-dark);}
+    /* #modal-overlay:in oma sisäinen välilehtipalkki (.mtabs/.mtab) ja
+       tehtävätyyppipainikkeet (.task-type-btn) — molemmat käytössä
+       yksinomaan tässä modaalissa (tarkistettu koko tiedostosta). */
+    [data-dash-theme="spara"] #modal-overlay .mtabs{border-bottom-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #modal-overlay .mtab{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #modal-overlay .mtab:hover{color:var(--spara-on-dark);}
+    [data-dash-theme="spara"] #modal-overlay .mtab.active{color:var(--spara-lavender);border-bottom-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] #modal-overlay .task-type-btn{background:var(--spara-navy);border-color:var(--spara-hairline);color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] #modal-overlay .task-type-btn:hover,
+    [data-dash-theme="spara"] #modal-overlay .task-type-btn.active{border-color:var(--spara-lavender);color:var(--spara-on-dark);background:var(--spara-navy);}
+
     /* Kanban */
     .kanban{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;}
     @media(max-width:640px){.kanban{padding-bottom:16px;}}
@@ -992,7 +1052,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-04.5';
+const BUILD_ID = '2026-08-04.6';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
