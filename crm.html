@@ -89,7 +89,6 @@
       .form-group,.form-group.full { grid-column:1/-1; }
       .modal-overlay { align-items:flex-end;padding:0; }
       .modal { max-width:100%;border-radius:16px 16px 0 0; }
-      .kanban { padding-bottom:16px; }
     }
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
     @keyframes halLensPulse{0%,100%{filter:drop-shadow(0 0 10px rgba(255,32,20,.42)) brightness(.96);}50%{filter:drop-shadow(0 0 18px rgba(255,44,26,.72)) brightness(1.14);}}
@@ -199,6 +198,7 @@
 
     /* Kanban */
     .kanban{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;}
+    @media(max-width:640px){.kanban{padding-bottom:16px;}}
     .kanban-col{flex:1 1 220px;min-width:220px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column;max-height:calc(100vh - 280px);}
     .kanban-header{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
     .kanban-title{font-size:12px;font-weight:600;} .kanban-cnt{font-size:11px;color:var(--text2);background:var(--bg3);padding:1px 7px;border-radius:10px;}
@@ -210,6 +210,23 @@
     .kc-name{font-size:12px;font-weight:600;margin-bottom:3px;} .kc-meta{font-size:11px;color:var(--text2);line-height:1.5;}
     .kc-prio{display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:4px;vertical-align:middle;}
     .dot-A{background:var(--red);} .dot-B{background:var(--orange);}
+
+    /* Kanban — Spara-teema (Vaihe 2). Jokainen kanban-, kcard-, kc- ja
+       dot-alkuinen luokka on käytössä yksinomaan Kanban-välilehdellä
+       (tarkistettu koko tiedostosta) — turvallista rajata suoraan
+       attribuuttivalitsimella ilman erillistä #tab-kanban-ID:tä. */
+    [data-dash-theme="spara"] .kanban-col{background:var(--spara-charcoal);border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] .kanban-header{border-bottom-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] .kanban-title{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.04em;font-size:11px;}
+    [data-dash-theme="spara"] .kanban-cnt{background:var(--spara-navy);color:var(--spara-on-dark-soft);}
+    [data-dash-theme="spara"] .kanban-body.drop-hover{background:var(--spara-lavender-wash);outline-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] .kcard{background:var(--spara-navy);border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] .kcard:hover{border-color:var(--spara-lavender);}
+    [data-dash-theme="spara"] .kc-name{color:var(--spara-on-dark);font-family:'Source Sans Pro',sans-serif;}
+    [data-dash-theme="spara"] .kc-meta{color:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] .dot-A{background:var(--spara-gold);}
+    [data-dash-theme="spara"] .dot-B{background:var(--spara-on-dark-faint);}
+    [data-dash-theme="spara"] .spara-kanban-empty{font-family:'Source Sans Pro',sans-serif;font-size:11px;color:var(--spara-on-dark-faint);text-align:center;padding:12px;}
 
     /* Modal */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;}
@@ -895,7 +912,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-04.2';
+const BUILD_ID = '2026-08-04.3';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2619,9 +2636,8 @@ const VAIHEET=['Kontaktoi','Selvitä tarve','Sovi tapaaminen','Tarjous työn all
 const VAIHE_LEGACY={'Liidi':'Kontaktoi','Mahdollisuus':'Selvitä tarve','Tapaaminen':'Sovi tapaaminen','Tarjous':'Tarjous työn alla','Päätös odottaa':'Tarjous työn alla','Sopimus':'Sopimus syntynyt','Voitettu':'Sopimus syntynyt','Hävitty':'Ei juuri nyt'};
 const V_COLORS={'Kontaktoi':'var(--blue)','Selvitä tarve':'var(--orange)','Sovi tapaaminen':'var(--purple)','Tarjous työn alla':'var(--yellow)','Sopimus syntynyt':'var(--green)','Ei juuri nyt':'var(--red)'};
 // Erillinen väripaletti Spara-teemalle — EI KOSKAAN sama olio kuin
-// V_COLORS. renderKanban() (rivi ~2760) käyttää V_COLORSia suoraan eikä
-// sitä saa koskaan muuttaa tästä työstä; Kanbanin oma Spara-versio
-// (Vaihe 2) käyttää tätä samaa V_COLORS_SPARAa.
+// V_COLORS. kanbanColHtml()/pipelineBoxesHtml() käyttävät V_COLORSia,
+// kanbanColSparaHtml()/pipelineFunnelHtml() tätä samaa V_COLORS_SPARAa.
 const V_COLORS_SPARA={'Kontaktoi':'var(--spara-on-dark-faint)','Selvitä tarve':'var(--spara-lavender-deep)','Sovi tapaaminen':'var(--spara-lavender)','Tarjous työn alla':'var(--spara-gold)','Sopimus syntynyt':'var(--spara-gold-light)','Ei juuri nyt':'var(--spara-quiet)'};
 const VAIHE_TN={'Kontaktoi':.05,'Selvitä tarve':.20,'Sovi tapaaminen':.40,'Tarjous työn alla':.60,'Sopimus syntynyt':1,'Ei juuri nyt':0};
 // Vaiheet joissa kauppa on vielä auki (ei voitettu eikä hävitty) — sama
@@ -2736,18 +2752,38 @@ function kanbanCardHtml(k) {
         <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--green);font-weight:700">${fmtEur(arvo)}</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
       </div>`;
 }
+// Spara-versio: sama rakenne, mutta kortin arvo on inline-tyylitetty (ei
+// luokkaa), joten pelkkä CSS-skoopatus ei riitä — oma template kirjoittaa
+// oman --spara-lavender-värinsä suoraan eikä jaa kanbanCardHtml():in kanssa.
+function kanbanCardSparaHtml(k) {
+  const {p,task}=k;
+  const arvo=Number(task.arvo)||0;
+  return `<div class="kcard" draggable="true" data-sid="${p.spara_id}" data-task-id="${task.id}" onclick="openKauppa('${p.spara_id}','${task.id}')">
+        <div class="kc-name"><span class="kc-prio dot-${p.prioriteetti||'B'}"></span>${esc(p.yritys_nimi)} – ${esc(task.aihe||'–')}</div>
+        <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--spara-lavender);font-weight:700">${fmtEur(arvo)}</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
+      </div>`;
+}
+function kanbanColHtml(v, cards, colSum) {
+  return `<div class="kanban-header"><span class="kanban-title" style="color:${V_COLORS[v]}">${v}</span><span class="kanban-cnt">${cards.length}${colSum?' · '+fmtEur(colSum):''}</span></div>
+      <div class="kanban-body" data-vaihe="${v}">${cards.length?cards.map(kanbanCardHtml).join(''):'<div style="font-size:11px;color:var(--text2);text-align:center;padding:12px">–</div>'}</div>`;
+}
+function kanbanColSparaHtml(v, cards, colSum) {
+  return `<div class="kanban-header"><span class="kanban-title" style="color:${V_COLORS_SPARA[v]}">${v}</span><span class="kanban-cnt">${cards.length}${colSum?' · '+fmtEur(colSum):''}</span></div>
+      <div class="kanban-body" data-vaihe="${v}">${cards.length?cards.map(kanbanCardSparaHtml).join(''):'<div class="spara-kanban-empty">–</div>'}</div>`;
+}
 
 function renderKanban() {
+  applyDashboardThemeAttr();
   const kf=document.getElementById('k-kampanja').value;
   const kaupat=getAllKaupat(kf);
   const board=document.getElementById('kanban-board');
   board.innerHTML='';
+  const theme=dashboardTheme();
   VAIHEET.forEach(v => {
     const cards=kaupat.filter(k=>k.task.tila===v);
     const colSum=cards.reduce((s,k)=>s+(Number(k.task.arvo)||0),0);
     const col=document.createElement('div'); col.className='kanban-col';
-    col.innerHTML=`<div class="kanban-header"><span class="kanban-title" style="color:${V_COLORS[v]}">${v}</span><span class="kanban-cnt">${cards.length}${colSum?' · '+fmtEur(colSum):''}</span></div>
-      <div class="kanban-body" data-vaihe="${v}">${cards.length?cards.map(kanbanCardHtml).join(''):'<div style="font-size:11px;color:var(--text2);text-align:center;padding:12px">–</div>'}</div>`;
+    col.innerHTML = theme==='spara' ? kanbanColSparaHtml(v,cards,colSum) : kanbanColHtml(v,cards,colSum);
     board.appendChild(col);
   });
   attachKanbanDnD();
