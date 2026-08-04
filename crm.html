@@ -140,13 +140,17 @@
     .cv-blue{color:var(--blue);}.cv-orange{color:var(--orange);}.cv-green{color:var(--green);}.cv-red{color:var(--red);}
     .hero-tile{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;flex:1;min-width:130px;text-align:center;cursor:pointer;transition:border-color .15s,transform .15s;}
     .hero-tile:hover{border-color:var(--accent);transform:translateY(-1px);}
-    .hero-tile-icon{font-size:22px;line-height:1;margin-bottom:5px;}
+    .hero-tile-icon{color:var(--text2);margin-bottom:6px;display:flex;justify-content:center;transition:color .15s;}
+    .hero-tile-icon svg{width:22px;height:22px;display:block;}
+    .hero-tile:hover .hero-tile-icon{color:var(--accent);}
     .hero-tile-value{font-size:19px;font-weight:700;}
     .hero-tile-label{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;margin-top:3px;}
+    /* Kapealla näytöllä laatot rivittyvät kahteen sarakkeeseen (perii
+       .summary-bar:in flex-wrap:wrap-arvon rivin 136 perussäännöstä) sen
+       sijaan että koko rivi vierisi vaakasuunnassa — ei vaadi omaa
+       overflow-x-sääntöä ollenkaan. */
     @media(max-width:640px){
-      .summary-bar{overflow-x:auto;flex-wrap:nowrap;padding:8px 12px;scrollbar-width:none;}
-      .summary-bar::-webkit-scrollbar{display:none;}
-      .hero-tile{flex:0 0 118px;min-width:0;padding:10px 12px;}
+      .hero-tile{flex:1 1 calc(50% - 6px);min-width:0;padding:10px 12px;}
     }
 
     /* Tabs */
@@ -402,27 +406,27 @@
 
 <div class="summary-bar">
   <div class="hero-tile" onclick="openHeroModal('signaalit')">
-    <div class="hero-tile-icon">📡</div>
+    <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15a9 9 0 0 1 9-9"/><path d="M4 15a13 13 0 0 1 13-13"/><circle cx="4" cy="15" r="2"/><path d="M8 19l8-8"/></svg></div>
     <div class="hero-tile-value" id="hero-signaalit">–</div>
     <div class="hero-tile-label">Uudet signaalit</div>
   </div>
   <div class="hero-tile" onclick="openHeroModal('sijoitus')">
-    <div class="hero-tile-icon">💰</div>
+    <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.5v9M9.3 15c0 1 1.1 1.8 2.7 1.8s2.7-.7 2.7-1.8c0-2.4-5.4-1.1-5.4-3.5 0-1 1.1-1.8 2.7-1.8s2.5.6 2.6 1.5"/></svg></div>
     <div class="hero-tile-value" id="hero-sijoitus">–</div>
     <div class="hero-tile-label">Sijoitusmahdollisuudet</div>
   </div>
   <div class="hero-tile" onclick="openHeroModal('tehtavat')">
-    <div class="hero-tile-icon">⏰</div>
+    <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"/><path d="M12 7v5l3.2 2"/></svg></div>
     <div class="hero-tile-value" id="hero-tehtavat">–</div>
     <div class="hero-tile-label">Odottaa reagointia</div>
   </div>
   <div class="hero-tile" onclick="openHeroModal('prospektit')">
-    <div class="hero-tile-icon">🏢</div>
+    <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="10" height="18"/><rect x="14" y="9" width="6" height="12"/><path d="M7.5 7h1M10.5 7h1M7.5 10.5h1M10.5 10.5h1M7.5 14h1M10.5 14h1M16.5 12.5h1M16.5 15.5h1"/></svg></div>
     <div class="hero-tile-value" id="hero-prospektit">–</div>
     <div class="hero-tile-label">Prospektit yhteensä</div>
   </div>
   <div class="hero-tile" onclick="openHeroModal('putki')">
-    <div class="hero-tile-icon">📈</div>
+    <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9M9.5 19V5M15 19v-7M20 19V11"/></svg></div>
     <div class="hero-tile-value" id="hero-putki">–</div>
     <div class="hero-tile-label">Myyntiputki</div>
   </div>
@@ -835,7 +839,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-03.10';
+const BUILD_ID = '2026-08-04.1';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
