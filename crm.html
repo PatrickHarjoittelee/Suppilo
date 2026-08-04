@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Spara Energia – CRM Prospektit</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fjalla+One&family=Source+Sans+Pro:wght@300;400;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -353,6 +354,101 @@
     .yh-link-card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;cursor:pointer;transition:border-color .15s;}
     .yh-link-card:hover{border-color:var(--accent);}
     .source-badge{display:inline-block;font-size:9px;background:var(--bg4);color:var(--text2);padding:1px 6px;border-radius:8px;vertical-align:middle;margin-left:5px;}
+
+    /* ── Spara-teema (Vaihe 1: hero + Dashboard-välilehti) ──────────────────
+       Erilliset --spara-*-tokenit, EI KOSKAAN olemassa olevien --bg/--accent/
+       --text/--red/--orange/--green/--blue/--purple/--yellow -tokenien
+       uudelleenmäärittelyä missään [data-dash-theme="spara"] -lohkossa —
+       ne valuisivat koko sovellukseen (125+ käyttöä), eivät vain tähän
+       teemaan. Koko Spara-teema pysyy tarkoituksella tummana (ei Cream-
+       taustaa millään pinnalla) jotta siirtymä Kanban/Tilit/Yhteyshenkilöt-
+       välilehdille (jotka eivät vielä ole Spara-teemattu) ei väläytä
+       vaalea→tumma joka klikkauksella ennen kuin loputkin vaiheet on
+       mergetty. */
+    :root {
+      --spara-navy:#191970; --spara-indigo:#100145; --spara-charcoal:#161616;
+      --spara-cream:#FAF9F5; --spara-near-black:#0A0A0A;
+      --spara-lavender:#9E9AC2; --spara-lavender-deep:#6f6a97; --spara-lavender-wash:rgba(158,154,194,.16);
+      --spara-gold:#a97a34; --spara-gold-light:#e0bd85; --spara-quiet:#4a4560;
+      --spara-on-dark:#f5f3fb; --spara-on-dark-soft:#c7c2dc; --spara-on-dark-faint:#8d87ab;
+      --spara-hairline:rgba(245,243,251,.14);
+    }
+    .spara-display{font-family:'Fjalla One',sans-serif;font-weight:400;}
+
+    /* Hero */
+    [data-dash-theme="spara"] #hero-area{background:linear-gradient(180deg,var(--spara-indigo) 0%,var(--spara-navy) 100%);padding:0;border-bottom:1px solid var(--spara-hairline);display:block;}
+    .spara-hero-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:1px;background:var(--spara-hairline);}
+    @media(max-width:860px){.spara-hero-grid{grid-template-columns:1fr;}}
+    .spara-hero-featured{background:var(--spara-indigo);padding:26px 28px;cursor:pointer;transition:background .15s;font-family:'Source Sans Pro',sans-serif;color:var(--spara-on-dark);}
+    .spara-hero-featured:hover{background:#170a5c;}
+    .spara-hero-eyebrow{font-family:'Fjalla One',sans-serif;text-transform:uppercase;letter-spacing:.1em;font-size:11px;color:var(--spara-gold-light);}
+    .spara-hero-num{font-family:'Fjalla One',sans-serif;font-size:52px;line-height:.95;color:#fff;margin-top:8px;}
+    .spara-hero-sub{margin-top:8px;font-size:13px;color:var(--spara-on-dark-soft);max-width:38ch;}
+    .spara-hero-mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--spara-hairline);}
+    .spara-hero-mini{background:var(--spara-navy);padding:16px 18px;cursor:pointer;transition:background .15s;display:flex;flex-direction:column;gap:7px;}
+    .spara-hero-mini:hover{background:#201f80;}
+    .spara-hero-mini-icon{color:var(--spara-on-dark-soft);}
+    .spara-hero-mini-icon svg{width:18px;height:18px;display:block;}
+    .spara-hero-mini-num{font-family:'Fjalla One',sans-serif;font-size:23px;color:#fff;}
+    .spara-hero-mini-num.is-empty{color:var(--spara-on-dark-faint);font-family:'Source Sans Pro',sans-serif;font-weight:300;font-size:20px;}
+    .spara-hero-mini-label{font-size:10.5px;color:var(--spara-on-dark-soft);}
+    @media(max-width:640px){
+      .spara-hero-featured{padding:18px 20px;}
+      .spara-hero-num{font-size:38px;}
+    }
+
+    /* Dashboard-välilehti */
+    #dash-body{font-family:inherit;}
+    [data-dash-theme="spara"] #dash-body{font-family:'Source Sans Pro',sans-serif;}
+    .spara-kpi-row{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-charcoal);overflow:hidden;margin-bottom:20px;}
+    @media(max-width:720px){.spara-kpi-row{grid-template-columns:1fr 1fr;}}
+    .spara-kpi-cell{padding:16px 20px;border-right:1px solid var(--spara-hairline);}
+    .spara-kpi-cell:last-child{border-right:none;}
+    .spara-kpi-eyebrow{font-family:'Fjalla One',sans-serif;text-transform:uppercase;letter-spacing:.08em;font-size:10px;color:var(--spara-on-dark-faint);}
+    .spara-kpi-num{font-family:'Fjalla One',sans-serif;font-size:22px;color:var(--spara-on-dark);margin-top:6px;}
+    .spara-kpi-num.is-quiet{color:var(--spara-on-dark-faint);}
+    .spara-kpi-sub{font-size:11.5px;color:var(--spara-on-dark-faint);margin-top:3px;}
+    .spara-section-title{font-family:'Fjalla One',sans-serif;text-transform:uppercase;letter-spacing:.05em;font-size:14px;color:var(--spara-on-dark);margin-bottom:14px;}
+    .spara-funnel{border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-charcoal);margin-bottom:24px;}
+    .spara-funnel-row{display:grid;grid-template-columns:140px 1fr 90px 130px;align-items:center;gap:14px;padding:11px 18px;border-bottom:1px solid var(--spara-hairline);}
+    .spara-funnel-row:last-child{border-bottom:none;}
+    .spara-funnel-row.is-lost{opacity:.6;}
+    @media(max-width:720px){.spara-funnel-row{grid-template-columns:100px 1fr 70px;}.spara-funnel-row>div:nth-child(4){display:none;}}
+    .spara-funnel-name{font-size:12.5px;font-weight:600;color:var(--spara-on-dark);}
+    .spara-funnel-name .n{color:var(--spara-on-dark-faint);font-weight:400;margin-left:5px;}
+    .spara-funnel-track{height:7px;background:var(--spara-lavender-wash);border-radius:4px;overflow:hidden;}
+    .spara-funnel-fill{height:100%;background:var(--spara-lavender);border-radius:4px;}
+    .spara-funnel-fill.is-lost{background:var(--spara-quiet);}
+    .spara-funnel-count{font-family:'Fjalla One',sans-serif;font-size:15px;color:var(--spara-on-dark);text-align:right;}
+    .spara-funnel-forecast{font-size:11px;color:var(--spara-on-dark-faint);text-align:right;}
+    .spara-funnel-forecast strong{color:var(--spara-on-dark-soft);font-weight:600;}
+    .spara-dash-split{display:grid;grid-template-columns:1.35fr 1fr;gap:20px;}
+    @media(max-width:860px){.spara-dash-split{grid-template-columns:1fr;}}
+    .spara-dash-panel{border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-charcoal);}
+    .spara-dash-panel-head{padding:14px 18px;border-bottom:1px solid var(--spara-hairline);display:flex;align-items:baseline;justify-content:space-between;}
+    .spara-dash-panel-head h3{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.05em;font-size:12px;color:var(--spara-on-dark);margin:0;}
+    .spara-dash-panel-note{font-size:11px;color:var(--spara-on-dark-faint);}
+    .spara-proj-row{display:flex;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid var(--spara-hairline);}
+    .spara-proj-row:last-child{border-bottom:none;}
+    .spara-proj-name{font-size:12px;font-weight:600;width:140px;flex:0 0 auto;color:var(--spara-on-dark);}
+    .spara-proj-track{flex:1;height:6px;background:var(--spara-hairline);border-radius:4px;overflow:hidden;display:flex;}
+    .spara-proj-count{font-family:'Fjalla One',sans-serif;font-size:12px;color:var(--spara-on-dark-soft);width:26px;text-align:right;}
+    /* dash-item on jaettu Dashboardin "Seuraavat toimenpiteet"-listan JA
+       hero-modalin kolmen näkymän (signaalit/tehtävät/prospektit) kesken —
+       tarkistettu ettei sitä käytetä muualla, turvallinen rajata tässä. */
+    [data-dash-theme="spara"] .dash-item{border-bottom-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] .dash-item:hover{opacity:.85;}
+    [data-dash-theme="spara"] .dash-item-date{color:var(--spara-lavender);font-family:'Fjalla One',sans-serif;font-weight:400;}
+    [data-dash-theme="spara"] .dash-item-name{color:var(--spara-on-dark);font-family:'Source Sans Pro',sans-serif;}
+    [data-dash-theme="spara"] .dash-item-task{color:var(--spara-on-dark-faint);}
+    .spara-pill{display:inline-flex;align-items:center;font-size:10px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;padding:2px 7px;border-radius:9px;margin-top:5px;background:rgba(169,122,52,.22);color:var(--spara-gold-light);}
+    /* Hero-modal saa Spara-kehyksen kun teema aktiivinen — ID-rajattu koska
+       #hero-modal jakaa .modal/.modal-header/.modal-title-luokat 9 muun
+       modaalin kanssa koko tiedostossa. */
+    [data-dash-theme="spara"] #hero-modal .modal{background:var(--spara-charcoal);border:1px solid var(--spara-hairline);}
+    [data-dash-theme="spara"] #hero-modal .modal-header{border-bottom-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #hero-modal .modal-title{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.04em;color:var(--spara-on-dark);}
+    [data-dash-theme="spara"] #hero-modal .modal-close{color:var(--spara-on-dark-faint);}
   </style>
 </head>
 <body>
@@ -404,33 +500,7 @@
   </div>
 </header>
 
-<div class="summary-bar">
-  <div class="hero-tile" onclick="openHeroModal('signaalit')">
-    <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15a9 9 0 0 1 9-9"/><path d="M4 15a13 13 0 0 1 13-13"/><circle cx="4" cy="15" r="2"/><path d="M8 19l8-8"/></svg></div>
-    <div class="hero-tile-value" id="hero-signaalit">–</div>
-    <div class="hero-tile-label">Uudet signaalit</div>
-  </div>
-  <div class="hero-tile" onclick="openHeroModal('sijoitus')">
-    <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.5v9M9.3 15c0 1 1.1 1.8 2.7 1.8s2.7-.7 2.7-1.8c0-2.4-5.4-1.1-5.4-3.5 0-1 1.1-1.8 2.7-1.8s2.5.6 2.6 1.5"/></svg></div>
-    <div class="hero-tile-value" id="hero-sijoitus">–</div>
-    <div class="hero-tile-label">Sijoitusmahdollisuudet</div>
-  </div>
-  <div class="hero-tile" onclick="openHeroModal('tehtavat')">
-    <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"/><path d="M12 7v5l3.2 2"/></svg></div>
-    <div class="hero-tile-value" id="hero-tehtavat">–</div>
-    <div class="hero-tile-label">Odottaa reagointia</div>
-  </div>
-  <div class="hero-tile" onclick="openHeroModal('prospektit')">
-    <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="10" height="18"/><rect x="14" y="9" width="6" height="12"/><path d="M7.5 7h1M10.5 7h1M7.5 10.5h1M10.5 10.5h1M7.5 14h1M10.5 14h1M16.5 12.5h1M16.5 15.5h1"/></svg></div>
-    <div class="hero-tile-value" id="hero-prospektit">–</div>
-    <div class="hero-tile-label">Prospektit yhteensä</div>
-  </div>
-  <div class="hero-tile" onclick="openHeroModal('putki')">
-    <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9M9.5 19V5M15 19v-7M20 19V11"/></svg></div>
-    <div class="hero-tile-value" id="hero-putki">–</div>
-    <div class="hero-tile-label">Myyntiputki</div>
-  </div>
-</div>
+<div class="summary-bar" id="hero-area"></div>
 
 <div class="modal-overlay hidden" id="hero-modal" onclick="closeHeroModalMaybe(event)">
   <div class="modal">
@@ -541,21 +611,7 @@
   </div>
 
   <div class="tab-content active" id="tab-dashboard">
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px" id="dash-kpis"></div>
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px">
-      <div class="dash-section-title">Myyntiputki – kaupat vaiheittain</div>
-      <div class="pipeline-row" id="dash-pipeline"><div class="empty" style="padding:8px">Ladataan…</div></div>
-    </div>
-    <div class="dash-grid">
-      <div class="dash-section">
-        <div class="dash-section-title">Seuraavat toimenpiteet <span style="font-weight:400;text-transform:none">(tärkeysjärjestyksessä)</span></div>
-        <div id="dash-upcoming"><div class="empty" style="padding:16px">Ladataan…</div></div>
-      </div>
-      <div class="dash-section">
-        <div class="dash-section-title">Projektijakauma</div>
-        <div id="dash-projects"><div class="empty" style="padding:16px">Ladataan…</div></div>
-      </div>
-    </div>
+    <div id="dash-body"><div class="empty" style="padding:16px">Ladataan…</div></div>
   </div>
 </main>
 </div>
@@ -839,7 +895,8 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-04.1';
+const BUILD_ID = '2026-08-04.2';
+applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
   // Estää selaimen omat (ei-aihesuhdetta-säilyttävät) kuvan koon muokkaus-
@@ -977,6 +1034,18 @@ function microsoftTenant() {
 // sen palveluntarjoajan konsolissa — CRM ei voi tehdä sitä puolestasi.
 function aiProvider() {
   return (localStorage.getItem('suppilo.aiProvider') || '').trim() || 'anthropic';
+}
+// Henkilökohtainen näyttöasetus (per selain, kuten AI-avaimetkin) — EI
+// jaeta Sheetsin kautta muiden myyjien kanssa. 'classic' = nykyinen,
+// tuttu ulkoasu; 'spara' = Sparan brändi-ilme (rakenteilla, laajenee
+// vaihe kerrallaan Kanban/Tilit/Yhteyshenkilöt-välilehdille).
+function dashboardTheme() {
+  return (localStorage.getItem('suppilo.dashboardTheme') || '').trim() || 'classic';
+}
+// Kutsutaan sekä kerran synkronisesti skriptin latautuessa (estää väärän
+// teeman välähdyksen) että jokaisen teemasta riippuvan renderöinnin alussa.
+function applyDashboardThemeAttr() {
+  document.body.dataset.dashTheme = dashboardTheme();
 }
 function anthropicApiKey() {
   return (localStorage.getItem('suppilo.anthropicApiKey') || '').trim();
@@ -2549,6 +2618,11 @@ function changeYhPage(d) { yhPage+=d; renderYhTable(); }
 const VAIHEET=['Kontaktoi','Selvitä tarve','Sovi tapaaminen','Tarjous työn alla','Sopimus syntynyt','Ei juuri nyt'];
 const VAIHE_LEGACY={'Liidi':'Kontaktoi','Mahdollisuus':'Selvitä tarve','Tapaaminen':'Sovi tapaaminen','Tarjous':'Tarjous työn alla','Päätös odottaa':'Tarjous työn alla','Sopimus':'Sopimus syntynyt','Voitettu':'Sopimus syntynyt','Hävitty':'Ei juuri nyt'};
 const V_COLORS={'Kontaktoi':'var(--blue)','Selvitä tarve':'var(--orange)','Sovi tapaaminen':'var(--purple)','Tarjous työn alla':'var(--yellow)','Sopimus syntynyt':'var(--green)','Ei juuri nyt':'var(--red)'};
+// Erillinen väripaletti Spara-teemalle — EI KOSKAAN sama olio kuin
+// V_COLORS. renderKanban() (rivi ~2760) käyttää V_COLORSia suoraan eikä
+// sitä saa koskaan muuttaa tästä työstä; Kanbanin oma Spara-versio
+// (Vaihe 2) käyttää tätä samaa V_COLORS_SPARAa.
+const V_COLORS_SPARA={'Kontaktoi':'var(--spara-on-dark-faint)','Selvitä tarve':'var(--spara-lavender-deep)','Sovi tapaaminen':'var(--spara-lavender)','Tarjous työn alla':'var(--spara-gold)','Sopimus syntynyt':'var(--spara-gold-light)','Ei juuri nyt':'var(--spara-quiet)'};
 const VAIHE_TN={'Kontaktoi':.05,'Selvitä tarve':.20,'Sovi tapaaminen':.40,'Tarjous työn alla':.60,'Sopimus syntynyt':1,'Ei juuri nyt':0};
 // Vaiheet joissa kauppa on vielä auki (ei voitettu eikä hävitty) — sama
 // määritelmä jota "Avoin putki"-KPI (renderDashboard) ja seuraavien
@@ -3538,6 +3612,9 @@ function renderDashboardUpcoming() {
 // erillisenä kopiona.
 function pipelineStageHtml() {
   const st=kauppaStats();
+  return dashboardTheme()==='spara' ? pipelineFunnelHtml(st) : pipelineBoxesHtml(st);
+}
+function pipelineBoxesHtml(st) {
   return VAIHEET.map(v=>{
     const s=st[v];
     return `<div class="pipeline-stage"><div class="pipeline-count" style="color:${V_COLORS[v]}">${s.n}</div>
@@ -3547,11 +3624,123 @@ function pipelineStageHtml() {
     </div>`;
   }).join('');
 }
+// Oikea suppilovisualisointi laatikoiden sijaan — palkin pituus kertoo
+// vaiheen koon suhteessa suurimpaan vaiheeseen (yleensä Kontaktoi),
+// jolloin putken kapeneminen näkyy visuaalisesti eikä vain numeroina.
+function pipelineFunnelHtml(st) {
+  const maxN=Math.max(1,...VAIHEET.map(v=>st[v].n));
+  return VAIHEET.map(v=>{
+    const s=st[v];
+    const isLost=v==='Ei juuri nyt';
+    const pct=Math.max(4,Math.round(s.n/maxN*100));
+    return `<div class="spara-funnel-row${isLost?' is-lost':''}">
+      <div class="spara-funnel-name">${v}<span class="n">${s.n}</span></div>
+      <div class="spara-funnel-track"><div class="spara-funnel-fill${isLost?' is-lost':''}" style="width:${pct}%"></div></div>
+      <div class="spara-funnel-count">${fmtEur(s.sum)}</div>
+      <div class="spara-funnel-forecast">tn ${Math.round(VAIHE_TN[v]*100)} % → <strong>${fmtEur(s.sum*VAIHE_TN[v])}</strong></div>
+    </div>`;
+  }).join('');
+}
+
+function dashKpisClassicHtml(openSum, openN, weighted, st) {
+  const kpi=(label,val,color,sub)=>`<div class="card"><div class="card-label">${label}</div>
+    <div class="card-value" style="color:${color}">${val}</div>
+    ${sub?`<div style="font-size:10px;color:var(--text2);margin-top:2px">${sub}</div>`:''}</div>`;
+  return kpi('Avoin putki',fmtEur(openSum),'var(--blue)',openN+' avointa kauppaa')+
+    kpi('Painotettu ennuste',fmtEur(weighted),'var(--orange)','vaiheiden tn:llä painotettu')+
+    kpi('Sopimus syntynyt',fmtEur(st['Sopimus syntynyt'].sum),'var(--green)',st['Sopimus syntynyt'].n+' sopimusta')+
+    kpi('Ei juuri nyt',fmtEur(st['Ei juuri nyt'].sum),'var(--red)',st['Ei juuri nyt'].n+' kauppaa');
+}
+// "Ei juuri nyt" himmennetään .is-quiet:lla värin sijaan (ei punaista
+// Sparan tunnusväreissä) — tila viestitään muodolla, ei uudella sävyllä.
+function dashKpisSparaHtml(openSum, openN, weighted, st) {
+  const kpi=(label,val,quiet,sub)=>`<div class="spara-kpi-cell"><span class="spara-kpi-eyebrow">${label}</span>
+    <div class="spara-kpi-num${quiet?' is-quiet':''}">${val}</div>
+    ${sub?`<div class="spara-kpi-sub">${sub}</div>`:''}</div>`;
+  return kpi('Avoin putki',fmtEur(openSum),false,openN+' avointa kauppaa')+
+    kpi('Painotettu ennuste',fmtEur(weighted),false,'vaiheiden tn:llä painotettu')+
+    kpi('Sopimus syntynyt',fmtEur(st['Sopimus syntynyt'].sum),false,st['Sopimus syntynyt'].n+' sopimusta')+
+    kpi('Ei juuri nyt',fmtEur(st['Ei juuri nyt'].sum),true,st['Ei juuri nyt'].n+' kauppaa');
+}
+
+// Jaettu datalaskenta (segmentointi vaiheittain per projekti) — vain
+// esitys eroaa teeman mukaan, ei koskaan kahta kopiota tästä logiikasta.
+function projectDistributionSegs(proj) {
+  const tilit=allProspects.filter(p=>p.kampanja===proj);
+  const n=tilit.length||1;
+  const segs=VAIHEET.map(v=>{
+    const cnt=tilit.filter(p=>normalizeKauppaVaihe(p.vaihe)===v).length;
+    return {v,cnt,pct:Math.round(cnt/n*100)};
+  }).filter(s=>s.cnt>0);
+  return {tilit,segs};
+}
+function projectDistributionHtml(colorForStage) {
+  const projects=[...new Set(allProspects.map(p=>p.kampanja))].filter(Boolean);
+  if (dashboardTheme()==='spara') {
+    return projects.map(proj=>{
+      const {tilit,segs}=projectDistributionSegs(proj);
+      const bars=segs.map(s=>`<div class="proj-bar-seg" style="flex:0 0 ${s.pct}%;background:${colorForStage(s.v)}" title="${s.v}: ${s.cnt} (${s.pct}%)"></div>`).join('');
+      return `<div class="spara-proj-row">
+        <div class="spara-proj-name">${esc(proj)}</div>
+        <div class="spara-proj-track">${bars}</div>
+        <div class="spara-proj-count">${tilit.length}</div>
+      </div>`;
+    }).join('');
+  }
+  return projects.map(proj=>{
+    const {tilit,segs}=projectDistributionSegs(proj);
+    const bars=segs.map(s=>`<div class="proj-bar-seg" style="flex:0 0 ${s.pct}%;background:${colorForStage(s.v)};opacity:.85" title="${s.v}: ${s.cnt} (${s.pct}%)"></div>`).join('');
+    return `<div class="proj-row">
+      <div style="min-width:120px;font-size:12px">${kampBadge(proj)} <span style="color:var(--text2)">${tilit.length}</span></div>
+      <div class="proj-bar-wrap">${bars}</div>
+    </div>`;
+  }).join('');
+}
+
+function dashboardShellClassicHtml() {
+  return `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px" id="dash-kpis"></div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px">
+      <div class="dash-section-title">Myyntiputki – kaupat vaiheittain</div>
+      <div class="pipeline-row" id="dash-pipeline"></div>
+    </div>
+    <div class="dash-grid">
+      <div class="dash-section">
+        <div class="dash-section-title">Seuraavat toimenpiteet <span style="font-weight:400;text-transform:none">(tärkeysjärjestyksessä)</span></div>
+        <div id="dash-upcoming"></div>
+      </div>
+      <div class="dash-section">
+        <div class="dash-section-title">Projektijakauma</div>
+        <div id="dash-projects"></div>
+      </div>
+    </div>`;
+}
+function dashboardShellSparaHtml() {
+  return `<div class="spara-kpi-row" id="dash-kpis"></div>
+    <div class="spara-section-title">Myyntiputki vaiheittain</div>
+    <div class="spara-funnel" id="dash-pipeline"></div>
+    <div class="spara-dash-split">
+      <div class="spara-dash-panel">
+        <div class="spara-dash-panel-head"><h3>Seuraavat toimenpiteet</h3><span class="spara-dash-panel-note">tärkeysjärjestyksessä</span></div>
+        <div id="dash-upcoming"></div>
+      </div>
+      <div class="spara-dash-panel">
+        <div class="spara-dash-panel-head"><h3>Projektijakauma</h3><span class="spara-dash-panel-note"></span></div>
+        <div id="dash-projects"></div>
+      </div>
+    </div>`;
+}
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
+// #dash-body:in sisältö rakennetaan aina teeman mukaan täysin uudelleen —
+// molemmat kuoret (classic/spara) emittoivat SAMAT neljä mount-point-id:tä
+// (dash-kpis/dash-pipeline/dash-upcoming/dash-projects), minkä ansiosta
+// loppuosa tästä funktiosta — ja erityisesti renderDashboardUpcoming():in
+// sivutuslogiikka — ei tarvitse mitään teematietoisuutta ollenkaan.
 function renderDashboard() {
-  const PCOL={'ETJ+':'var(--red)','Talopakettivalmistajat FIN':'var(--orange)',
-    'Talopakettivalmistajat SWE':'var(--blue)','Muu Projekti':'var(--purple)'};
+  applyDashboardThemeAttr();
+  const theme=dashboardTheme();
+  const shellEl=document.getElementById('dash-body');
+  if (shellEl) shellEl.innerHTML = theme==='spara' ? dashboardShellSparaHtml() : dashboardShellClassicHtml();
 
   // KPIs + pipeline euroineen ja todennäköisyyksineen
   const st=kauppaStats();
@@ -3559,41 +3748,17 @@ function renderDashboard() {
   const openN=VAIHE_AVOIN.reduce((s,v)=>s+st[v].n,0);
   const weighted=VAIHE_AVOIN.reduce((s,v)=>s+st[v].sum*VAIHE_TN[v],0);
   const kpiEl=document.getElementById('dash-kpis');
-  if (kpiEl) {
-    const kpi=(label,val,color,sub)=>`<div class="card"><div class="card-label">${label}</div>
-      <div class="card-value" style="color:${color}">${val}</div>
-      ${sub?`<div style="font-size:10px;color:var(--text2);margin-top:2px">${sub}</div>`:''}</div>`;
-    kpiEl.innerHTML=
-      kpi('Avoin putki',fmtEur(openSum),'var(--blue)',openN+' avointa kauppaa')+
-      kpi('Painotettu ennuste',fmtEur(weighted),'var(--orange)','vaiheiden tn:llä painotettu')+
-      kpi('Sopimus syntynyt',fmtEur(st['Sopimus syntynyt'].sum),'var(--green)',st['Sopimus syntynyt'].n+' sopimusta')+
-      kpi('Ei juuri nyt',fmtEur(st['Ei juuri nyt'].sum),'var(--red)',st['Ei juuri nyt'].n+' kauppaa');
-  }
+  if (kpiEl) kpiEl.innerHTML = theme==='spara'
+    ? dashKpisSparaHtml(openSum, openN, weighted, st)
+    : dashKpisClassicHtml(openSum, openN, weighted, st);
+
   const plEl=document.getElementById('dash-pipeline');
   if (plEl) plEl.innerHTML=pipelineStageHtml();
 
   renderDashboardUpcoming();
 
-  // Project distribution with stacked vaihe bars
   const prEl=document.getElementById('dash-projects');
-  if (prEl) {
-    const projects=[...new Set(allProspects.map(p=>p.kampanja))].filter(Boolean);
-    prEl.innerHTML=projects.map(proj=>{
-      const tilit=allProspects.filter(p=>p.kampanja===proj);
-      const n=tilit.length||1;
-      const segs=VAIHEET.map(v=>{
-        const cnt=tilit.filter(p=>normalizeKauppaVaihe(p.vaihe)===v).length;
-        return {v,cnt,pct:Math.round(cnt/n*100)};
-      }).filter(s=>s.cnt>0);
-      const bars=segs.map(s=>
-        `<div class="proj-bar-seg" style="flex:0 0 ${s.pct}%;background:${V_COLORS[s.v]};opacity:.85" title="${s.v}: ${s.cnt} (${s.pct}%)"></div>`
-      ).join('');
-      return `<div class="proj-row">
-        <div style="min-width:120px;font-size:12px">${kampBadge(proj)} <span style="color:var(--text2)">${tilit.length}</span></div>
-        <div class="proj-bar-wrap">${bars}</div>
-      </div>`;
-    }).join('');
-  }
+  if (prEl) prEl.innerHTML=projectDistributionHtml(theme==='spara' ? (v=>V_COLORS_SPARA[v]) : (v=>V_COLORS[v]));
 }
 
 // ── Contacts (Yhteyshenkilöt) ─────────────────────────────────────────────────
@@ -5083,6 +5248,7 @@ function openSettings() {
   const profileInput=document.getElementById('set-profile-image'); if(profileInput) profileInput.value='';
   renderProfilePreview();
   const sigEl=document.getElementById('set-allekirjoitus'); if (sigEl) sigEl.innerHTML = currentUser.allekirjoitus || '';
+  document.getElementById('set-dashboard-theme').value = dashboardTheme();
   document.getElementById('set-ms-client-id').value = microsoftClientId();
   document.getElementById('set-ms-tenant').value = microsoftTenant();
   const redirEl=document.getElementById('ms-redirect-uri');
@@ -5104,6 +5270,22 @@ function openSettings() {
 }
 function closeSettings() { document.getElementById('settings-modal').classList.add('hidden'); deselectEditableImage(); }
 function closeSettingsMaybe(e) { if (e.target===document.getElementById('settings-modal')) closeSettings(); }
+
+// Ainoa asetusten tallennusfunktio joka myös pakottaa välittömän
+// uudelleenrenderöinnin — perusteltu poikkeus muihin säästöfunktioihin
+// nähden, koska mikään muu ei muuten päivitä aina näkyvissä olevaa
+// hero-riviä tai avointa välilehteä ennen seuraavaa datamutaatiota.
+function saveAppearanceSettings() {
+  const theme=(document.getElementById('set-dashboard-theme')?.value||'').trim() || 'classic';
+  localStorage.setItem('suppilo.dashboardTheme', theme);
+  applyDashboardThemeAttr();
+  updateSummary();
+  renderDashboard();
+  if (document.getElementById('tab-kanban')?.classList.contains('active')) renderKanban();
+  applyFilters();
+  applyYhFilters();
+  showToast('Ulkoasu tallennettu ✓','success');
+}
 
 async function saveMyProfile() {
   const nimi=(document.getElementById('set-nimi')?.value||'').trim();
@@ -5511,17 +5693,92 @@ function newSignalActivities() {
 // vanhaa summary-baria päivitettiin (kaikki tallennuksen jälkeiset
 // päivitykset), joten tämä on tarkoituksella kevyt: ei renderöi
 // modal-sisältöä, vain lukuja. Modal lasketaan vasta kun se avataan.
+// Viiden hero-luvun laskenta yhdessä paikassa — molemmat teemat (ja
+// niiden tarkennemodaalit) käyttävät samaa dataa, vain esitys eroaa.
+function heroTileValues() {
+  const st=kauppaStats();
+  return {
+    signaalit: newSignalActivities().length,
+    // Sijoitusmahdollisuuksien haku ei ole vielä rakennettu (ks.
+    // renderHeroSijoitus) — null viestii tarkoituksella "ei vielä
+    // käytössä" (näytetään "–"), ei "haettu, löytyi nolla".
+    sijoitus: null,
+    tehtavat: computeTopTasks().length,
+    prospektit: allProspects.length,
+    putki: fmtEur(VAIHE_AVOIN.reduce((s,v)=>s+st[v].sum,0))
+  };
+}
 function updateSummary() {
-  const sEl=document.getElementById('hero-signaalit'); if (sEl) sEl.textContent=newSignalActivities().length;
-  const pEl=document.getElementById('hero-prospektit'); if (pEl) pEl.textContent=allProspects.length;
-  const tEl=document.getElementById('hero-tehtavat'); if (tEl) tEl.textContent=computeTopTasks().length;
-  const putkiEl=document.getElementById('hero-putki');
-  if (putkiEl) {
-    const st=kauppaStats();
-    putkiEl.textContent=fmtEur(VAIHE_AVOIN.reduce((s,v)=>s+st[v].sum,0));
-  }
-  // Sijoitusmahdollisuuksien haku ei ole vielä rakennettu (ks. renderHeroSijoitus) —
-  // "–" viestii tarkoituksella "ei vielä käytössä", ei "haettu, löytyi nolla".
+  applyDashboardThemeAttr();
+  const heroEl=document.getElementById('hero-area'); if (!heroEl) return;
+  const v=heroTileValues();
+  heroEl.innerHTML = dashboardTheme()==='spara' ? heroSparaHtml(v) : heroClassicHtml(v);
+}
+// Tämänhetkinen 5-laatan hero, siirretty sellaisenaan staattisesta
+// HTML:stä template-funktioksi — rakenne/luokat/onclick koskemattomia,
+// vain arvot tulevat nyt parametrina staattisten "–"-merkkien sijaan.
+function heroClassicHtml(v) {
+  return `
+  <div class="hero-tile" onclick="openHeroModal('signaalit')">
+    <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15a9 9 0 0 1 9-9"/><path d="M4 15a13 13 0 0 1 13-13"/><circle cx="4" cy="15" r="2"/><path d="M8 19l8-8"/></svg></div>
+    <div class="hero-tile-value" id="hero-signaalit">${v.signaalit}</div>
+    <div class="hero-tile-label">Uudet signaalit</div>
+  </div>
+  <div class="hero-tile" onclick="openHeroModal('sijoitus')">
+    <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.5v9M9.3 15c0 1 1.1 1.8 2.7 1.8s2.7-.7 2.7-1.8c0-2.4-5.4-1.1-5.4-3.5 0-1 1.1-1.8 2.7-1.8s2.5.6 2.6 1.5"/></svg></div>
+    <div class="hero-tile-value" id="hero-sijoitus">${v.sijoitus??'–'}</div>
+    <div class="hero-tile-label">Sijoitusmahdollisuudet</div>
+  </div>
+  <div class="hero-tile" onclick="openHeroModal('tehtavat')">
+    <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"/><path d="M12 7v5l3.2 2"/></svg></div>
+    <div class="hero-tile-value" id="hero-tehtavat">${v.tehtavat}</div>
+    <div class="hero-tile-label">Odottaa reagointia</div>
+  </div>
+  <div class="hero-tile" onclick="openHeroModal('prospektit')">
+    <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="10" height="18"/><rect x="14" y="9" width="6" height="12"/><path d="M7.5 7h1M10.5 7h1M7.5 10.5h1M10.5 10.5h1M7.5 14h1M10.5 14h1M16.5 12.5h1M16.5 15.5h1"/></svg></div>
+    <div class="hero-tile-value" id="hero-prospektit">${v.prospektit}</div>
+    <div class="hero-tile-label">Prospektit yhteensä</div>
+  </div>
+  <div class="hero-tile" onclick="openHeroModal('putki')">
+    <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9M9.5 19V5M15 19v-7M20 19V11"/></svg></div>
+    <div class="hero-tile-value" id="hero-putki">${v.putki}</div>
+    <div class="hero-tile-label">Myyntiputki</div>
+  </div>`;
+}
+// Uusi epäsymmetrinen hero: "Odottaa reagointia" on aina se luku josta
+// päivä oikeasti alkaa, joten se saa oman ison paikkansa — loput neljä
+// ovat pienempiä sivuhuomioita. Sama rakenne kuin Sparan mockupissa.
+function heroSparaHtml(v) {
+  return `
+  <div class="spara-hero-grid">
+    <div class="spara-hero-featured" onclick="openHeroModal('tehtavat')">
+      <div class="spara-hero-eyebrow">Työstettävänä nyt</div>
+      <div class="spara-hero-num" id="hero-tehtavat">${v.tehtavat}</div>
+      <div class="spara-hero-sub">avointa tehtävää putkessa, tärkeysjärjestyksessä</div>
+    </div>
+    <div class="spara-hero-mini-grid">
+      <div class="spara-hero-mini" onclick="openHeroModal('signaalit')">
+        <div class="spara-hero-mini-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15a9 9 0 0 1 9-9"/><path d="M4 15a13 13 0 0 1 13-13"/><circle cx="4" cy="15" r="2"/><path d="M8 19l8-8"/></svg></div>
+        <div class="spara-hero-mini-num" id="hero-signaalit">${v.signaalit}</div>
+        <div class="spara-hero-mini-label">Uudet signaalit</div>
+      </div>
+      <div class="spara-hero-mini" onclick="openHeroModal('sijoitus')">
+        <div class="spara-hero-mini-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.5v9M9.3 15c0 1 1.1 1.8 2.7 1.8s2.7-.7 2.7-1.8c0-2.4-5.4-1.1-5.4-3.5 0-1 1.1-1.8 2.7-1.8s2.5.6 2.6 1.5"/></svg></div>
+        <div class="spara-hero-mini-num${v.sijoitus==null?' is-empty':''}" id="hero-sijoitus">${v.sijoitus??'–'}</div>
+        <div class="spara-hero-mini-label">Sijoitusmahdollisuudet</div>
+      </div>
+      <div class="spara-hero-mini" onclick="openHeroModal('prospektit')">
+        <div class="spara-hero-mini-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="10" height="18"/><rect x="14" y="9" width="6" height="12"/><path d="M7.5 7h1M10.5 7h1M7.5 10.5h1M10.5 10.5h1M7.5 14h1M10.5 14h1M16.5 12.5h1M16.5 15.5h1"/></svg></div>
+        <div class="spara-hero-mini-num" id="hero-prospektit">${v.prospektit}</div>
+        <div class="spara-hero-mini-label">Prospektit yhteensä</div>
+      </div>
+      <div class="spara-hero-mini" onclick="openHeroModal('putki')">
+        <div class="spara-hero-mini-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9M9.5 19V5M15 19v-7M20 19V11"/></svg></div>
+        <div class="spara-hero-mini-num" id="hero-putki">${v.putki}</div>
+        <div class="spara-hero-mini-label">Myyntiputki</div>
+      </div>
+    </div>
+  </div>`;
 }
 
 // ── Hero-modal: viiden kuvakkeen tarkennenäkymät ─────────────────────────────
@@ -5817,6 +6074,25 @@ async function saveGlobalTask() {
       </div>
       <div style="display:flex;justify-content:flex-end;margin-top:8px">
         <button class="btn btn-primary btn-sm" onclick="saveMyProfile()">Tallenna</button>
+      </div>
+
+      <div class="cs-title" style="margin-top:22px">Ulkoasu</div>
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>Dashboard-teema</label>
+          <select class="form-control" id="set-dashboard-theme">
+            <option value="classic">Nykyinen</option>
+            <option value="spara">Spara-konsepti</option>
+          </select>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:4px">
+        Henkilökohtainen, tallentuu vain tähän selaimeen — muut myyjät valitsevat omansa.
+        Rakenteilla vielä: Kanban/Tilit/Yhteyshenkilöt-välilehdet näkyvät toistaiseksi
+        nykyisellä ulkoasulla riippumatta tästä valinnasta.
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-primary btn-sm" onclick="saveAppearanceSettings()">Tallenna ulkoasu</button>
       </div>
 
       <div class="cs-title" style="margin-top:22px">Outlook-sähköposti</div>
