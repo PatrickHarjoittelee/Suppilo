@@ -946,6 +946,8 @@
           <div id="task-form-label" style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
             <select class="form-control" id="task-tila" style="grid-column:1/-1"></select>
+            <select class="form-control" id="task-soitto-contact" aria-label="Yhteyshenkilö"
+                    style="display:none;grid-column:1/-1" onchange="updateSoittoNowButtonVisibility()"></select>
             <input class="form-control" id="task-aihe" placeholder="Aihe…" style="grid-column:1/-1">
             <input class="form-control" id="task-arvo" type="number" placeholder="Arvo €" min="0" style="display:none;grid-column:1/-1">
             <select class="form-control" id="task-tekija" aria-label="Käsittelijä"></select>
@@ -956,6 +958,7 @@
               <button class="btn btn-ghost btn-sm" id="task-del-btn" onclick="deleteTaskFromForm()" style="display:none;color:var(--red)" title="Poista tehtävä">🗑️</button>
               <div style="flex:1"></div>
               <button class="btn btn-outlook btn-sm" id="task-email-btn" style="display:none" onclick="openEmailComposerFromTask()">✉️ Kirjoita ja lähetä</button>
+              <button class="btn btn-primary btn-sm" id="task-soitto-now-btn" style="display:none" onclick="soitaNyt()">📞 Soita nyt</button>
               <button class="btn btn-ghost btn-sm" onclick="closeTaskForm()">Peruuta</button>
               <button class="btn btn-primary btn-sm" id="task-save-btn" onclick="saveTaskForm()">+ Lisää</button>
             </div>
@@ -1172,7 +1175,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-04.8';
+const BUILD_ID = '2026-08-06.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3003,6 +3006,9 @@ function openTaskForm(tyyppi) {
   form.style.display='';
   const delBtn=document.getElementById('task-del-btn'); if(delBtn) delBtn.style.display='none';
   const emailBtn=document.getElementById('task-email-btn'); if(emailBtn) emailBtn.style.display=tyyppi==='sahkoposti'?'':'none';
+  const soittoSel=document.getElementById('task-soitto-contact');
+  if (soittoSel) soittoSel.style.display=tyyppi==='soitto'?'':'none';
+  if (tyyppi==='soitto') populateSoittoContactPicker(); else updateSoittoNowButtonVisibility();
   form.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 function closeTaskForm() {
@@ -3017,6 +3023,8 @@ function closeTaskForm() {
   const sav=document.getElementById('task-save-btn'); if(sav) sav.textContent='+ Lisää';
   const delBtn=document.getElementById('task-del-btn'); if(delBtn) delBtn.style.display='none';
   const emailBtn=document.getElementById('task-email-btn'); if(emailBtn) emailBtn.style.display='none';
+  const soittoSel=document.getElementById('task-soitto-contact'); if(soittoSel){soittoSel.style.display='none';soittoSel.value='';}
+  const soittoBtn=document.getElementById('task-soitto-now-btn'); if(soittoBtn) soittoBtn.style.display='none';
 }
 function updateGtTilaOptions() {
   const tyyppi=document.getElementById('gt-type')?.value||'kauppa';
@@ -3309,8 +3317,59 @@ function editTask(taskId) {
   const tek=document.getElementById('task-tekija'); if(tek) tek.value=t.tekija||'';
   const due=document.getElementById('task-due'); if(due) due.value=t.due_date||'';
   const nota=document.getElementById('task-muistiinpanot'); if(nota) nota.value=t.muistiinpanot||'';
+  if (t.tyyppi==='soitto') {
+    const soittoSel=document.getElementById('task-soitto-contact');
+    if (soittoSel) soittoSel.value=t.contactId||'';
+    updateSoittoNowButtonVisibility();
+  }
   const sav=document.getElementById('task-save-btn'); if(sav) sav.textContent='Tallenna';
   const delBtn=document.getElementById('task-del-btn'); if(delBtn) delBtn.style.display='';
+}
+
+// Sama sijaisteksti+suodatus+automaattivalinta-kaava kuin openEmailComposer():in
+// yhteyshenkilövalitsimessa (rivi ~1686), mutta puhelin- eikä sähköpostikentän
+// mukaan suodatettuna.
+function populateSoittoContactPicker() {
+  const sel=document.getElementById('task-soitto-contact'); if (!sel||!currentId) return;
+  const withPhone=allContacts.filter(c=>c.tili_id===currentId && c.puhelin);
+  sel.innerHTML='<option value="">— valitse yhteyshenkilö —</option>'+
+    withPhone.map(c=>`<option value="${c.id}">${esc(c.nimi)} (${esc(c.puhelin)})</option>`).join('');
+  if (withPhone.length===1) sel.value=withPhone[0].id;
+  updateSoittoNowButtonVisibility();
+}
+// Näkyy vain kun tyyppi==='soitto' JA valittuna yhteyshenkilö jolla on puhelinnumero.
+function updateSoittoNowButtonVisibility() {
+  const btn=document.getElementById('task-soitto-now-btn'); if (!btn) return;
+  const tyyppi=document.getElementById('task-type')?.value;
+  const sel=document.getElementById('task-soitto-contact');
+  const c=(tyyppi==='soitto' && sel && sel.value) ? allContacts.find(x=>x.id===sel.value) : null;
+  btn.style.display=(c && c.puhelin) ? '' : 'none';
+}
+function soittoContactIdFromForm(tyyppi) {
+  if (tyyppi!=='soitto') return null;
+  const sel=document.getElementById('task-soitto-contact');
+  return sel && sel.value ? sel.value : null;
+}
+
+// EI sama kuin soitaJaLogi() (info-gridin "📞 Soita" -nappi, luo puhelu-
+// tyyppisen historiamerkinnän) — tämä luo/päivittää oikean tyyppi:'soitto'
+// TEHTÄVÄN joka näkyy Tehtävät-listassa TASK_TILA.soitto:n kautta.
+// window.open() ajetaan ennen mitään await-kohtaa, jotta selain tulkitsee
+// sen suoraksi käyttäjägesteen seuraukseksi (popup-esto).
+async function soitaNyt() {
+  const sel=document.getElementById('task-soitto-contact');
+  const c=sel && sel.value ? allContacts.find(x=>x.id===sel.value) : null;
+  if (!c || !c.puhelin) { showToast('Valitse yhteyshenkilö, jolla on puhelinnumero','error'); return; }
+  window.open('tel:'+c.puhelin.replace(/\s/g,''), '_blank');
+  const aiheInput=(document.getElementById('task-aihe')?.value||'').trim();
+  const overrides={
+    tyyppi:'soitto', tila:TASK_TILA.soitto[0],
+    due_date:new Date().toISOString().substring(0,10),
+    aihe:aiheInput||c.nimi, contactId:c.id
+  };
+  const editId=document.getElementById('task-edit-id')?.value;
+  const savedId=editId?await updateTaskEdit(editId,overrides):await addTask(overrides);
+  if (savedId) editTask(savedId);
 }
 
 function deleteTaskFromForm() {
@@ -3323,22 +3382,26 @@ async function saveTaskForm() {
   if (editId) await updateTaskEdit(editId); else await addTask();
 }
 
-async function updateTaskEdit(taskId) {
-  if (!currentId) return;
-  const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return;
-  const acts=parseActs(p); const task=acts.find(a=>a.id===taskId); if(!task) return;
-  const tyyppi=document.getElementById('task-type')?.value||task.tyyppi;
-  const tila=document.getElementById('task-tila')?.value||'';
-  const aihe=(document.getElementById('task-aihe')?.value||'').trim();
+// overrides (valinnainen) ylikirjoittaa lomakkeen luetun arvon per kenttä —
+// käytössä soitaNyt():ssä joka tallentaa suoraan lomaketta täyttämättä.
+// Palauttaa muokatun tehtävän id:n onnistuessa, muuten null.
+async function updateTaskEdit(taskId, overrides) {
+  if (!currentId) return null;
+  const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return null;
+  const acts=parseActs(p); const task=acts.find(a=>a.id===taskId); if(!task) return null;
+  const tyyppi=overrides?.tyyppi ?? (document.getElementById('task-type')?.value||task.tyyppi);
+  const tila=overrides?.tila ?? (document.getElementById('task-tila')?.value||'');
+  const aihe=overrides?.aihe ?? (document.getElementById('task-aihe')?.value||'').trim();
   const arvoRaw=tyyppi==='kauppa'?(document.getElementById('task-arvo')?.value||''):'';
   const arvo=arvoRaw!==''?parseFloat(arvoRaw):task.arvo;
   const tekija=(document.getElementById('task-tekija')?.value||'').trim()||null;
   const taskNote=(document.getElementById('task-muistiinpanot')?.value||'').trim()||null;
+  const contactId=overrides?.contactId ?? (tyyppi==='soitto' ? soittoContactIdFromForm(tyyppi) : (task.contactId ?? null));
   const prevTila=task.tila;
   const wasDone=taskIsDone(normalizeTask(task));
   const done=(TASK_DONE[tyyppi]||[]).includes(tila);
-  Object.assign(task,{tyyppi,tila,aihe,arvo,tekija,muistiinpanot:taskNote,
-    due_date:document.getElementById('task-due')?.value||task.due_date||null,
+  Object.assign(task,{tyyppi,tila,aihe,arvo,tekija,muistiinpanot:taskNote,contactId,
+    due_date:overrides?.due_date ?? (document.getElementById('task-due')?.value||task.due_date||null),
     done,updated_at:new Date().toISOString(),completed_at:done?(wasDone?task.completed_at||new Date().toISOString():new Date().toISOString()):null});
   if(tyyppi==='kauppa'&&tila&&tila!==prevTila){
     const prev=p.vaihe; p.vaihe=normalizeKauppaVaihe(tila);
@@ -3352,25 +3415,29 @@ async function updateTaskEdit(taskId) {
     await saveCrmState(p);
     closeTaskForm(); renderTaskList(p); renderActivities(p); updateSummary(); applyFilters();
     showToast('Tehtävä päivitetty ✓','success');
-  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+    return taskId;
+  } catch(e) { showToast('Virhe: '+e.message,'error'); return null; }
 }
 
-async function addTask() {
-  if (!currentId) return;
-  const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return;
-  const tyyppi=document.getElementById('task-type')?.value||'kauppa';
-  const tila=document.getElementById('task-tila')?.value||'';
-  const aihe=(document.getElementById('task-aihe')?.value||'').trim();
-  const due_date=document.getElementById('task-due')?.value||'';
+// overrides, ks. updateTaskEdit(). Palauttaa uuden tehtävän id:n onnistuessa.
+async function addTask(overrides) {
+  if (!currentId) return null;
+  const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return null;
+  const tyyppi=overrides?.tyyppi ?? (document.getElementById('task-type')?.value||'kauppa');
+  const tila=overrides?.tila ?? (document.getElementById('task-tila')?.value||'');
+  const aihe=overrides?.aihe ?? (document.getElementById('task-aihe')?.value||'').trim();
+  const due_date=overrides?.due_date ?? (document.getElementById('task-due')?.value||'');
   const arvoRaw=tyyppi==='kauppa'?(document.getElementById('task-arvo')?.value||''):'';
   const arvo=arvoRaw?parseFloat(arvoRaw):null;
-  if (!due_date) { showToast('Valitse päivämäärä','error'); return; }
+  if (!due_date) { showToast('Valitse päivämäärä','error'); return null; }
   const tekija=(document.getElementById('task-tekija')?.value||'').trim()||null;
   const taskNote=(document.getElementById('task-muistiinpanot')?.value||'').trim()||null;
+  const contactId=overrides?.contactId ?? soittoContactIdFromForm(tyyppi);
   const done=(TASK_DONE[tyyppi]||[]).includes(tila);
   const acts=parseActs(p);
   const created_at=new Date().toISOString();
-  acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,tekija,muistiinpanot:taskNote,created_at,due_date,done,completed_at:done?created_at:null});
+  const id='TK'+Date.now();
+  acts.push({id,tyyppi,tila,aihe,arvo,tekija,muistiinpanot:taskNote,created_at,due_date,done,completed_at:done?created_at:null,contactId});
   p.aktiviteetit=JSON.stringify(acts);
   if(tyyppi==='kauppa'&&tila){const prev=p.vaihe;const normTila=normalizeKauppaVaihe(tila);p.vaihe=normTila;if(prev!==normTila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${normTila}`,tekija);}
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
@@ -3381,7 +3448,8 @@ async function addTask() {
     closeTaskForm();
     renderTaskList(p); renderActivities(p); updateSummary(); applyFilters();
     showToast('Tehtävä lisätty ✓','success');
-  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+    return id;
+  } catch(e) { showToast('Virhe: '+e.message,'error'); return null; }
 }
 
 function renderTaskList(p) {
