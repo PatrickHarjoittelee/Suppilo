@@ -1175,7 +1175,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-06.1';
+const BUILD_ID = '2026-08-06.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1725,6 +1725,8 @@ function openEmailComposer(opts) {
   emailAttachments=[];
   renderEmailAttachments();
   document.getElementById('email-send-btn').disabled=false;
+  const schedWrap=document.getElementById('email-schedule-wrap'); if (schedWrap) schedWrap.style.display='none';
+  const schedAt=document.getElementById('email-schedule-at'); if (schedAt) schedAt.value='';
   document.getElementById('email-modal').classList.remove('hidden');
   captureEmailComposerSnapshot();
 }
@@ -1796,6 +1798,8 @@ function closeEmailComposer() {
   renderEmailAttachments();
   deselectEditableImage();
   const aiPanel=document.getElementById('ai-opener-panel'); if (aiPanel) aiPanel.style.display='none';
+  const schedWrap=document.getElementById('email-schedule-wrap'); if (schedWrap) schedWrap.style.display='none';
+  const schedAt=document.getElementById('email-schedule-at'); if (schedAt) schedAt.value='';
 }
 // Käyttäjän käynnistämä sulkeminen (✕, Peruuta, klikkaus ulkopuolelle) —
 // kysyy vahvistuksen jos muutoksia. closeEmailComposer() itse pysyy
@@ -2036,6 +2040,42 @@ function renderEmailAttachments() {
 
 function newTicketCode() { return 'SP-'+Date.now().toString(36).slice(-5).toUpperCase(); }
 
+// Rakentaa Graph-viestiobjektin sekä välittömälle (sendOutlookEmail) että
+// ajastetulle (scheduleOutlookEmail) lähetykselle. Puhdas funktio, ei I/O.
+function buildEmailMessagePayload(subjectOut, bodyHtml, to, extendedProperties) {
+  const message={
+    subject:subjectOut,
+    body:{contentType:'HTML',content:bodyHtml},
+    toRecipients:[{emailAddress:{address:to}}]
+  };
+  if (emailAttachments.length) {
+    message.attachments=emailAttachments.map(a=>({
+      '@odata.type':'#microsoft.graph.fileAttachment',
+      name:a.name, contentType:a.contentType, contentBytes:a.contentBytes
+    }));
+  }
+  if (extendedProperties && extendedProperties.length) message.singleValueExtendedProperties=extendedProperties;
+  return message;
+}
+
+// Luonnos + lähetys kahdessa kutsussa (ei yhden kutsun /sendMail) jotta
+// conversationId saadaan luontivastauksesta talteen ketjun linkitystä
+// varten — /sendMail ei palauta mitään viestitietoa (202, tyhjä body).
+async function createAndSendGraphMessage(token, message) {
+  const createRes=await fetch('https://graph.microsoft.com/v1.0/me/messages',{
+    method:'POST',
+    headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+    body:JSON.stringify(message)
+  });
+  if (!createRes.ok) throw new Error(`${createRes.status} ${await createRes.text()}`);
+  const created=await createRes.json();
+  const sendRes=await fetch(`https://graph.microsoft.com/v1.0/me/messages/${created.id}/send`,{
+    method:'POST', headers:{Authorization:`Bearer ${token}`}
+  });
+  if (!sendRes.ok) throw new Error(`${sendRes.status} ${await sendRes.text()}`);
+  return created;
+}
+
 async function sendOutlookEmail() {
   if (!emailDraftContext) return;
   const to=document.getElementById('email-to').value.trim();
@@ -2061,31 +2101,8 @@ async function sendOutlookEmail() {
     const ticketCode=task?.ticketCode||newTicketCode();
     const subjectOut=subject.includes(`[${ticketCode}]`)?subject:`${subject} [${ticketCode}]`;
 
-    const message={
-      subject:subjectOut,
-      body:{contentType:'HTML',content:bodyHtml},
-      toRecipients:[{emailAddress:{address:to}}]
-    };
-    if (emailAttachments.length) {
-      message.attachments=emailAttachments.map(a=>({
-        '@odata.type':'#microsoft.graph.fileAttachment',
-        name:a.name, contentType:a.contentType, contentBytes:a.contentBytes
-      }));
-    }
-    // Luonnos + lähetys kahdessa kutsussa (ei yhden kutsun /sendMail) jotta
-    // conversationId saadaan luontivastauksesta talteen ketjun linkitystä
-    // varten — /sendMail ei palauta mitään viestitietoa (202, tyhjä body).
-    const createRes=await fetch('https://graph.microsoft.com/v1.0/me/messages',{
-      method:'POST',
-      headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
-      body:JSON.stringify(message)
-    });
-    if (!createRes.ok) throw new Error(`${createRes.status} ${await createRes.text()}`);
-    const created=await createRes.json();
-    const sendRes=await fetch(`https://graph.microsoft.com/v1.0/me/messages/${created.id}/send`,{
-      method:'POST', headers:{Authorization:`Bearer ${token}`}
-    });
-    if (!sendRes.ok) throw new Error(`${sendRes.status} ${await sendRes.text()}`);
+    const message=buildEmailMessagePayload(subjectOut, bodyHtml, to);
+    const created=await createAndSendGraphMessage(token, message);
 
     if (p) {
       const teksti=`Lähetetty: ${subject} → ${to}`;
@@ -2118,6 +2135,97 @@ async function sendOutlookEmail() {
   } finally {
     btn.disabled=false; btn.textContent='Lähetä Outlookista';
   }
+}
+
+// Ajastettu Outlook-lähetys: peilaa sendOutlookEmail():ia, lisää
+// PidTagDeferredSendTime-laajennetun ominaisuuden (Graph/MAPI-mekanismi,
+// jolla Exchange itse pitää viestin ja toimittaa sen ajastettuna hetkenä
+// — täysin riippumatta siitä onko tämä CRM-välilehti auki). EI VARMISTETTU
+// oikeaa postilaatikkoa vasten tällä kaksivaiheisella luo+lähetä-id:llä
+// -kuviolla — testaa ennen tuotantoluottoa.
+//
+// due_date tallennetaan VAIN päivämääränä (renderTaskList()/
+// timelineDateText() liittävät siihen oman 'T12:00:00'-osansa, joka
+// antaisi virheellisen tuloksen jos due_date jo sisältäisi oman
+// aikaosansa) — tarkka ajastettu hetki säilyy erikseen scheduledSendAt:ssa.
+async function scheduleOutlookEmail(deferredIso) {
+  if (!emailDraftContext) return;
+  const to=document.getElementById('email-to').value.trim();
+  const subject=document.getElementById('email-subject').value.trim();
+  const bodyEl=document.getElementById('email-body-html');
+  const bodyHtml=(bodyEl.innerHTML||'').trim();
+  const bodyEmpty=!bodyEl.textContent.trim() && !bodyEl.querySelector('img,a');
+  if (!to||!subject||bodyEmpty) { showToast('Vastaanottaja, aihe ja viesti ovat pakollisia','error'); return; }
+  if (!deferredIso || Date.parse(deferredIso)<=Date.now()) { showToast('Valitse tuleva ajankohta','error'); return; }
+  if (!confirm(`Ajastetaanko sähköposti lähtemään ${fmtDT(deferredIso)} osoitteeseen ${to}?`)) return;
+  const btn=document.getElementById('email-schedule-confirm-btn');
+  if (btn) { btn.disabled=true; btn.textContent='Ajastetaan…'; }
+  try {
+    const token=await microsoftAccessToken();
+    const p=allProspects.find(x=>x.spara_id===emailDraftContext.tiliId);
+    const acts=p?parseActs(p):[];
+    let task=(p&&emailDraftContext.taskId) ? acts.find(a=>a.id===emailDraftContext.taskId) : null;
+    const ticketCode=task?.ticketCode||newTicketCode();
+    const subjectOut=subject.includes(`[${ticketCode}]`)?subject:`${subject} [${ticketCode}]`;
+
+    const message=buildEmailMessagePayload(subjectOut, bodyHtml, to, [{id:'SystemTime 0x3FEF', value:deferredIso}]);
+    const created=await createAndSendGraphMessage(token, message);
+
+    if (p) {
+      const teksti=`Ajastettu: ${subject} → ${to} (${fmtDT(deferredIso)})`;
+      const tekija=currentUser.nimi||currentUserEmail||null;
+      const nowIso=new Date().toISOString(), dueDateOnly=deferredIso.slice(0,10);
+      if (task) {
+        Object.assign(task,{tila:'Ajastettu',done:false,aihe:subject,teksti,completed_at:null,
+          updated_at:nowIso, due_date:dueDateOnly, scheduledSendAt:deferredIso,
+          contactId:emailDraftContext.contactId||task.contactId||null,
+          conversationId:created.conversationId||task.conversationId||null, ticketCode});
+      } else {
+        acts.push({id:'TK'+Date.now(),tyyppi:'sahkoposti',tila:'Ajastettu',done:false,
+          aihe:subject,teksti,tekija,muistiinpanot:null,created_at:nowIso,
+          due_date:dueDateOnly,scheduledSendAt:deferredIso,
+          contactId:emailDraftContext.contactId||null,
+          conversationId:created.conversationId||null,ticketCode});
+      }
+      p.aktiviteetit=JSON.stringify(acts);
+      await saveCrmState(p);
+      if (currentId===p.spara_id) { renderActivities(p); renderTaskList(p); }
+    }
+    closeTaskForm();
+    closeEmailComposer();
+    updateMicrosoftStatus();
+    showToast('Sähköposti ajastettu ✓ ('+fmtDT(deferredIso)+')','success');
+  } catch(e) {
+    showToast('Ajastus epäonnistui: '+e.message,'error');
+  } finally {
+    if (btn) { btn.disabled=false; btn.textContent='Vahvista ajastus'; }
+  }
+}
+
+function localDatetimeInputValue(d) {
+  const pad=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Sama avaa/sulje-inline-paneeli-kaava kuin openAiOpenerPanel()/ai-opener-panel.
+function toggleEmailSchedule() {
+  const wrap=document.getElementById('email-schedule-wrap'); if (!wrap) return;
+  const hidden=wrap.style.display==='none';
+  if (hidden) {
+    const at=document.getElementById('email-schedule-at');
+    if (at) at.min=localDatetimeInputValue(new Date());
+    wrap.style.display='';
+  } else {
+    wrap.style.display='none';
+  }
+}
+
+function confirmScheduleOutlookEmail() {
+  const raw=document.getElementById('email-schedule-at')?.value||'';
+  if (!raw) { showToast('Valitse ajankohta','error'); return; }
+  const when=new Date(raw); // datetime-local ilman aikavyöhykemerkintää -> paikallinen aika (ECMA-262)
+  if (isNaN(when.getTime()) || when.getTime()<=Date.now()) { showToast('Valitse tuleva ajankohta','error'); return; }
+  scheduleOutlookEmail(when.toISOString());
 }
 
 // Sheetsin solukoko on rajattu ~50 000 merkkiin ja p.aktiviteetit on YKSI
@@ -2244,11 +2352,16 @@ async function syncContactEmails(contactId, opts) {
         ticket.thread=ticket.thread||[];
         ticket.thread.push({dir:'in',graphId:m.id,ts:m.receivedDateTime,subject:m.subject,preview:m.bodyPreview,webLink:m.webLink||null});
         // Vastaus palauttaa tiketin "Uusi"-tilaan (jos oli merkitty
-        // Toimitetuksi) — taskIsDone johtaa done-tilan tila-kentästä, joten
-        // pelkkä done:false ei riittäisi nostamaan korttia takaisin
-        // aktiiviseksi. Ei kosketa mitä vastaus sisältää, ei arvaa uutta
-        // tilaa sen perusteella — vain merkitsee että joku vastasi.
-        if (ticket.tila==='Toimitettu') ticket.tila='Uusi';
+        // Toimitetuksi tai Ajastetuksi) — taskIsDone johtaa done-tilan
+        // tila-kentästä, joten pelkkä done:false ei riittäisi nostamaan
+        // korttia takaisin aktiiviseksi. Ei kosketa mitä vastaus sisältää,
+        // ei arvaa uutta tilaa sen perusteella — vain merkitsee että joku
+        // vastasi. "Ajastettu" mukana koska CRM:llä ei ole webhookia joka
+        // tietäisi milloin ajastettu viesti oikeasti toimitettiin —
+        // saapunut vastaus on paras saatavilla oleva todiste että se on jo
+        // tapahtunut (Outlook ei voi toimittaa vastausta lähettämättömään
+        // viestiin).
+        if (ticket.tila==='Toimitettu'||ticket.tila==='Ajastettu') ticket.tila='Uusi';
         ticket.done=false; ticket.completed_at=null; ticket.updated_at=m.receivedDateTime||new Date().toISOString();
         linked++;
       } else {
@@ -2962,7 +3075,7 @@ function kauppaStats(){
 const TASK_TILA={
   kauppa:    VAIHEET,
   soitto:    ['Uusi','Vastaamaton','Viesti vastaajaan','SMS-viesti','Tavoitettu'],
-  sahkoposti:['Uusi','Luonnos','Hylkäys','Lomavastaaja','Toimitettu'],
+  sahkoposti:['Uusi','Luonnos','Hylkäys','Lomavastaaja','Ajastettu','Toimitettu'],
   muu:       ['Uusi','Aloitettu','Odottaa lisätietoa','Valmis']
 };
 const TASK_DONE={kauppa:['Sopimus syntynyt','Ei juuri nyt'],soitto:['Tavoitettu'],sahkoposti:['Toimitettu'],muu:['Valmis']};
@@ -6733,10 +6846,19 @@ async function saveGlobalTask() {
           <input class="form-control" type="file" id="email-attachment-input" multiple onchange="addEmailAttachments(this.files)">
           <div id="email-attachments"></div>
         </div>
+        <div class="form-group full" id="email-schedule-wrap" style="display:none">
+          <label>Ajasta lähetys</label>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input class="form-control" type="datetime-local" id="email-schedule-at" style="max-width:220px">
+            <button type="button" class="btn btn-outlook btn-sm" id="email-schedule-confirm-btn" onclick="confirmScheduleOutlookEmail()">Vahvista ajastus</button>
+          </div>
+          <div style="font-size:11px;color:var(--text2);margin-top:4px">Outlook lähettää viestin automaattisesti valittuna ajankohtana, vaikka tämä välilehti olisi suljettu.</div>
+        </div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
         <button class="btn btn-ghost" onclick="closeEmailComposerGuarded()">Peruuta</button>
         <button class="btn btn-ghost" id="email-save-draft-btn" onclick="saveEmailDraftTask()">💾 Tallenna luonnos</button>
+        <button class="btn btn-ghost" id="email-schedule-btn" onclick="toggleEmailSchedule()">🕐 Ajasta lähetys</button>
         <button class="btn btn-outlook" id="email-send-btn" onclick="sendOutlookEmail()">Lähetä Outlookista</button>
       </div>
     </div>
