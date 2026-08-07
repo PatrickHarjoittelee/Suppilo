@@ -6950,17 +6950,28 @@ async function saveGlobalTask() {
         pendingCustomerId = customerId; // data ei vielä ladattu — toistetaan alla
       }
     },
-    // Varapolku jos Google-kirjautuminen ei toimi WebViewissä (ks. Apk-repon
-    // README) — Android hankkii tokenin natiivisti ja syöttää sen tänne,
-    // samaa accessToken/loadData()-saumaa käyttäen kuin olemassa oleva GIS-
-    // callback (rivit ~1257-1278) jo tekee.
+    // Ensisijainen kirjautumispolku Android-sovelluksessa (natiivi Google-
+    // kirjautuminen Play Services Authorization API:lla, ei WebViewin oma
+    // GIS-nappi — Google estää OAuth:in upotetuissa WebView:eissä
+    // politiikkatasolla, ks. Apk-repon README). Peilaa olemassa olevan
+    // GIS-callbackin käyttäytymisen (rivit ~1257-1278): hakee myös
+    // currentUserEmailin samasta userinfo-päätepisteestä, jotta "Omat
+    // tiedot" -tallennus toimii identtisesti riippumatta kumpaa
+    // kirjautumispolkua käytettiin.
     setAccessToken: function (token) {
       accessToken = token;
       var loginScreen = document.getElementById('login-screen');
       var app = document.getElementById('app');
       if (loginScreen) loginScreen.style.display = 'none';
       if (app) app.style.display = 'block';
-      loadData();
+      fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: 'Bearer ' + token } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { currentUserEmail = (j.email || '').trim().toLowerCase() || null; })
+        .catch(function (e) { console.error('userinfo-haku epäonnistui (natiivi token):', e); })
+        .then(function () {
+          if (!currentUserEmail) showToast('Google-sähköpostia ei saatu — Omat tiedot -tallennus ei toimi', 'error');
+          loadData();
+        });
     },
   };
 
