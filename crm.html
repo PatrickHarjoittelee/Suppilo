@@ -110,8 +110,10 @@
     .email-toolbar button { min-width:30px; }
     .email-body-html img { max-width:100%;height:auto;cursor:pointer;-webkit-user-drag:none;user-drag:none; }
     .ai-opener-panel { display:flex;flex-direction:column;gap:6px;margin-top:8px; }
-    .ai-opener-option { text-align:left;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;font-size:12px;line-height:1.4;color:var(--text);cursor:pointer; }
+    .ai-opener-option { display:flex;align-items:flex-end;gap:8px;text-align:left;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px; }
     .ai-opener-option:hover { border-color:var(--accent); }
+    .ai-opener-text { flex:1;font-size:12px;line-height:1.4;color:var(--text); }
+    .ai-opener-apply-btn { flex-shrink:0;white-space:nowrap; }
     .img-resize-frame { position:fixed;border:2px solid var(--accent);box-sizing:border-box;pointer-events:none;z-index:2100; }
     .img-resize-handle { position:absolute;width:16px;height:16px;right:-9px;bottom:-9px;background:var(--accent);border:2px solid #fff;border-radius:50%;cursor:nwse-resize;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none; }
     .img-resize-label { position:absolute;top:-24px;left:0;background:var(--accent);color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;white-space:nowrap; }
@@ -1175,7 +1177,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-06.3';
+const BUILD_ID = '2026-08-07.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1493,7 +1495,11 @@ async function openAiOpenerPanel() {
     if (stillCurrent()) { btn.disabled=false; btn.textContent='✨ Personoi avaus'; }
   }
   if (!stillCurrent()) return;
-  panel.innerHTML=variants.map((v,i)=>`<button type="button" class="ai-opener-option" onclick="pickAiOpener(${i})">${esc(v)}</button>`).join('');
+  // Teksti ja "Sovita viesteen" ovat erillisiä (ei koko kortin klikkaus) —
+  // näin ehdotusta voi lukea/valita tekstinä vahingossa sitä viestiin
+  // liittämättä, ja liittäminen on aina tarkoituksellinen, selvästi
+  // merkitty teko.
+  panel.innerHTML=variants.map((v,i)=>`<div class="ai-opener-option"><div class="ai-opener-text">${esc(v)}</div><button type="button" class="btn btn-ghost btn-sm ai-opener-apply-btn" onclick="pickAiOpener(${i})">➜ Sovita viesteen</button></div>`).join('');
   panel.dataset.variants=JSON.stringify(variants);
   panel.style.display='';
 }
@@ -2313,6 +2319,30 @@ async function fetchIncomingEmails(address, token) {
   return data.value||[];
 }
 
+// Hakee tälle kontaktille lähetetyt viestit jotka EIVÄT kulkeneet CRM:n oman
+// sendOutlookEmail/scheduleOutlookEmail-polun kautta (ne on jo kirjattu
+// lähetyshetkellä graphId:llä — syncContactEmails suodattaa ne pois known-
+// joukon avulla, joten tästä hausta ei synny kaksinkertaista kirjausta).
+// Kattaa tapauksen jossa myyjä vastaa asiakkaalle suoraan Outlookista
+// (web/työpöytä/puhelin) CRM:n ohi — ilman tätä se vastaus jäisi näkymättömiin
+// ketjun historiaan, vaikka asiakkaan seuraava vastaus siihen linkittyisikin.
+// Ei vaadi uutta Graph-oikeutta: Mail.Read kattaa kaikki kansiot, myös
+// Lähetetyt. EI VARMISTETTU oikeaa postilaatikkoa vasten (ei Outlook-yhteyttä
+// tässä hiekkalaatikossa) — erityisesti toRecipients/any(...)-suodatin on
+// syytä testata ennen tuotantoluottoa, ks. fetchIncomingEmails-kommentti
+// samasta $orderby-rajoituksesta nested-filttereille.
+async function fetchSentEmails(address, token) {
+  const safeAddr=address.replace(/'/g,"''");
+  const url='https://graph.microsoft.com/v1.0/me/mailFolders/SentItems/messages'
+    +`?$filter=${encodeURIComponent(`toRecipients/any(r:r/emailAddress/address eq '${safeAddr}')`)}`
+    +'&$select=id,subject,bodyPreview,sentDateTime,webLink,conversationId'
+    +'&$top=20';
+  const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  const data=await r.json();
+  return data.value||[];
+}
+
 // Tunnistaa mihin lähetettyyn tikettiin saapunut vastaus kuuluu: ensisijaisesti
 // Graphin omalla conversationId:llä (luotettavin, ei riipu siitä mitä
 // vastaanottaja tekee viestin otsikolle), toissijaisesti aiheeseen upotetulla
@@ -2330,7 +2360,20 @@ async function syncContactEmails(contactId, opts) {
   if (statusEl) statusEl.textContent='Tarkistetaan…';
   try {
     const token=await microsoftAccessToken();
-    const msgs=await fetchIncomingEmails(c.sahkoposti.trim(), token);
+    const addr=c.sahkoposti.trim();
+    // Molemmat suunnat: saapuneet JA lähetetyt. Lähetetyt-haku täydentää
+    // CRM:n omaa lähetyslokia (sendOutlookEmail/scheduleOutlookEmail
+    // kirjaavat jo oman lähetyksensä graphId:llä) tapauksilla joissa myyjä
+    // vastasi asiakkaalle suoraan Outlookista CRM:n ohi — muuten se vastaus
+    // puuttuisi ketjun historiasta kokonaan.
+    const [incoming, sent]=await Promise.all([
+      fetchIncomingEmails(addr, token),
+      fetchSentEmails(addr, token)
+    ]);
+    const msgs=[
+      ...incoming.map(m=>({...m, dir:'in', ts:m.receivedDateTime})),
+      ...sent.map(m=>({...m, dir:'out', ts:m.sentDateTime}))
+    ];
     const acts=parseActs(p);
     const tickets=acts.filter(a=>a.tyyppi==='sahkoposti'&&a.id&&a.contactId===contactId);
     const byConv=new Map(tickets.filter(t=>t.conversationId).map(t=>[t.conversationId,t]));
@@ -2340,7 +2383,7 @@ async function syncContactEmails(contactId, opts) {
       ...tickets.flatMap(t=>(t.thread||[]).map(x=>x.graphId))
     ]);
     const uusi=msgs.filter(m=>!known.has(m.id))
-      .sort((a,b)=>new Date(a.receivedDateTime)-new Date(b.receivedDateTime));
+      .sort((a,b)=>new Date(a.ts)-new Date(b.ts));
     let linked=0;
     uusi.forEach(m=>{
       let ticket=byConv.get(m.conversationId);
@@ -2350,25 +2393,44 @@ async function syncContactEmails(contactId, opts) {
       }
       if (ticket) {
         ticket.thread=ticket.thread||[];
-        ticket.thread.push({dir:'in',graphId:m.id,ts:m.receivedDateTime,subject:m.subject,preview:m.bodyPreview,webLink:m.webLink||null});
-        // Vastaus palauttaa tiketin "Uusi"-tilaan (jos oli merkitty
-        // Toimitetuksi tai Ajastetuksi) — taskIsDone johtaa done-tilan
-        // tila-kentästä, joten pelkkä done:false ei riittäisi nostamaan
-        // korttia takaisin aktiiviseksi. Ei kosketa mitä vastaus sisältää,
-        // ei arvaa uutta tilaa sen perusteella — vain merkitsee että joku
-        // vastasi. "Ajastettu" mukana koska CRM:llä ei ole webhookia joka
-        // tietäisi milloin ajastettu viesti oikeasti toimitettiin —
-        // saapunut vastaus on paras saatavilla oleva todiste että se on jo
-        // tapahtunut (Outlook ei voi toimittaa vastausta lähettämättömään
-        // viestiin).
-        if (ticket.tila==='Toimitettu'||ticket.tila==='Ajastettu') ticket.tila='Uusi';
-        ticket.done=false; ticket.completed_at=null; ticket.updated_at=m.receivedDateTime||new Date().toISOString();
+        ticket.thread.push({dir:m.dir,graphId:m.id,ts:m.ts,subject:m.subject,preview:m.bodyPreview,webLink:m.webLink||null});
+        if (m.dir==='in') {
+          // Vastaus palauttaa tiketin "Uusi"-tilaan (jos oli merkitty
+          // Toimitetuksi tai Ajastetuksi) — taskIsDone johtaa done-tilan
+          // tila-kentästä, joten pelkkä done:false ei riittäisi nostamaan
+          // korttia takaisin aktiiviseksi. Ei kosketa mitä vastaus sisältää,
+          // ei arvaa uutta tilaa sen perusteella — vain merkitsee että joku
+          // vastasi. "Ajastettu" mukana koska CRM:llä ei ole webhookia joka
+          // tietäisi milloin ajastettu viesti oikeasti toimitettiin —
+          // saapunut vastaus on paras saatavilla oleva todiste että se on jo
+          // tapahtunut (Outlook ei voi toimittaa vastausta lähettämättömään
+          // viestiin).
+          if (ticket.tila==='Toimitettu'||ticket.tila==='Ajastettu') ticket.tila='Uusi';
+          ticket.done=false; ticket.completed_at=null; ticket.updated_at=m.ts||new Date().toISOString();
+        } else {
+          // CRM:n ohi lähetetty viesti täsmää olemassa olevaan tikettiin —
+          // lisätään ketjun historiaan, mutta tilaa ei muuteta: mitään uutta
+          // toimenpidettä ei tarvita, myyjä juuri hoiti sen jo Outlookissa.
+          ticket.updated_at=m.ts||ticket.updated_at;
+        }
         linked++;
-      } else {
+      } else if (m.dir==='in') {
         acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,6),tyyppi:'sahkoposti',
           tila:'Uusi',done:false,aihe:m.subject||'(ei aihetta)',
           teksti:`Saapunut: "${m.subject||'(ei aihetta)'}" — ${m.bodyPreview||''}`.trim(),
-          tekija:null,muistiinpanot:null,created_at:m.receivedDateTime||new Date().toISOString(),
+          tekija:null,muistiinpanot:null,created_at:m.ts||new Date().toISOString(),
+          due_date:null,contactId,graphId:m.id,graphLink:m.webLink||null});
+      } else {
+        // CRM:n ohi lähetetty viesti, ei täsmää mihinkään olemassa olevaan
+        // tikettiin (esim. ensikontakti hoidettu suoraan Outlookista ennen
+        // kuin tälle henkilölle oli yhtään CRM-tikettiä) — kirjataan suoraan
+        // valmiiksi tiketiksi, ei "Uusi": se ei odota toimenpidettä, se on
+        // jo lähetetty.
+        const completedAt=m.ts||new Date().toISOString();
+        acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,6),tyyppi:'sahkoposti',
+          tila:'Toimitettu',done:true,aihe:m.subject||'(ei aihetta)',
+          teksti:`Lähetetty (Outlookista, CRM:n ohi): ${m.subject||'(ei aihetta)'}`,
+          tekija:null,muistiinpanot:null,created_at:completedAt,completed_at:completedAt,
           due_date:null,contactId,graphId:m.id,graphLink:m.webLink||null});
       }
     });
