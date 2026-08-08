@@ -965,6 +965,10 @@
             <input class="form-control" id="task-arvo" type="number" placeholder="Arvo €" min="0" style="display:none;grid-column:1/-1">
             <select class="form-control" id="task-tekija" aria-label="Käsittelijä"></select>
             <input class="form-control" id="task-due" type="date">
+            <div id="task-email-preview-wrap" style="display:none;grid-column:1/-1">
+              <div class="cs-title" style="margin-bottom:4px">Viestin sisältö</div>
+              <div class="form-control" id="task-email-preview" style="white-space:pre-wrap;max-height:160px;overflow-y:auto;color:var(--text2);font-size:12px;cursor:default"></div>
+            </div>
             <textarea class="form-control" id="task-muistiinpanot" rows="2" placeholder="Muistiinpanot…" style="grid-column:1/-1;resize:vertical"></textarea>
             <input type="hidden" id="task-edit-id">
             <div style="grid-column:1/-1;display:flex;gap:6px;align-items:center">
@@ -1188,7 +1192,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-08.7';
+const BUILD_ID = '2026-08-08.8';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2135,17 +2139,28 @@ async function sendOutlookEmail() {
       // minkä takia lähetetyt näkyivät vain otsikkona, saapuneet oikealla
       // esikatselulla).
       const threadEntry={dir:'out',graphId:created.id,ts:new Date().toISOString(),subject:subjectOut,preview:truncateEmailBody(htmlToPlainText(bodyHtml))};
+      // Lähetetty viesti EI aiemmin tallentanut bodyHtml:ää minnekään —
+      // vain luonnokset (buildDraftEmailActivity) tekivät niin. Seurauksena
+      // "Kirjoita ja lähetä" jo lähetetyn tehtävän kohdalla avasi tyhjän
+      // rungon: openEmailComposerFromTask lukee existing.bodyHtml, jota ei
+      // koskaan ollut. threadEntry.preview (yllä) on aina käytettävissä
+      // luku-/historianäkymissä, mutta täysi HTML tarvitaan jotta viestin
+      // voi avata uudelleen MUOKATTAVANA (esim. samankaltainen jatkoviesti).
+      // Sama koon suojaus kuin luonnoksilla: ei estä lähetystä (se on jo
+      // tapahtunut Graphiin mennessä), jättää vain bodyHtml:n tallentamatta
+      // jos se on liian iso/sisältää upotetun kuvan.
+      const storableBodyHtml=emailDraftBodyTooLarge(bodyHtml)?null:bodyHtml;
       if (task) {
         task.thread=task.thread||[];
         task.thread.push(threadEntry);
-        Object.assign(task,{tila:'Toimitettu',done:true,aihe:subject,teksti,
+        Object.assign(task,{tila:'Toimitettu',done:true,aihe:subject,teksti,bodyHtml:storableBodyHtml,
           updated_at:threadEntry.ts,completed_at:threadEntry.ts,
           contactId:emailDraftContext.contactId||task.contactId||null,
           conversationId:created.conversationId||task.conversationId||null, ticketCode});
       } else {
         const completed_at=new Date().toISOString();
         acts.push({id:'TK'+Date.now(),tyyppi:'sahkoposti',tila:'Toimitettu',done:true,
-          aihe:subject,teksti,tekija,muistiinpanot:null,created_at:completed_at,completed_at,
+          aihe:subject,teksti,tekija,muistiinpanot:null,bodyHtml:storableBodyHtml,created_at:completed_at,completed_at,
           due_date:null,contactId:emailDraftContext.contactId||null,
           conversationId:created.conversationId||null,ticketCode,thread:[threadEntry]});
       }
@@ -2202,15 +2217,26 @@ async function scheduleOutlookEmail(deferredIso) {
       const teksti=`Ajastettu: ${subject} → ${to} (${fmtDT(deferredIso)})`;
       const tekija=currentUser.nimi||currentUserEmail||null;
       const nowIso=new Date().toISOString(), dueDateOnly=deferredIso.slice(0,10);
+      // Aiemmin tämä ei tallentanut threadEntry:ä EIKÄ bodyHtml:ää lainkaan
+      // (toisin kuin sendOutlookEmail) — ajastetun viestin sisältö oli siis
+      // täysin palautumaton heti ajastuksen jälkeen, sekä lukemista että
+      // uudelleenmuokkausta varten. ts=nowIso (ajastushetki), ei
+      // deferredIso (toimitushetki, seurataan jo erikseen
+      // scheduledSendAt/due_date:ssä) — tämä on historialoki tapahtumasta
+      // "ajastin viestin", ei ennuste tulevasta toimituksesta.
+      const threadEntry={dir:'out',graphId:created.id,ts:nowIso,subject:subjectOut,preview:truncateEmailBody(htmlToPlainText(bodyHtml))};
+      const storableBodyHtml=emailDraftBodyTooLarge(bodyHtml)?null:bodyHtml;
       if (task) {
-        Object.assign(task,{tila:'Ajastettu',done:false,aihe:subject,teksti,completed_at:null,
+        task.thread=task.thread||[];
+        task.thread.push(threadEntry);
+        Object.assign(task,{tila:'Ajastettu',done:false,aihe:subject,teksti,bodyHtml:storableBodyHtml,completed_at:null,
           updated_at:nowIso, due_date:dueDateOnly, scheduledSendAt:deferredIso,
           contactId:emailDraftContext.contactId||task.contactId||null,
           conversationId:created.conversationId||task.conversationId||null, ticketCode});
       } else {
         acts.push({id:'TK'+Date.now(),tyyppi:'sahkoposti',tila:'Ajastettu',done:false,
-          aihe:subject,teksti,tekija,muistiinpanot:null,created_at:nowIso,
-          due_date:dueDateOnly,scheduledSendAt:deferredIso,
+          aihe:subject,teksti,tekija,muistiinpanot:null,bodyHtml:storableBodyHtml,created_at:nowIso,
+          due_date:dueDateOnly,scheduledSendAt:deferredIso,thread:[threadEntry],
           contactId:emailDraftContext.contactId||null,
           conversationId:created.conversationId||null,ticketCode});
       }
@@ -3315,6 +3341,10 @@ function openTaskForm(tyyppi) {
   // tarpeen (esim. automaattivastauksen kääntämä status pitää voida korjata
   // käsin "Lomavastaaja"-tilaan).
   const saveBtn=document.getElementById('task-save-btn'); if(saveBtn) saveBtn.style.display=tyyppi==='sahkoposti'?'none':'';
+  // Piilotettu oletuksena — UUDELLA tehtävällä ei koskaan ole vielä
+  // lähetettyä/ajastettua sisältöä näytettäväksi. editTask() näyttää tämän
+  // uudelleen jos muokattavalla tiketillä on oikeasti jotain sisältöä.
+  const previewWrap=document.getElementById('task-email-preview-wrap'); if(previewWrap) previewWrap.style.display='none';
   const soittoSel=document.getElementById('task-soitto-contact');
   if (soittoSel) soittoSel.style.display=tyyppi==='soitto'?'':'none';
   if (tyyppi==='soitto') populateSoittoContactPicker(); else updateSoittoNowButtonVisibility();
@@ -3328,6 +3358,8 @@ function closeTaskForm() {
   const arvo=document.getElementById('task-arvo'); if(arvo){arvo.value='';arvo.style.display='none';}
   const tekija=document.getElementById('task-tekija'); if(tekija) tekija.value='';
   const nota=document.getElementById('task-muistiinpanot'); if(nota) nota.value='';
+  const preview=document.getElementById('task-email-preview'); if(preview) preview.textContent='';
+  const previewWrap=document.getElementById('task-email-preview-wrap'); if(previewWrap) previewWrap.style.display='none';
   const eid=document.getElementById('task-edit-id'); if(eid) eid.value='';
   const sav=document.getElementById('task-save-btn'); if(sav) sav.textContent='+ Lisää';
   const delBtn=document.getElementById('task-del-btn'); if(delBtn) delBtn.style.display='none';
@@ -3626,6 +3658,21 @@ function editTask(taskId) {
   const tek=document.getElementById('task-tekija'); if(tek) tek.value=t.tekija||'';
   const due=document.getElementById('task-due'); if(due) due.value=t.due_date||'';
   const nota=document.getElementById('task-muistiinpanot'); if(nota) nota.value=t.muistiinpanot||'';
+  // Näytetään viimeisimmän viestin sisältö (ei koko threadia — täydellinen
+  // ketju on jo nähtävissä Historia-välilehdellä, ks. timelineCardHtml).
+  // t.thread[].preview on ensisijainen (aina käytettävissä, myös vastatuille
+  // tiketeille); t.bodyHtml varafallback luonnoksille joilla ei vielä ole
+  // threadia lainkaan.
+  if (t.tyyppi==='sahkoposti') {
+    const latestThread=t.thread&&t.thread.length?t.thread[t.thread.length-1]:null;
+    const previewText=latestThread?.preview || (t.bodyHtml?htmlToPlainText(t.bodyHtml):'');
+    const previewEl=document.getElementById('task-email-preview');
+    const previewWrap=document.getElementById('task-email-preview-wrap');
+    if (previewText && previewEl && previewWrap) {
+      previewEl.textContent=previewText;
+      previewWrap.style.display='';
+    }
+  }
   if (t.tyyppi==='soitto') {
     const soittoSel=document.getElementById('task-soitto-contact');
     if (soittoSel) soittoSel.value=t.contactId||'';
