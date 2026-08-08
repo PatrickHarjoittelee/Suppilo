@@ -951,7 +951,7 @@
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
           <button class="task-type-btn" data-type="kauppa" onclick="openTaskForm('kauppa')">🤝 Kauppa</button>
           <button class="task-type-btn" data-type="soitto" onclick="openTaskForm('soitto')">📞 Soitto</button>
-          <button class="task-type-btn" data-type="sahkoposti" onclick="openTaskForm('sahkoposti')">✉️ Sähköposti</button>
+          <button class="task-type-btn" data-type="sahkoposti" onclick="startNewEmailTask()">✉️ Sähköposti</button>
           <button class="task-type-btn" data-type="muu" onclick="openTaskForm('muu')">📝 Muu</button>
         </div>
         <!-- Lomake – näkyy vasta tyypin valinnan jälkeen -->
@@ -1192,7 +1192,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-08.8';
+const BUILD_ID = '2026-08-08.9';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1802,6 +1802,22 @@ function openEmailComposerFromTask() {
   const subject=(document.getElementById('task-aihe')?.value||'').trim();
   openEmailComposer({tiliId:currentId, taskId:editId||null, contactId:existing?.contactId||null,
     subject:subject||undefined, bodyHtml:existing?.bodyHtml||undefined});
+}
+
+// Tehtävät-välilehden "✉️ Sähköposti" -tyyppipainike kutsuu tätä suoraan
+// (EI enää openTaskForm('sahkoposti')) — kevyt pikalomake välivaiheena olisi
+// UUDELLE sähköpostitehtävälle enää pelkkä ylimääräinen klikkaus: se sisälsi
+// aiemmin vain "Kirjoita ja lähetä" -napin (ks. openTaskForm:n kommentti
+// "+ Lisää":n piilotuksesta), ei mitään muuta oikeasti toimivaa. Tiketin
+// tila EI tule mistään ennalta valitusta pudotusvalikosta — se olisi
+// fiktiota ennen kuin mitään on oikeasti tapahtunut — vaan todellisesta
+// toiminnosta: sendOutlookEmail/scheduleOutlookEmail/saveEmailDraftTask
+// päättävät sen (Toimitettu/Ajastettu/Luonnos) sitä mukaa kun käyttäjä
+// oikeasti lähettää, ajastaa tai tallentaa luonnoksen.
+function startNewEmailTask() {
+  if (!currentId) return;
+  closeTaskForm();
+  openEmailComposer({tiliId:currentId});
 }
 
 function pickEmailToContact(contactId) {
