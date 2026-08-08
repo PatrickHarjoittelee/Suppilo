@@ -689,8 +689,14 @@
     /* Dashboard-välilehti */
     #dash-body{font-family:inherit;}
     [data-dash-theme="spara"] #dash-body{font-family:'Source Sans Pro',sans-serif;}
-    .spara-kpi-row{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-paper);overflow:hidden;margin-bottom:20px;}
-    @media(max-width:720px){.spara-kpi-row{grid-template-columns:1fr 1fr;}}
+    /* minmax(0,1fr), EI paljas 1fr: CSS Gridin oletus min-width:auto estää
+       sarakkeen kutistumisen alle sisällön "min-content"-koon, vaikka
+       1fr-arvo pyytäisi tasajakoa — pitkä otsikko ("Avoimena myyntiputkessa")
+       tai iso luku pakotti koko rivin, ja sitä myöten koko sivun,
+       leveämmäksi kuin näyttö (vaakavieritys, muutkin elementit näyttivät
+       "leikkautuvan" samasta syystä — koko sivu venyi, ei vain tämä rivi). */
+    .spara-kpi-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-paper);overflow:hidden;margin-bottom:20px;}
+    @media(max-width:720px){.spara-kpi-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}}
     .spara-kpi-cell{padding:16px 20px;border-right:1px solid var(--spara-hairline);}
     .spara-kpi-cell:last-child{border-right:none;}
     .spara-kpi-eyebrow{font-family:'Fjalla One',sans-serif;text-transform:uppercase;letter-spacing:.08em;font-size:10px;color:var(--spara-ink-faint);}
@@ -1192,7 +1198,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-08.9';
+const BUILD_ID = '2026-08-08.10';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
