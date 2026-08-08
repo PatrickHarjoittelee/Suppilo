@@ -1188,7 +1188,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-08.3';
+const BUILD_ID = '2026-08-08.4';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3249,6 +3249,20 @@ function openTaskForm(tyyppi) {
   form.style.display='';
   const delBtn=document.getElementById('task-del-btn'); if(delBtn) delBtn.style.display='none';
   const emailBtn=document.getElementById('task-email-btn'); if(emailBtn) emailBtn.style.display=tyyppi==='sahkoposti'?'':'none';
+  // UUDELLE sähköpostitehtävälle "+ Lisää" piilotetaan — se loi aiemmin
+  // paljaan tehtävän (ei ticketCode/conversationId/threadia, ei koskaan
+  // oikeaa lähetystä) täysin irrallaan "✉️ Kirjoita ja lähetä" -polusta,
+  // joka jo hoitaa koko tiketöinnin (Toimitettu-status lähetyksessä,
+  // syncContactEmails kääntää sen takaisin Uudeksi kun asiakas vastaa, sama
+  // tapaus-id koko ketjun ajan). Kaksi näennäisesti samaa nappia vierekkäin,
+  // joista vain toinen oikeasti tekee mitään — tästä nyt vain yksi jää.
+  // "Luonnos ilman lähetystä nyt" -tarve hoituu komponoijan omalla
+  // "💾 Tallenna luonnos" -napilla (oikea sisältö, ei pelkkä tyhjä paikanvaraaja).
+  // OLEMASSA OLEVAN tiketin muokkauksessa nappi on silti näkyvissä (ks.
+  // editTask()) — tilan/käsittelijän korjaus ilman uudelleenlähetystä on yhä
+  // tarpeen (esim. automaattivastauksen kääntämä status pitää voida korjata
+  // käsin "Lomavastaaja"-tilaan).
+  const saveBtn=document.getElementById('task-save-btn'); if(saveBtn) saveBtn.style.display=tyyppi==='sahkoposti'?'none':'';
   const soittoSel=document.getElementById('task-soitto-contact');
   if (soittoSel) soittoSel.style.display=tyyppi==='soitto'?'':'none';
   if (tyyppi==='soitto') populateSoittoContactPicker(); else updateSoittoNowButtonVisibility();
@@ -3565,7 +3579,11 @@ function editTask(taskId) {
     if (soittoSel) soittoSel.value=t.contactId||'';
     updateSoittoNowButtonVisibility();
   }
-  const sav=document.getElementById('task-save-btn'); if(sav) sav.textContent='Tallenna';
+  // openTaskForm(t.tyyppi) yllä piilotti juuri tallenna-napin sähköposti-
+  // tyypille (se olettaa UUTTA tehtävää, ks. sen kommentti) — tässä ollaan
+  // kuitenkin muokkaamassa jo OLEMASSA OLEVAA, joten näytetään se aina
+  // uudelleen riippumatta tyypistä.
+  const sav=document.getElementById('task-save-btn'); if(sav) { sav.textContent='Tallenna'; sav.style.display=''; }
   const delBtn=document.getElementById('task-del-btn'); if(delBtn) delBtn.style.display='';
 }
 
