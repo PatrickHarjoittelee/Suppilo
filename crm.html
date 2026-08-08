@@ -371,6 +371,9 @@
     [data-dash-theme="spara"] #modal-overlay .timeline-card-head{color:var(--spara-ink);}
     [data-dash-theme="spara"] #modal-overlay .timeline-card-meta{color:var(--spara-ink-faint);}
     [data-dash-theme="spara"] #modal-overlay .timeline-card-body{border-top-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #modal-overlay .timeline-thread-item{background:var(--spara-paper);border-color:var(--spara-hairline);}
+    [data-dash-theme="spara"] #modal-overlay .timeline-thread-meta,
+    [data-dash-theme="spara"] #modal-overlay .timeline-thread-preview{color:var(--spara-ink-faint);}
     [data-dash-theme="spara"] #modal-overlay .timeline-avatar{background:var(--spara-lavender-wash);border-color:var(--spara-hairline);color:var(--spara-lavender-deep);}
     [data-dash-theme="spara"] #modal-overlay .timeline-group{background:var(--spara-paper);color:var(--spara-ink-faint);}
     [data-dash-theme="spara"] #tili-status-bar{background:var(--spara-cream);border-bottom-color:var(--spara-hairline);}
@@ -520,6 +523,12 @@
     .timeline-card.open .timeline-card-body{display:block;}
     .timeline-detail-row{display:flex;gap:8px;margin-top:6px;color:var(--text2);font-size:11px;}
     .timeline-detail-row strong{color:var(--text);font-weight:600;}
+    .timeline-thread{display:flex;flex-direction:column;gap:6px;margin-top:6px;}
+    .timeline-thread-item{background:var(--bg2);border:1px solid var(--border);border-left:2px solid var(--timeline-color);border-radius:6px;padding:7px 9px;}
+    .timeline-thread-meta{font-size:10px;color:var(--text2);margin-bottom:2px;}
+    .timeline-thread-subject{font-size:11px;font-weight:600;}
+    .timeline-thread-preview{font-size:11px;color:var(--text2);margin-top:2px;}
+    .timeline-thread-link{display:inline-block;font-size:10px;margin-top:4px;}
     .timeline-badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:10px;background:color-mix(in srgb,var(--timeline-color) 18%,transparent);color:var(--timeline-color);font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.35px;}
     .timeline-upcoming .timeline-card{box-shadow:0 5px 18px rgba(76,175,80,.12);}
     @media(max-width:640px){
@@ -1179,7 +1188,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-07.2';
+const BUILD_ID = '2026-08-08.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2395,7 +2404,7 @@ async function syncContactEmails(contactId, opts) {
     ]);
     const uusi=msgs.filter(m=>!known.has(m.id))
       .sort((a,b)=>new Date(a.ts)-new Date(b.ts));
-    let linked=0;
+    let linked=0, added=0;
     uusi.forEach(m=>{
       let ticket=byConv.get(m.conversationId);
       if (!ticket) {
@@ -2431,31 +2440,60 @@ async function syncContactEmails(contactId, opts) {
           teksti:`Saapunut: "${m.subject||'(ei aihetta)'}" — ${m.bodyPreview||''}`.trim(),
           tekija:null,muistiinpanot:null,created_at:m.ts||new Date().toISOString(),
           due_date:null,contactId,graphId:m.id,graphLink:m.webLink||null});
-      } else {
-        // CRM:n ohi lähetetty viesti, ei täsmää mihinkään olemassa olevaan
-        // tikettiin (esim. ensikontakti hoidettu suoraan Outlookista ennen
-        // kuin tälle henkilölle oli yhtään CRM-tikettiä) — kirjataan suoraan
-        // valmiiksi tiketiksi, ei "Uusi": se ei odota toimenpidettä, se on
-        // jo lähetetty.
-        const completedAt=m.ts||new Date().toISOString();
-        acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,6),tyyppi:'sahkoposti',
-          tila:'Toimitettu',done:true,aihe:m.subject||'(ei aihetta)',
-          teksti:`Lähetetty (Outlookista, CRM:n ohi): ${m.subject||'(ei aihetta)'}`,
-          tekija:null,muistiinpanot:null,created_at:completedAt,completed_at:completedAt,
-          due_date:null,contactId,graphId:m.id,graphLink:m.webLink||null});
+        added++;
       }
+      // m.dir==='out' && ei täsmäävää tikettiä: EI luoda uutta tikettiä.
+      // Ensimmäinen versio teki tämän ("Lähetetty (Outlookista, CRM:n ohi)")
+      // ja tulos oli virhe — Lähetetyt-kansio voi sisältää vuosien
+      // CRM:ään liittymätöntä kirjeenvaihtoa samaan osoitteeseen (esim.
+      // ennen kuin tälle kontaktille oli koskaan yhtään CRM-tikettiä), ja
+      // jokaisesta syntyi tyhjä "Toimitettu"-roskatehtävä. Tämän haun
+      // ainoa tarkoitus on täydentää OLEMASSA OLEVIA tikettejä (ks. ticket-
+      // haara yllä) — vastaamaton lähetetty viesti ohitetaan hiljaa.
     });
-    if (uusi.length) {
+    if (linked || added) {
       p.aktiviteetit=JSON.stringify(acts);
       await saveCrmState(p);
       if (currentId===p.spara_id) { renderActivities(p); renderTaskList(p); }
     }
     if (statusEl) statusEl.textContent='Viimeksi tarkistettu: '+fmtDT(new Date().toISOString());
-    if (!silent) showToast(uusi.length?`${uusi.length} uutta viestiä (${linked} liitetty olemassa olevaan tikettiin) ✓`:'Ei uusia viestejä','success');
+    if (!silent) showToast((linked||added)?`${added} uutta viestiä, ${linked} liitetty olemassa olevaan tikettiin ✓`:'Ei uusia viestejä','success');
   } catch(e) {
     if (statusEl) statusEl.textContent='Tarkistus epäonnistui';
     if (!silent) showToast('Sähköpostien haku epäonnistui: '+e.message,'error');
   }
+}
+
+// Kertaluonteinen korjaustyökalu: syncContactEmails loi alkuvaiheessa (ennen
+// kuin käyttäytymistä korjattiin, ks. kommentti yllä "m.dir==='out' && ei
+// täsmäävää tikettiä") oman "Toimitettu"-tiketin JOKAISESTA vastaamattomasta
+// Lähetetyt-kansion viestistä — myös vuosien takaisesta, CRM:ään
+// liittymättömästä kirjeenvaihdosta. Nämä tunnistaa luotettavasti tästä
+// yhdestä tarkasta tekstileimasta (mikään muu koodi ei koskaan tuota
+// täsmälleen tätä merkkijonoa) — poisto ei siis voi osua käyttäjän itse
+// kirjoittamaan sisältöön. Idempotentti: uudelleenajo kun mitään ei enää
+// löydy on täysin turvallista, raportoi vain "Ei löytynyt siivottavaa".
+const ORPHAN_SENT_MARKER='Lähetetty (Outlookista, CRM:n ohi): ';
+async function cleanupOrphanSentEmailEntries() {
+  const affected=allProspects.map(p=>{
+    const acts=parseActs(p);
+    const kept=acts.filter(a=>!(a.tyyppi==='sahkoposti' && typeof a.teksti==='string' && a.teksti.startsWith(ORPHAN_SENT_MARKER)));
+    return {p, kept, removed:acts.length-kept.length};
+  }).filter(x=>x.removed>0);
+  if (!affected.length) { showToast('Ei löytynyt siivottavaa','success'); return; }
+  const total=affected.reduce((sum,x)=>sum+x.removed,0);
+  if (!confirm(`Poistetaan ${total} virheellisesti tuotua sähköpostimerkintää ${affected.length} tililtä. Jatketaanko?`)) return;
+  // Peräkkäin, ei rinnakkain — monta samanaikaista sheetPut-kutsua voisi
+  // osua Sheets-API:n kirjoitusnopeusrajaan; tämä on ylläpitotoiminto,
+  // ei kriittisellä polulla, joten hitaampi mutta varma on oikea valinta.
+  let done=0, failed=0;
+  for (const {p,kept} of affected) {
+    p.aktiviteetit=JSON.stringify(kept);
+    try { await saveCrmState(p); done++; }
+    catch(e) { failed++; console.error('Siivous epäonnistui tilille '+p.spara_id+':', e); }
+  }
+  if (currentId) { const p=allProspects.find(x=>x.spara_id===currentId); if (p) { renderActivities(p); renderTaskList(p); } }
+  showToast(failed?`${done} tiliä siivottu, ${failed} epäonnistui — katso konsoli`:`${total} merkintää poistettu ${done} tililtä ✓`, failed?'error':'success');
 }
 
 // ── Sheets API ────────────────────────────────────────────────────────────────
@@ -2620,9 +2658,21 @@ async function loadData() {
     const crmRows = await sheetGet(`${CRM_TAB}!A:L`);
     applyCrmState(crmRows);
     const yhRows = await sheetGet(`${YH_TAB}!A:H`);
-    allContacts = yhRows.slice(1).filter(r=>r[0]).map((r,i)=>({
+    // KRIITTINEN: .map() ENNEN .filter():ia, ei jälkeen. _rowIndex on suora
+    // rivinumero Sheetissä — jos se laskettaisiin filter(r=>r[0])+map(i=>i+2)
+    // -järjestyksessä, jokainen aiemmin poistettu (tyhjäksi kirjoitettu, ks.
+    // confirmDeleteContact) kontakti aiheuttaisi kaikkien SEN JÄLKEISTEN
+    // kontaktien _rowIndex:n valumisen yhdellä väärään suuntaan — muokkaus/
+    // poisto osuisi silloin naapurin riviin, ei kontaktiin itseensä. Paikallinen
+    // tila (allContacts) näyttäisi silti oikealta koska splice/edit tehdään
+    // muistissa joka tapauksessa — vasta seuraava sivulataus paljastaisi että
+    // Sheet ei koskaan muuttunut. Tämä täsmälleen selittää käyttäjän
+    // raportoiman "poisto ei pysy" -bugin. allUsers/storedProjektit vähän
+    // alempana tekevät tämän jo oikein (map ensin, filter perään) — sama
+    // kaava tähän.
+    allContacts = yhRows.slice(1).map((r,i)=>({
       ...Object.fromEntries(YH_COLS.map((k,j)=>[k,r[j]||''])), _rowIndex:i+2
-    }));
+    })).filter(c=>c.id);
     const yhTiliIds = new Set(allContacts.map(c => c.tili_id));
     const toMigrate = allProspects.filter(p =>
       p['yhteyshenkilö'] && !p['yhteyshenkilö'].startsWith('#') && !yhTiliIds.has(p.spara_id)
@@ -2637,9 +2687,10 @@ async function loadData() {
       });
       await sheetAppend(`${YH_TAB}!A:H`, migRows);
       const yhRowsNew = await sheetGet(`${YH_TAB}!A:H`);
-      allContacts = yhRowsNew.slice(1).filter(r=>r[0]).map((r,i)=>({
+      // Sama map-ennen-filter-korjaus kuin yllä — ks. kommentti siellä.
+      allContacts = yhRowsNew.slice(1).map((r,i)=>({
         ...Object.fromEntries(YH_COLS.map((k,j)=>[k,r[j]||''])), _rowIndex:i+2
-      }));
+      })).filter(c=>c.id);
     }
     const usersRows = await sheetGet(`${USERS_TAB}!A:G`);
     if ((usersRows[0]?.[6]||'') !== 'profiilikuva') {
@@ -2688,7 +2739,10 @@ async function loadData() {
       }
     });
     const tplRows = await sheetGet(`${TEMPLATES_TAB}!A:E`);
-    emailTemplates = tplRows.slice(1).filter(r=>r[0]).map((r,i)=>({id:r[0],nimi:r[1]||'',aihe:r[2]||'',sisalto:r[3]||'',created_at:r[4]||'',_rowIndex:i+2}));
+    // Sama map-ennen-filter-korjaus kuin allContacts:ssa (ks. kommentti
+    // ylempänä) — emailTemplates-poisto (deleteEmailTemplate, tyhjentää
+    // rivin) kärsi täsmälleen samasta _rowIndex-korruptiosta.
+    emailTemplates = tplRows.slice(1).map((r,i)=>({id:r[0],nimi:r[1]||'',aihe:r[2]||'',sisalto:r[3]||'',created_at:r[4]||'',_rowIndex:i+2})).filter(t=>t.id);
   } catch(e) {
     showToast('Virhe: '+e.message,'error'); console.error(e); return;
   }
@@ -3846,6 +3900,21 @@ function timelineCardHtml(item,index) {
   const status=item.isTask?(item.upcoming?(task.tila||'Avoin'):(task.tila||'Valmis')):timelineTypeLabel(item);
   const details=[];
   if(text) details.push(`<div>${esc(text)}</div>`);
+  // a.teksti on aina vain automaattisesti generoitu yhden rivin otsikkokaiku
+  // ("Lähetetty: aihe → vastaanottaja" tms.) — koskaan ei oikea viestisisältö.
+  // Todellinen sisältö (suunta, aika, aihe, esikatselu, linkki Outlookiin)
+  // elää a.thread-taulukossa (ks. sendOutlookEmail/syncContactEmails), jota
+  // ei aiemmin renderöity minnekään lainkaan — kortin avaaminen näytti siis
+  // aina vain saman otsikon uudestaan, ei mitään uutta.
+  if(a.tyyppi==='sahkoposti'&&Array.isArray(a.thread)&&a.thread.length) {
+    details.push(`<div class="timeline-thread">${a.thread.map(t=>`
+      <div class="timeline-thread-item">
+        <div class="timeline-thread-meta">${t.dir==='in'?'↩️ Saapui':'📤 Lähetetty'} · ${esc(fmtDT(t.ts))}</div>
+        ${t.subject?`<div class="timeline-thread-subject">${esc(t.subject)}</div>`:''}
+        ${t.preview?`<div class="timeline-thread-preview">${esc(t.preview)}</div>`:''}
+        ${t.webLink?`<a href="${esc(t.webLink)}" target="_blank" rel="noopener" class="timeline-thread-link">Avaa Outlookissa ↗</a>`:''}
+      </div>`).join('')}</div>`);
+  }
   if(item.isTask&&task.muistiinpanot&&task.muistiinpanot!==text) details.push(`<div class="timeline-detail-row"><span>Muistiinpanot</span><strong>${esc(task.muistiinpanot)}</strong></div>`);
   if(item.isTask&&task.due_date) details.push(`<div class="timeline-detail-row"><span>Eräpäivä</span><strong>${esc(new Date(task.due_date+'T12:00:00').toLocaleDateString('fi-FI'))}</strong></div>`);
   if(item.isTask&&task.arvo) details.push(`<div class="timeline-detail-row"><span>Arvo</span><strong>${Number(task.arvo).toLocaleString('fi-FI')} €</strong></div>`);
@@ -4408,10 +4477,20 @@ function renderContactsInTiedot(p) {
     </div>`;
 }
 
+// Ei aiemmin tarkistettu lainkaan onko samanniminen yhteyshenkilö jo
+// olemassa samalla tilillä — sama henkilö pystyi syntymään kahdesti (esim.
+// tuplaklikkauksesta, tai lisäämällä saman ihmisen sekä tämän lomakkeen että
+// Yleinen lisäys -pikavalikon kautta huomaamatta että hän oli jo listalla).
+// Käytössä sekä täällä että saveGlobalContact():ssa.
+function contactNameExists(tiliId, nimi) {
+  const key=nimi.trim().toLocaleLowerCase('fi');
+  return allContacts.some(c=>c.tili_id===tiliId && (c.nimi||'').trim().toLocaleLowerCase('fi')===key);
+}
 async function saveNewContact() {
   if (!currentId) return;
   const nimi=(document.getElementById('yh-nimi')?.value||'').trim();
   if (!nimi) { showToast('Nimi on pakollinen','error'); return; }
+  if (contactNameExists(currentId,nimi) && !confirm(`"${nimi}" on jo lisätty tälle tilille. Lisätäänkö silti toinen samanniminen yhteyshenkilö?`)) return;
   const id='YH'+Date.now();
   const row=[id,currentId,nimi,
     document.getElementById('yh-titteli')?.value.trim()||'',
@@ -6549,6 +6628,7 @@ async function saveGlobalContact() {
   const tiliId=document.getElementById('gc-tili')?.value;
   const nimi=(document.getElementById('gc-nimi')?.value||'').trim();
   if(!tiliId||!nimi){showToast('Tili ja nimi ovat pakollisia','error');return;}
+  if (contactNameExists(tiliId,nimi) && !confirm(`"${nimi}" on jo lisätty tälle tilille. Lisätäänkö silti toinen samanniminen yhteyshenkilö?`)) return;
   const id='YH'+Date.now();
   const row=[id,tiliId,nimi,
     document.getElementById('gc-titteli')?.value.trim()||'',
@@ -6807,6 +6887,14 @@ async function saveGlobalTask() {
         Suppiloon — kirjautuminen tapahtuu Microsoftin omassa ikkunassa.
         Jos tili on jo yhdistetty aiemmin: seuraava lähetys pyytää
         automaattisesti uuden hyväksynnän laajennetulle oikeudelle.
+      </div>
+      <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:6px">
+          Kertaluonteinen korjaus: aiempi versio "Tarkista sähköpostit" -toiminnosta loi virheellisesti
+          oman tiketin jokaisesta Lähetetyt-kansion viestistä, vaikka se ei liittynyt mihinkään
+          CRM-tikettiin. Tämä poistaa täsmälleen ne — ei koske mitään muuta merkintää.
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="cleanupOrphanSentEmailEntries()">🧹 Poista virheelliset CRM:n ohi -merkinnät</button>
       </div>
 
       <div class="cs-title" style="margin-top:22px">Sähköpostimallit</div>
