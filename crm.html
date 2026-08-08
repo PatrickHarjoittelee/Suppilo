@@ -1188,7 +1188,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-08.1';
+const BUILD_ID = '2026-08-08.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2658,9 +2658,21 @@ async function loadData() {
     const crmRows = await sheetGet(`${CRM_TAB}!A:L`);
     applyCrmState(crmRows);
     const yhRows = await sheetGet(`${YH_TAB}!A:H`);
-    allContacts = yhRows.slice(1).filter(r=>r[0]).map((r,i)=>({
+    // KRIITTINEN: .map() ENNEN .filter():ia, ei jälkeen. _rowIndex on suora
+    // rivinumero Sheetissä — jos se laskettaisiin filter(r=>r[0])+map(i=>i+2)
+    // -järjestyksessä, jokainen aiemmin poistettu (tyhjäksi kirjoitettu, ks.
+    // confirmDeleteContact) kontakti aiheuttaisi kaikkien SEN JÄLKEISTEN
+    // kontaktien _rowIndex:n valumisen yhdellä väärään suuntaan — muokkaus/
+    // poisto osuisi silloin naapurin riviin, ei kontaktiin itseensä. Paikallinen
+    // tila (allContacts) näyttäisi silti oikealta koska splice/edit tehdään
+    // muistissa joka tapauksessa — vasta seuraava sivulataus paljastaisi että
+    // Sheet ei koskaan muuttunut. Tämä täsmälleen selittää käyttäjän
+    // raportoiman "poisto ei pysy" -bugin. allUsers/storedProjektit vähän
+    // alempana tekevät tämän jo oikein (map ensin, filter perään) — sama
+    // kaava tähän.
+    allContacts = yhRows.slice(1).map((r,i)=>({
       ...Object.fromEntries(YH_COLS.map((k,j)=>[k,r[j]||''])), _rowIndex:i+2
-    }));
+    })).filter(c=>c.id);
     const yhTiliIds = new Set(allContacts.map(c => c.tili_id));
     const toMigrate = allProspects.filter(p =>
       p['yhteyshenkilö'] && !p['yhteyshenkilö'].startsWith('#') && !yhTiliIds.has(p.spara_id)
@@ -2675,9 +2687,10 @@ async function loadData() {
       });
       await sheetAppend(`${YH_TAB}!A:H`, migRows);
       const yhRowsNew = await sheetGet(`${YH_TAB}!A:H`);
-      allContacts = yhRowsNew.slice(1).filter(r=>r[0]).map((r,i)=>({
+      // Sama map-ennen-filter-korjaus kuin yllä — ks. kommentti siellä.
+      allContacts = yhRowsNew.slice(1).map((r,i)=>({
         ...Object.fromEntries(YH_COLS.map((k,j)=>[k,r[j]||''])), _rowIndex:i+2
-      }));
+      })).filter(c=>c.id);
     }
     const usersRows = await sheetGet(`${USERS_TAB}!A:G`);
     if ((usersRows[0]?.[6]||'') !== 'profiilikuva') {
@@ -2726,7 +2739,10 @@ async function loadData() {
       }
     });
     const tplRows = await sheetGet(`${TEMPLATES_TAB}!A:E`);
-    emailTemplates = tplRows.slice(1).filter(r=>r[0]).map((r,i)=>({id:r[0],nimi:r[1]||'',aihe:r[2]||'',sisalto:r[3]||'',created_at:r[4]||'',_rowIndex:i+2}));
+    // Sama map-ennen-filter-korjaus kuin allContacts:ssa (ks. kommentti
+    // ylempänä) — emailTemplates-poisto (deleteEmailTemplate, tyhjentää
+    // rivin) kärsi täsmälleen samasta _rowIndex-korruptiosta.
+    emailTemplates = tplRows.slice(1).map((r,i)=>({id:r[0],nimi:r[1]||'',aihe:r[2]||'',sisalto:r[3]||'',created_at:r[4]||'',_rowIndex:i+2})).filter(t=>t.id);
   } catch(e) {
     showToast('Virhe: '+e.message,'error'); console.error(e); return;
   }
