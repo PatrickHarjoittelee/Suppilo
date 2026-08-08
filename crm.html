@@ -1188,7 +1188,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-08.2';
+const BUILD_ID = '2026-08-08.3';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1725,8 +1725,11 @@ function openEmailComposer(opts) {
   const greetName=c?c.nimi.split(/\s+/)[0]:'';
   // Tallennettu luonnos (opts.bodyHtml) korvaa oletustervehdyksen —
   // muuten aiemmin kirjoitettu sisältö katoaisi joka uudelleenavauksella.
+  // opts.openerText (esim. Signaalit-listan "Kuittaa ja luo viesti") lisää
+  // yhden valmiin avausrivin oletustervehdyksen alle — käytetään vain kun
+  // opts.bodyHtml puuttuu, samasta syystä kuin yllä.
   document.getElementById('email-body-html').innerHTML = opts.bodyHtml ||
-    `<p>Hei${greetName?' '+esc(greetName)+',':','}</p><p><br></p><p>Ystävällisin terveisin<br>${esc(sender)}</p>${signatureHtml()}`;
+    `<p>Hei${greetName?' '+esc(greetName)+',':','}</p>${opts.openerText?`<p>${esc(opts.openerText)}</p>`:''}<p><br></p><p>Ystävällisin terveisin<br>${esc(sender)}</p>${signatureHtml()}`;
 
   const tplWrap=document.getElementById('email-template-wrap');
   const tplPicker=document.getElementById('email-template-picker');
@@ -3914,6 +3917,14 @@ function timelineCardHtml(item,index) {
         ${t.preview?`<div class="timeline-thread-preview">${esc(t.preview)}</div>`:''}
         ${t.webLink?`<a href="${esc(t.webLink)}" target="_blank" rel="noopener" class="timeline-thread-link">Avaa Outlookissa ↗</a>`:''}
       </div>`).join('')}</div>`);
+  }
+  // signaaliTila (ks. setSignalTila, Hero-signaalilistan kuittaus/ohitus) —
+  // näkyy myös tilin omalla aikajanalla, ei vain Hero-modaalissa, jotta tila
+  // on jäljitettävissä siitäkin kun signaali ei enää ole "uusi" 14 päivän
+  // ikkunassa.
+  if(a.tyyppi==='signaali_paivitys'&&a.signaaliTila) {
+    const tilaLabel=a.signaaliTila==='ei_relevantti'?'✕ Ei relevantti':'✓ Luettu';
+    details.push(`<div class="timeline-detail-row"><span>Käsitelty</span><strong>${tilaLabel}${a.signaaliKasitelty_at?' · '+esc(fmtDT(a.signaaliKasitelty_at)):''}</strong></div>`);
   }
   if(item.isTask&&task.muistiinpanot&&task.muistiinpanot!==text) details.push(`<div class="timeline-detail-row"><span>Muistiinpanot</span><strong>${esc(task.muistiinpanot)}</strong></div>`);
   if(item.isTask&&task.due_date) details.push(`<div class="timeline-detail-row"><span>Eräpäivä</span><strong>${esc(new Date(task.due_date+'T12:00:00').toLocaleDateString('fi-FI'))}</strong></div>`);
@@ -6406,9 +6417,17 @@ function newSignalActivities() {
   const cutoff=new Date(Date.now()-HERO_SIGNAALI_PAIVAT*86400000).toISOString().substring(0,10);
   const rows=[];
   allProspects.forEach(p=>{
-    parseActs(p).forEach(a=>{
+    // sourceIndex = sijainti parseActs(p):n ALKUPERÄISESSÄ järjestyksessä —
+    // signaali_paivitys-merkinnät (addActToProspect) eivät saa id:tä, joten
+    // tämä on ainoa tapa kohdistaa myöhempi kuittaus/ohitus juuri OIKEAAN
+    // merkintään (sama kaava kuin openTiliHistoryItemFromYh:ssä).
+    parseActs(p).forEach((a,sourceIndex)=>{
+      // !a.signaaliTila: käsitellyt (kuitattu luetuksi TAI merkitty ei
+      // relevantiksi, ks. setSignalTila) eivät enää näy "uudet signaalit"
+      // -listalla — tämä ON koko "listan tyhjennys" -mekanismi, ei erillinen
+      // poisto-toiminto joka poistaisi itse historiamerkinnän.
       if (a.tyyppi==='signaali_paivitys' && a.teksti && a.teksti.startsWith('Uusi signaali') &&
-          a.created_at && a.created_at.substring(0,10)>=cutoff) rows.push({p,a});
+          a.created_at && a.created_at.substring(0,10)>=cutoff && !a.signaaliTila) rows.push({p,a,sourceIndex});
     });
   });
   return rows.sort((x,y)=>y.a.created_at.localeCompare(x.a.created_at));
@@ -6525,10 +6544,92 @@ function closeHeroModalMaybe(e) { if (e.target===document.getElementById('hero-m
 function renderHeroSignaalit() {
   const rows=newSignalActivities();
   if (!rows.length) return `<div class="empty" style="padding:16px">Ei uusia signaaleja viimeisen ${HERO_SIGNAALI_PAIVAT} päivän ajalta</div>`;
-  return rows.map(({p,a})=>`<div class="dash-item" onclick="closeHeroModal();openModal('${p.spara_id}')">
-      <div class="dash-item-date">${fmtDateShort(a.created_at)}</div>
-      <div><div class="dash-item-name">${esc(p.yritys_nimi)}</div>
-      <div class="dash-item-task">${esc(a.teksti)}</div></div></div>`).join('');
+  const clearBtn=`<div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+      <button class="btn btn-ghost btn-sm" onclick="clearAllHeroSignaalit()">🧹 Merkitse kaikki luetuiksi</button>
+    </div>`;
+  // Rivi jaettu kahteen osaan: yläosa (pvm+yritys+signaaliteksti) vie
+  // tilille kuten ennenkin, alaosan kolme painiketta ovat OMIA elementtejä
+  // eivätkä sisäkkäin yläosan kanssa — .dash-item itsellään ei enää ole
+  // klikattava (ks. inline style), joten painikkeet eivät tarvitse
+  // event.stopPropagation():ia.
+  const items=rows.map(({p,a,sourceIndex})=>`<div class="dash-item" style="flex-direction:column;align-items:stretch;gap:6px;cursor:default">
+      <div style="display:flex;gap:10px;cursor:pointer" onclick="closeHeroModal();openModal('${p.spara_id}')">
+        <div class="dash-item-date">${fmtDateShort(a.created_at)}</div>
+        <div><div class="dash-item-name">${esc(p.yritys_nimi)}</div>
+        <div class="dash-item-task">${esc(a.teksti)}</div></div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="markSignalRead('${p.spara_id}',${sourceIndex})">✓ Kuittaa luetuksi</button>
+        <button class="btn btn-ghost btn-sm" onclick="dismissSignalNotRelevant('${p.spara_id}',${sourceIndex})">✕ Ei relevantti</button>
+        <button class="btn btn-outlook btn-sm" onclick="acknowledgeAndEmailSignal('${p.spara_id}',${sourceIndex})">✉️ Kuittaa ja luo viesti</button>
+      </div>
+    </div>`).join('');
+  return clearBtn+items;
+}
+
+// Yhteinen kirjoitusfunktio kuittaus/ohitus-toiminnoille — kohdistaa
+// sourceIndexillä (ks. newSignalActivities-kommentti) juuri oikeaan
+// signaali_paivitys-merkintään sen sijaan että arvattaisiin listan
+// järjestyksestä, joka voi muuttua tallennusten välissä.
+async function setSignalTila(tiliId, sourceIndex, tila) {
+  const p=allProspects.find(x=>x.spara_id===tiliId); if (!p) return false;
+  const acts=parseActs(p);
+  const a=acts[sourceIndex];
+  if (!a || a.tyyppi!=='signaali_paivitys') return false;
+  a.signaaliTila=tila;
+  a.signaaliKasitelty_at=new Date().toISOString();
+  p.aktiviteetit=JSON.stringify(acts);
+  try { await saveCrmState(p); return true; }
+  catch(e) { showToast('Virhe: '+e.message,'error'); return false; }
+}
+async function markSignalRead(tiliId, sourceIndex) {
+  if (!(await setSignalTila(tiliId,sourceIndex,'luettu'))) return;
+  openHeroModal('signaalit'); updateSummary();
+}
+async function dismissSignalNotRelevant(tiliId, sourceIndex) {
+  if (!(await setSignalTila(tiliId,sourceIndex,'ei_relevantti'))) return;
+  openHeroModal('signaalit'); updateSummary();
+}
+// Kuittaa signaalin JA avaa sähköpostin kirjoitusikkunan sille tilille
+// (openEmailComposer({tiliId}) hoitaa kontaktin kohdistuksen jo valmiiksi:
+// automaattinen valinta jos vain yhdellä kontaktilla on sähköposti, muuten
+// valitsin — sama polku jota Yhteyshenkilö-kortin "Lähetä sähköposti"
+// käyttää). Signaalin oma teksti (ei tilin NYKYINEN p.signaali, joka on
+// voinut jo vaihtua uudempaan) poimitaan suoraan tästä historiamerkinnästä,
+// jotta viesti viittaa juuri siihen signaaliin jota käyttäjä oli kuittaamassa.
+async function acknowledgeAndEmailSignal(tiliId, sourceIndex) {
+  const p=allProspects.find(x=>x.spara_id===tiliId); if (!p) return;
+  const a=parseActs(p)[sourceIndex]; if (!a || a.tyyppi!=='signaali_paivitys') return;
+  const signalText=a.teksti.replace(/^Uusi signaali \([^)]*\):\s*/,'');
+  if (!(await setSignalTila(tiliId,sourceIndex,'luettu'))) return;
+  closeHeroModal(); updateSummary();
+  openEmailComposer({tiliId, subject:`${p.yritys_nimi} – ${p.kampanja||'yhteydenotto'}`,
+    openerText:`Huomasin äskettäin: ${signalText}`});
+}
+// "Tyhjennä lista": kuittaa KAIKKI juuri nyt näkyvät signaalit luetuiksi
+// yhdellä klikkauksella sen sijaan että jokainen pitäisi käydä läpi erikseen.
+// Ryhmitelty tilin mukaan (yksi saveCrmState per tili, ei per signaali) —
+// samalla tilillä voi olla useampi käsittelemätön signaali 14 päivän
+// ikkunassa jos Mediaseuranta on ajettu useamman kerran.
+async function clearAllHeroSignaalit() {
+  const rows=newSignalActivities();
+  if (!rows.length) return;
+  if (!confirm(`Merkitään kaikki ${rows.length} signaalia luetuksi. Jatketaanko?`)) return;
+  const byTili=new Map();
+  rows.forEach(({p,sourceIndex})=>{
+    if (!byTili.has(p.spara_id)) byTili.set(p.spara_id,{p,indices:[]});
+    byTili.get(p.spara_id).indices.push(sourceIndex);
+  });
+  let failed=0;
+  for (const {p,indices} of byTili.values()) {
+    const acts=parseActs(p);
+    indices.forEach(i=>{ if (acts[i]) { acts[i].signaaliTila='luettu'; acts[i].signaaliKasitelty_at=new Date().toISOString(); } });
+    p.aktiviteetit=JSON.stringify(acts);
+    try { await saveCrmState(p); }
+    catch(e) { failed++; console.error('Signaalin tyhjennys epäonnistui tilille '+p.spara_id+':', e); }
+  }
+  openHeroModal('signaalit'); updateSummary();
+  showToast(failed?`Osa epäonnistui (${failed}) — katso konsoli`:'Kaikki signaalit merkitty luetuiksi ✓', failed?'error':'success');
 }
 // Rakenteilla: kun sijoitusmahdollisuuksien tekoälyhaku (verkkohaku +
 // hyväksy prospektiksi -jono, sama malli kuin Mediaseurannan uudet liidit)
