@@ -1188,7 +1188,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-08.4';
+const BUILD_ID = '2026-08-08.5';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3187,8 +3187,8 @@ const V_COLORS={'Kontaktoi':'var(--blue)','Selvitä tarve':'var(--orange)','Sovi
 // Katso Kanban-CSS-lohkon ja projectDistributionHtml():n kommentit.
 const VAIHE_TN={'Kontaktoi':.05,'Selvitä tarve':.20,'Sovi tapaaminen':.40,'Tarjous työn alla':.60,'Sopimus syntynyt':1,'Ei juuri nyt':0};
 // Vaiheet joissa kauppa on vielä auki (ei voitettu eikä hävitty) — sama
-// määritelmä jota "Avoin putki"-KPI (renderDashboard) ja seuraavien
-// toimenpiteiden priorisointi (computeTopTasks) molemmat käyttävät.
+// määritelmä jota "Avoimena myyntiputkessa"-KPI (renderDashboard) ja
+// seuraavien toimenpiteiden priorisointi (computeTopTasks) molemmat käyttävät.
 const VAIHE_AVOIN=['Kontaktoi','Selvitä tarve','Sovi tapaaminen','Tarjous työn alla'];
 function normalizeKauppaVaihe(v) { return VAIHE_LEGACY[v] || v || 'Kontaktoi'; }
 const fmtEur=n=>Math.round(n).toLocaleString('fi-FI')+' €';
@@ -4351,7 +4351,7 @@ function dashKpisClassicHtml(openSum, openN, weighted, st) {
   const kpi=(label,val,color,sub)=>`<div class="card"><div class="card-label">${label}</div>
     <div class="card-value" style="color:${color}">${val}</div>
     ${sub?`<div style="font-size:10px;color:var(--text2);margin-top:2px">${sub}</div>`:''}</div>`;
-  return kpi('Avoin putki',fmtEur(openSum),'var(--blue)',openN+' avointa kauppaa')+
+  return kpi('Avoimena myyntiputkessa',fmtEur(openSum),'var(--blue)',openN+' avointa kauppaa')+
     kpi('Painotettu ennuste',fmtEur(weighted),'var(--orange)','vaiheiden tn:llä painotettu')+
     kpi('Sopimus syntynyt',fmtEur(st['Sopimus syntynyt'].sum),'var(--green)',st['Sopimus syntynyt'].n+' sopimusta')+
     kpi('Ei juuri nyt',fmtEur(st['Ei juuri nyt'].sum),'var(--red)',st['Ei juuri nyt'].n+' kauppaa');
@@ -4362,7 +4362,7 @@ function dashKpisSparaHtml(openSum, openN, weighted, st) {
   const kpi=(label,val,quiet,sub)=>`<div class="spara-kpi-cell"><span class="spara-kpi-eyebrow">${label}</span>
     <div class="spara-kpi-num${quiet?' is-quiet':''}">${val}</div>
     ${sub?`<div class="spara-kpi-sub">${sub}</div>`:''}</div>`;
-  return kpi('Avoin putki',fmtEur(openSum),false,openN+' avointa kauppaa')+
+  return kpi('Avoimena myyntiputkessa',fmtEur(openSum),false,openN+' avointa kauppaa')+
     kpi('Painotettu ennuste',fmtEur(weighted),false,'vaiheiden tn:llä painotettu')+
     kpi('Sopimus syntynyt',fmtEur(st['Sopimus syntynyt'].sum),false,st['Sopimus syntynyt'].n+' sopimusta')+
     kpi('Ei juuri nyt',fmtEur(st['Ei juuri nyt'].sum),true,st['Ei juuri nyt'].n+' kauppaa');
@@ -6493,7 +6493,7 @@ function heroClassicHtml(v) {
   <div class="hero-tile" onclick="openHeroModal('tehtavat')">
     <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"/><path d="M12 7v5l3.2 2"/></svg></div>
     <div class="hero-tile-value" id="hero-tehtavat">${v.tehtavat}</div>
-    <div class="hero-tile-label">Odottaa reagointia</div>
+    <div class="hero-tile-label">Työn alla</div>
   </div>
   <div class="hero-tile" onclick="openHeroModal('prospektit')">
     <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="10" height="18"/><rect x="14" y="9" width="6" height="12"/><path d="M7.5 7h1M10.5 7h1M7.5 10.5h1M10.5 10.5h1M7.5 14h1M10.5 14h1M16.5 12.5h1M16.5 15.5h1"/></svg></div>
@@ -6546,7 +6546,7 @@ function heroSparaHtml(v) {
 function openHeroModal(kind) {
   const titles={
     signaalit:'📡 Uudet signaalit', sijoitus:'💰 Sijoitusmahdollisuudet',
-    tehtavat:'⏰ Odottaa reagointia', prospektit:'🏢 Prospektit yhteensä', putki:'📈 Myyntiputki'
+    tehtavat:'⏰ Työn alla', prospektit:'🏢 Prospektit yhteensä', putki:'📈 Myyntiputki'
   };
   const renderers={
     signaalit:renderHeroSignaalit, sijoitus:renderHeroSijoitus,
