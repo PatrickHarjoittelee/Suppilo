@@ -527,7 +527,7 @@
     .timeline-thread-item{background:var(--bg2);border:1px solid var(--border);border-left:2px solid var(--timeline-color);border-radius:6px;padding:7px 9px;}
     .timeline-thread-meta{font-size:10px;color:var(--text2);margin-bottom:2px;}
     .timeline-thread-subject{font-size:11px;font-weight:600;}
-    .timeline-thread-preview{font-size:11px;color:var(--text2);margin-top:2px;}
+    .timeline-thread-preview{font-size:11px;color:var(--text2);margin-top:2px;white-space:pre-wrap;}
     .timeline-thread-link{display:inline-block;font-size:10px;margin-top:4px;}
     .timeline-badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:10px;background:color-mix(in srgb,var(--timeline-color) 18%,transparent);color:var(--timeline-color);font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.35px;}
     .timeline-upcoming .timeline-card{box-shadow:0 5px 18px rgba(76,175,80,.12);}
@@ -1188,7 +1188,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-08.5';
+const BUILD_ID = '2026-08-08.6';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2127,7 +2127,14 @@ async function sendOutlookEmail() {
     if (p) {
       const teksti=`Lähetetty: ${subject} → ${to}`;
       const tekija=currentUser.nimi||currentUserEmail||null;
-      const threadEntry={dir:'out',graphId:created.id,ts:new Date().toISOString(),subject:subjectOut,preview:bodyEl.textContent.trim().slice(0,200)};
+      // htmlToPlainText (ei bodyEl.textContent) säilyttää kappalejaot —
+      // pelkkä textContent liittäisi kaikki rivit yhteen mössöksi, kuten
+      // syncContactEmails:n saapuvat/lähetetyt viestitkin nyt puretaan.
+      // truncateEmailBody: sama 2000 merkin katto kuin muuallakin (aiemmin
+      // tässä oli erillinen, tiukempi 200 merkin slice — juuri se epäsuhta
+      // minkä takia lähetetyt näkyivät vain otsikkona, saapuneet oikealla
+      // esikatselulla).
+      const threadEntry={dir:'out',graphId:created.id,ts:new Date().toISOString(),subject:subjectOut,preview:truncateEmailBody(htmlToPlainText(bodyHtml))};
       if (task) {
         task.thread=task.thread||[];
         task.thread.push(threadEntry);
@@ -2312,6 +2319,38 @@ async function saveEmailDraftTask() {
   }
 }
 
+// Graphin bodyPreview on aina vain n. 255 merkin automaattinen katkaisu —
+// EI koko viestin sisältö. Käytetään sen sijaan omaa body-kenttää (haetaan
+// erikseen alla $select:llä) ja puretaan se tekstiksi tässä, kerralla
+// tallennushetkellä (ei joka renderöinnillä).
+//
+// DOMParser, EI koskaan innerHTML elävään DOM:iin: parseFromString():n
+// palauttama Document ei koskaan liity sivun omaan DOM-puuhun eikä sillä
+// ole selainikkunaa ajamassa sitä — skriptit eivät suoriudu eikä kuvia
+// ladata, vaikka sähköpostin HTML olisi täysin epäluotettavaa. Tämä on
+// standarditapa purkaa teksti vieraasta HTML:stä turvallisesti selaimessa.
+// Lohkorajat (br/p/div/li/tr) korvataan rivinvaihdoiksi ENNEN jäsentämistä,
+// koska pelkkä textContent muuten liittäisi kaikki kappaleet yhteen
+// lukukelvottomaksi mössöksi.
+function htmlToPlainText(html) {
+  if (!html) return '';
+  const withBreaks=html.replace(/<\/(p|div|li|tr|h[1-6])\s*>|<br\s*\/?>/gi,'\n');
+  const doc=new DOMParser().parseFromString(withBreaks,'text/html');
+  return (doc.body?.textContent||'').replace(/\n{3,}/g,'\n\n').trim();
+}
+// Yhteinen katto sekä saapuneiden että lähetettyjen viestien tallennetulle
+// esikatselulle — koko p.aktiviteetit on YKSI Sheets-solu (~50 000 merkin
+// raja), joten täyttä HTML-runkoa rajattomana ei voi tallentaa. 2000 merkkiä
+// riittää normaalin liike-sähköpostin lukemiseen kokonaan; pidemmät
+// katkaistaan ja käyttäjä voi avata alkuperäisen webLink:istä.
+const EMAIL_BODY_PREVIEW_MAX=2000;
+function truncateEmailBody(text) {
+  if (!text) return '';
+  return text.length>EMAIL_BODY_PREVIEW_MAX
+    ? text.slice(0,EMAIL_BODY_PREVIEW_MAX)+'… (katkaistu — avaa Outlookissa nähdäksesi kokonaan)'
+    : text;
+}
+
 // Hakee VAIN kontaktilta saapuneet viestit (ei omia lähetettyjä — ne on jo
 // kirjattu lähetyshetkellä sendOutlookEmail:ssa, joten kaksinkertaista
 // kirjausta ei synny). Uudet viestit tallennetaan graphId:llä varustettuna
@@ -2323,9 +2362,12 @@ async function fetchIncomingEmails(address, token) {
   // $orderby=receivedDateTime:hyn (eri, litteä kenttä) — tunnettu Graph-
   // rajoitus. Järjestys ei haittaa, koska uudet viestit lajitellaan
   // joka tapauksessa alla JS:llä ennen tallennusta.
+  // $select sisältää sekä bodyPreview:n (varafallback jos body puuttuisi)
+  // että body:n (koko sisältö, contentType html tai text) — ks.
+  // htmlToPlainText/truncateEmailBody yllä.
   const url='https://graph.microsoft.com/v1.0/me/messages'
     +`?$filter=${encodeURIComponent(`from/emailAddress/address eq '${safeAddr}'`)}`
-    +'&$select=id,subject,bodyPreview,receivedDateTime,webLink,conversationId'
+    +'&$select=id,subject,bodyPreview,body,receivedDateTime,webLink,conversationId'
     +'&$top=20';
   const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
@@ -2356,9 +2398,12 @@ async function fetchIncomingEmails(address, token) {
 // samassa pyynnössä, joten tässä ei myöskään käytetä $filter:ia lainkaan.
 async function fetchSentEmails(address, token) {
   const safeAddr=address.replace(/"/g,'');
+  // body mukana samasta syystä kuin fetchIncomingEmails:ssa — muuten CRM:n
+  // ohi lähetetyt (tämän funktion koko olemassaolon syy) näkyisivät
+  // ketjussa vain otsikkona, saapuneet taas oikealla esikatselulla.
   const url='https://graph.microsoft.com/v1.0/me/mailFolders/SentItems/messages'
     +`?$search=${encodeURIComponent(`"to:${safeAddr}"`)}`
-    +'&$select=id,subject,bodyPreview,sentDateTime,webLink,conversationId'
+    +'&$select=id,subject,bodyPreview,body,sentDateTime,webLink,conversationId'
     +'&$top=20';
   const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
@@ -2393,9 +2438,15 @@ async function syncContactEmails(contactId, opts) {
       fetchIncomingEmails(addr, token),
       fetchSentEmails(addr, token)
     ]);
+    // bodyText: koko rungosta purettu, katkaistu teksti (ks. htmlToPlainText/
+    // truncateEmailBody) — bodyPreview varafallbackina jos body syystä tai
+    // toisesta puuttuisi vastauksesta. Lasketaan kerran tässä molemmille
+    // suunnille samalla kaavalla, jotta saapuneet ja lähetetyt näkyvät
+    // ketjussa symmetrisesti (aiemmin vain saapuneilla oli oikea sisältö).
+    const withBodyText=m=>({...m, bodyText: (m.body?.content ? htmlToPlainText(m.body.content) : '') || m.bodyPreview || ''});
     const msgs=[
-      ...incoming.map(m=>({...m, dir:'in', ts:m.receivedDateTime})),
-      ...sent.map(m=>({...m, dir:'out', ts:m.sentDateTime}))
+      ...incoming.map(m=>({...withBodyText(m), dir:'in', ts:m.receivedDateTime})),
+      ...sent.map(m=>({...withBodyText(m), dir:'out', ts:m.sentDateTime}))
     ];
     const acts=parseActs(p);
     const tickets=acts.filter(a=>a.tyyppi==='sahkoposti'&&a.id&&a.contactId===contactId);
@@ -2416,7 +2467,7 @@ async function syncContactEmails(contactId, opts) {
       }
       if (ticket) {
         ticket.thread=ticket.thread||[];
-        ticket.thread.push({dir:m.dir,graphId:m.id,ts:m.ts,subject:m.subject,preview:m.bodyPreview,webLink:m.webLink||null});
+        ticket.thread.push({dir:m.dir,graphId:m.id,ts:m.ts,subject:m.subject,preview:truncateEmailBody(m.bodyText),webLink:m.webLink||null});
         if (m.dir==='in') {
           // Vastaus palauttaa tiketin "Uusi"-tilaan (jos oli merkitty
           // Toimitetuksi tai Ajastetuksi) — taskIsDone johtaa done-tilan
@@ -2440,9 +2491,10 @@ async function syncContactEmails(contactId, opts) {
       } else if (m.dir==='in') {
         acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,6),tyyppi:'sahkoposti',
           tila:'Uusi',done:false,aihe:m.subject||'(ei aihetta)',
-          teksti:`Saapunut: "${m.subject||'(ei aihetta)'}" — ${m.bodyPreview||''}`.trim(),
+          teksti:`Saapunut: "${m.subject||'(ei aihetta)'}"`,
           tekija:null,muistiinpanot:null,created_at:m.ts||new Date().toISOString(),
-          due_date:null,contactId,graphId:m.id,graphLink:m.webLink||null});
+          due_date:null,contactId,graphId:m.id,graphLink:m.webLink||null,
+          thread:[{dir:'in',graphId:m.id,ts:m.ts,subject:m.subject,preview:truncateEmailBody(m.bodyText),webLink:m.webLink||null}]});
         added++;
       }
       // m.dir==='out' && ei täsmäävää tikettiä: EI luoda uutta tikettiä.
