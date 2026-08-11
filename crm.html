@@ -369,7 +369,8 @@
        #modal-overlay:iin, EI koskaan paljaana. */
     [data-dash-theme="spara"] #modal-overlay .timeline-card{background:var(--spara-cream);border-color:var(--spara-hairline);}
     [data-dash-theme="spara"] #modal-overlay .timeline-card-head{color:var(--spara-ink);}
-    [data-dash-theme="spara"] #modal-overlay .timeline-card-meta{color:var(--spara-ink-faint);}
+    [data-dash-theme="spara"] #modal-overlay .timeline-card-meta,
+    [data-dash-theme="spara"] #modal-overlay .timeline-card-stamp{color:var(--spara-ink-faint);}
     [data-dash-theme="spara"] #modal-overlay .timeline-card-body{border-top-color:var(--spara-hairline);}
     [data-dash-theme="spara"] #modal-overlay .timeline-thread-item{background:var(--spara-paper);border-color:var(--spara-hairline);}
     [data-dash-theme="spara"] #modal-overlay .timeline-thread-meta,
@@ -511,6 +512,7 @@
     .timeline-card{background:var(--bg3);border:1px solid var(--border);border-top:3px solid var(--timeline-color);border-radius:10px;overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.13);transition:border-color .15s,transform .15s;}
     .timeline-card:hover{border-left-color:var(--timeline-color);border-right-color:var(--timeline-color);}
     .timeline-card.open{transform:translateY(-1px);}
+    .timeline-card-stamp{padding:6px 11px 0;font-size:9px;color:var(--text2);opacity:.75;letter-spacing:.02em;}
     .timeline-card-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;width:100%;padding:10px 11px;background:none;border:0;color:var(--text);font:inherit;text-align:left;cursor:pointer;}
     .timeline-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--bg4);border:1px solid var(--border);color:var(--text2);font-size:10px;font-weight:800;overflow:hidden;}
     .timeline-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
@@ -1198,7 +1200,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-08.11';
+const BUILD_ID = '2026-08-08.12';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3660,7 +3662,16 @@ async function saveTiliProjekti() {
 // suoraksi käyttäjägesteen seuraukseksi (popup-esto) — sama syy kuin
 // soitaNyt():ssa.
 async function soitaJaLogi(numero, nimike, contactId) {
-  window.open('tel:' + numero.replace(/\s/g,''), '_blank');
+  // tel:-linkin avaus omassa try/catchissaan: puhelun soittaminen ja
+  // tehtävän kirjaaminen ovat kaksi erillistä toimintoa, eikä toisen
+  // epäonnistuminen (esim. jokin selainkohtainen erikoisuus window.open():n
+  // kanssa ei-http(s)-skeemalle) saa hiljaa estää toista.
+  try { window.open('tel:' + numero.replace(/\s/g,''), '_blank'); }
+  catch(e) { console.warn('tel:-linkin avaus epäonnistui:', e); }
+  // Näkyvä virhe eikä hiljainen paluu — addTask():n oma !currentId-tarkistus
+  // palauttaa null:in ilman mitään ilmoitusta, mikä näyttäisi käyttäjälle
+  // siltä ettei mitään tapahtunut lainkaan.
+  if (!currentId) { showToast('Avaa ensin tili johon soitto liittyy','error'); return; }
   const overrides={
     tyyppi:'soitto', tila:TASK_TILA.soitto[0],
     due_date:new Date().toISOString().substring(0,10),
@@ -4092,11 +4103,12 @@ function timelineCardHtml(item,index) {
   return `<div class="timeline-item ${side}${item.upcoming?' timeline-upcoming':''}" style="--timeline-color:${timelineColor(item)}">
     <span class="timeline-node" aria-hidden="true"></span>
     <article class="timeline-card" id="timeline-card-${index}">
+      <div class="timeline-card-stamp">${esc(timelineDateText(item))}</div>
       <button type="button" class="timeline-card-head" onclick="toggleTimelineCard(${index},this)" aria-expanded="false">
         ${timelineAvatarHtml(a.tekija)}
         <span class="timeline-card-main">
           <span class="timeline-card-title">${esc(title)}</span>
-          <span class="timeline-card-meta">${actIcon(a.tyyppi)} ${esc(timelineTypeLabel(item))} · ${esc(timelineDateText(item))}</span>
+          <span class="timeline-card-meta">${actIcon(a.tyyppi)} ${esc(timelineTypeLabel(item))}</span>
         </span>
         <span><span class="timeline-badge">${esc(status)}</span> <span class="timeline-chevron">⌄</span></span>
       </button>
