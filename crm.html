@@ -1058,7 +1058,8 @@
       </div>
       <!-- Form fields -->
       <div class="form-grid">
-        <div class="form-group full"><label>Yrityksen nimi *</label><input class="form-control" id="tf_name" placeholder="Yrityksen nimi"></div>
+        <div class="form-group full"><label>Yrityksen nimi *</label><input class="form-control" id="tf_name" placeholder="Yrityksen nimi" oninput="checkAddTiliDuplicates()"></div>
+        <div class="form-group full" id="addtili-dup-suggestions" style="display:none"></div>
         <div class="form-group full"><label>Projekti</label><select class="form-control" id="tf_kampanja"></select></div>
         <div class="form-group"><label>Y-tunnus</label><input class="form-control" id="tf_ytunnus" placeholder="1234567-8"></div>
         <div class="form-group"><label>Toimiala</label><input class="form-control" id="tf_toimiala"></div>
@@ -1205,7 +1206,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-11.2';
+const BUILD_ID = '2026-08-11.3';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3083,9 +3084,12 @@ function renderTiedotEdit(p) {
       <div class="form-group full"><label>Lisätiedot</label><textarea class="form-control" id="me-lisatiedot" rows="3">${esc(p.huomiot||'')}</textarea></div>
       <div class="form-group"><label>Omistaja (CRM)</label><input class="form-control" id="me-omistaja" placeholder="Patrick" value="${esc(p.omistaja||'')}"></div>
     </div>
-    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:14px;">
-      <button class="btn btn-ghost btn-sm" onclick="toggleTiliEdit()">Peruuta</button>
-      <button class="btn btn-primary" onclick="saveMuokkaa()">Tallenna muutokset</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:14px;">
+      <button class="btn btn-danger btn-sm" onclick="confirmDeleteTili('${p.spara_id}')">🗑️ Poista tili</button>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="toggleTiliEdit()">Peruuta</button>
+        <button class="btn btn-primary" onclick="saveMuokkaa()">Tallenna muutokset</button>
+      </div>
     </div>`;
 }
 
@@ -3118,6 +3122,31 @@ async function saveMuokkaa() {
     openModal(p.spara_id);
     showToast('Tallennettu ✓', 'success');
   } catch(e) { showToast('Virhe: '+e.message, 'error'); }
+}
+
+// Sama "tyhjennä rivi paikallaan" -periaate kuin confirmDeleteContact():ssa
+// — ei oikeaa Sheet-rivin poistoa, koska se siirtäisi kaikkien sitä
+// seuraavien rivien _rowIndex:n (ks. c5eedd4-korjauksen kommentti
+// muualla tiedostossa siitä mihin tämä johtaa). A:AB kattaa aina koko
+// rivin leveyden riippumatta kummasta sarakekaavasta (28 saraketta
+// ID-tileille, 14 T-alkuisille legacy-tileille) rivi on kirjoitettu —
+// ks. saveTiliData():n sama kahtiajako.
+// Sama _isTili/_rowIndex-suoja kuin saveTiliProjekti():ssa: ETJ+/
+// Talopaketti-perusdataa ei voi poistaa täältä, koska CRM-tila sille
+// tallennetaan aina override-kerroksena, ei suorana rivikirjoituksena.
+async function confirmDeleteTili(sid) {
+  const p=allProspects.find(x=>x.spara_id===sid); if (!p) return;
+  if (!p._isTili || !p._rowIndex) { showToast('Perusdataa (ETJ+/Talopaketit) ei voi poistaa täältä','error'); return; }
+  const linked=allContacts.filter(c=>c.tili_id===sid);
+  const warn=linked.length?`\n\nHuom: tilillä on ${linked.length} yhteyshenkilöä, jotka jäävät ilman tiliä.`:'';
+  if (!confirm(`Poistetaanko tili "${p.yritys_nimi}" pysyvästi? Tätä ei voi perua.${warn}`)) return;
+  try {
+    await sheetPut(`${MAIN_TAB}!A${p._rowIndex}:AB${p._rowIndex}`, [Array(28).fill('')]);
+    allProspects.splice(allProspects.indexOf(p),1);
+    closeModal();
+    buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard(); renderKanban(); applyYhFilters();
+    showToast('Tili poistettu: '+p.yritys_nimi,'success');
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────────
@@ -4320,6 +4349,7 @@ async function selectYtjSuggestion(context, idx) {
   try {
     const formData = await prhFetchByBusinessId(bId);
     fillTiliForm(formData);
+    if (context==='addtili') checkAddTiliDuplicates();
     st.className = 'ytj-status ytj-ok';
     st.textContent = '✓ ' + formData.tf_name + (formData.tf_kaupunki ? ', ' + formData.tf_kaupunki : '');
   } catch(e) {
@@ -4904,9 +4934,13 @@ function toggleYhEdit() {
   const showEdit=edit.style.display==='none';
   if (showEdit) {
     const c=allContacts.find(x=>x.id===currentYhId); if (!c) return;
+    const tiliOptions=allProspects.slice()
+      .sort((a,b)=>(a.yritys_nimi||'').localeCompare(b.yritys_nimi||'','fi'))
+      .map(p=>`<option value="${p.spara_id}"${p.spara_id===c.tili_id?' selected':''}>${esc(p.yritys_nimi)}</option>`).join('');
     edit.innerHTML=`
       <div class="form-grid">
         <div class="form-group full"><label>Nimi *</label><input class="form-control" id="yhe-nimi" value="${esc(c.nimi)}"></div>
+        <div class="form-group full"><label>Tili</label><select class="form-control" id="yhe-tili">${tiliOptions}</select></div>
         <div class="form-group"><label>Titteli</label><input class="form-control" id="yhe-titteli" value="${esc(c.titteli||'')}"></div>
         <div class="form-group"><label>Puhelin</label><input class="form-control" id="yhe-puhelin" value="${esc(c.puhelin||'')}"></div>
         <div class="form-group"><label>Sähköposti</label><input class="form-control" id="yhe-sahkoposti" value="${esc(c.sahkoposti||'')}"></div>
@@ -4925,18 +4959,26 @@ async function saveYhEdit() {
   const c=allContacts.find(x=>x.id===currentYhId); if (!c) return;
   const nimi=(document.getElementById('yhe-nimi')?.value||'').trim();
   if (!nimi) { showToast('Nimi on pakollinen','error'); return; }
+  const tiliId=document.getElementById('yhe-tili')?.value||c.tili_id;
   const titteli=document.getElementById('yhe-titteli')?.value.trim()||'';
   const puhelin=document.getElementById('yhe-puhelin')?.value.trim()||'';
   const sahkoposti=document.getElementById('yhe-sahkoposti')?.value.trim()||'';
   const linkedin=document.getElementById('yhe-linkedin')?.value.trim()||'';
-  const row=[c.id,c.tili_id,nimi,titteli,puhelin,sahkoposti,linkedin,c.created_at||''];
+  const oldTiliId=c.tili_id;
+  const row=[c.id,tiliId,nimi,titteli,puhelin,sahkoposti,linkedin,c.created_at||''];
   try {
     await sheetPut(`${YH_TAB}!A${c._rowIndex}:H${c._rowIndex}`,[row]);
-    Object.assign(c,{nimi,titteli,puhelin,sahkoposti,linkedin});
+    Object.assign(c,{nimi,titteli,puhelin,sahkoposti,linkedin,tili_id:tiliId});
     openYhModal(c.id);
-    const p=allProspects.find(x=>x.spara_id===c.tili_id); if (p && currentId===p.spara_id) renderContactsInTiedot(p);
+    // Jos tili vaihtui, päivitetään sen Tilin oma YH-tab jonka modaali
+    // sattuu olemaan auki taustalla — voi olla joko vanha (kontakti
+    // katosi sieltä) tai uusi (kontakti ilmestyi sinne) riippuen kumpi on
+    // currentId juuri nyt.
+    if (currentId===oldTiliId || currentId===tiliId) {
+      const p=allProspects.find(x=>x.spara_id===currentId); if (p) renderContactsInTiedot(p);
+    }
     applyYhFilters();
-    showToast('Tallennettu ✓','success');
+    showToast(tiliId!==oldTiliId?'Tallennettu — tili vaihdettu ✓':'Tallennettu ✓','success');
   } catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 
@@ -6051,6 +6093,8 @@ function openAddTili() {
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   const kSel=document.getElementById('tf_kampanja');
   if (kSel) kSel.value=baseProjektiNimi('BASE_MUU');
+  const dupBox=document.getElementById('addtili-dup-suggestions');
+  if (dupBox) { dupBox.style.display='none'; dupBox.innerHTML=''; }
   document.getElementById('addtili-modal').classList.remove('hidden');
 }
 function closeAddTili() { document.getElementById('addtili-modal').classList.add('hidden'); }
@@ -6150,6 +6194,43 @@ async function saveNewTili() {
   } finally {
     if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent=originalBtnText; }
   }
+}
+
+// saveNewTili():n oma duplikaattitarkistus (findExistingAccountByBusinessId)
+// toimii vain jos Y-tunnus on täytetty — pika-/puolihuolimattomassa
+// manuaalisessa lisäyksessä ilman Y-tunnusta se ei laukea lainkaan, ja
+// juuri näin CRM:ään pääsi vahingossa duplikaatti huomaamatta. Tämä
+// täydentää sen nimipohjaisella, paikallisella (ei verkkokutsua)
+// sumealla täsmäytyksellä joka ajetaan joka näppäinpainalluksella —
+// samat primitiivit (normalizeCompanyName/stringSimilarity/
+// containmentScore) kuin YTJ-todennuksessa, mutta löysemmällä
+// kynnyksellä koska tässä vain EHDOTETAAN ihmisen silmäiltäväksi, ei
+// hyväksytä mitään automaattisesti — väärä positiivinen on halpa
+// (yksi ylimääräinen rivi listassa), väärä negatiivinen (osuma jää
+// huomaamatta) on juuri se ongelma jota tällä korjataan.
+const ADD_TILI_DUP_THRESHOLD=0.6;
+function checkAddTiliDuplicates() {
+  const box=document.getElementById('addtili-dup-suggestions'); if (!box) return;
+  const raw=(document.getElementById('tf_name')?.value||'').trim();
+  if (raw.length<3) { box.style.display='none'; box.innerHTML=''; return; }
+  const norm=normalizeCompanyName(raw);
+  const scored=allProspects.map(p=>({p, score:Math.max(
+      stringSimilarity(norm,normalizeCompanyName(p.yritys_nimi)),
+      containmentScore(norm,normalizeCompanyName(p.yritys_nimi)))
+    })).filter(x=>x.score>=ADD_TILI_DUP_THRESHOLD)
+    .sort((a,b)=>b.score-a.score).slice(0,3);
+  if (!scored.length) { box.style.display='none'; box.innerHTML=''; return; }
+  box.style.display='';
+  box.innerHTML=`<div style="font-size:11px;font-weight:600;color:var(--orange);margin-bottom:4px">⚠️ Mahdollisia osumia CRM:ssä jo — klikkaa avataksesi sen sijaan:</div>
+    <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">` +
+    scored.map(({p})=>`<div class="ytj-dropdown-item" onmousedown="openExistingInsteadOfAddTili('${p.spara_id}')">
+      <div class="ytj-item-name">${esc(p.yritys_nimi)}</div>
+      <div class="ytj-item-meta">${[p.segmentti,p.kaupunki].filter(Boolean).map(esc).join(' · ')||' '}</div>
+    </div>`).join('') + `</div>`;
+}
+function openExistingInsteadOfAddTili(sid) {
+  closeAddTili();
+  openModal(sid);
 }
 
 // ── Asetukset ─────────────────────────────────────────────────────────────────
