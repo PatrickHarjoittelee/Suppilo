@@ -1200,7 +1200,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-08.12';
+const BUILD_ID = '2026-08-08.13';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3548,7 +3548,16 @@ function openModal(sid) {
   document.getElementById('modal-title').textContent=p.yritys_nimi;
   const f=(label,val,full)=>{ if (val==null||val==='') return ''; return `<div class="info-block${full?' full':''}"><div class="info-label">${label}</div><div class="info-value">${val}</div></div>`; };
   const lnk=u=>u?`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`:null;
-  const tel=(t,nim)=>t?`<a href="tel:${t.replace(/\s/g,'')}">${esc(t)}</a><button class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:11px" onclick="soitaJaLogi(${JSON.stringify(t)},${JSON.stringify(nim||'')})">📞 Soita</button>`:null;
+  // esc(JSON.stringify(...)), EI JSON.stringify(...) paljaana: JSON.stringify
+  // tuottaa merkkijonon jonka OMAT lainausmerkit ("...") sulkisivat tämän
+  // onclick="..."-attribuutin ennenaikaisesti (attribuutti on itsekin
+  // lainausmerkeissä) — selain pilkkoi tästä syystä koko onclick:in
+  // merkityksettömiksi näennäisattribuuteiksi eikä mitään käsittelijää
+  // syntynyt lainkaan (löytyi käyttäjän lähettämästä renderöidystä HTML:stä).
+  // esc() HTML-entiteettikoodaa lainausmerkit (&quot;) niin että selain
+  // purkaa ne takaisin oikeiksi merkeiksi vasta JS:ää suoritettaessa, ei
+  // attribuuttia jäsentäessä.
+  const tel=(t,nim)=>t?`<a href="tel:${t.replace(/\s/g,'')}">${esc(t)}</a><button class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:11px" onclick="soitaJaLogi(${esc(JSON.stringify(t))},${esc(JSON.stringify(nim||''))})">📞 Soita</button>`:null;
   const mail=m=>m?`<a href="mailto:${esc(m)}">${esc(m)}</a>`:null;
   document.getElementById('info-grid').innerHTML=`
     ${f('Spara ID',p.spara_id)} ${f('Projekti',p.kampanja)}
@@ -4708,7 +4717,11 @@ function openYhModal(cid) {
   const p=allProspects.find(x=>x.spara_id===c.tili_id);
   document.getElementById('yhmodal-title').textContent=c.nimi;
   const f=(label,val,full)=>{ if (val==null||val==='') return ''; return `<div class="info-block${full?' full':''}"><div class="info-label">${label}</div><div class="info-value">${val}</div></div>`; };
-  const tel=(t,nim)=>t?`<a href="tel:${t.replace(/\s/g,'')}">${esc(t)}</a><button class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:11px" onclick="soitaJaLogiFromYh(${JSON.stringify(t)},${JSON.stringify(nim||'')})">📞 Soita</button>`:null;
+  // esc(JSON.stringify(...)) — ks. openModal:n tel()-kommentti samasta
+  // korjauksesta: paljas JSON.stringify(...) onclick="..."-attribuutissa
+  // rikkoo HTML:n, koska sen omat lainausmerkit sulkevat attribuutin
+  // ennenaikaisesti.
+  const tel=(t,nim)=>t?`<a href="tel:${t.replace(/\s/g,'')}">${esc(t)}</a><button class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:11px" onclick="soitaJaLogiFromYh(${esc(JSON.stringify(t))},${esc(JSON.stringify(nim||''))})">📞 Soita</button>`:null;
   const mail=m=>m?`<a href="mailto:${esc(m)}">${esc(m)}</a>`:null;
 
   let html=`<div class="info-grid">
