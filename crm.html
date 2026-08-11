@@ -1001,16 +1001,16 @@
       <div class="mtab-content" id="mt-historia">
         <div class="act-log" id="act-log"><div class="empty">Ei merkintöjä</div></div>
         <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">
-          <div style="display:flex;gap:6px;align-items:center">
-            <select class="form-control" id="act-type" onchange="updateActFields()" style="min-width:130px;flex-shrink:0">
-              <option value="kommentti">💬 Kommentti</option>
-              <option value="puhelu">📞 Puhelu</option>
-              <option value="sahkoposti">✉️ Sähköposti</option>
-              <option value="tapaaminen">🤝 Tapaaminen</option>
-              <option value="tarjous">📄 Tarjous</option>
-            </select>
-            <input class="form-control" id="act-input" placeholder="Kuvaus…">
-            <button class="btn btn-ghost btn-sm" onclick="addActivity()">Lisää</button>
+          <select class="form-control" id="act-type" onchange="updateActFields()">
+            <option value="kommentti">💬 Kommentti</option>
+            <option value="puhelu">📞 Puhelu</option>
+            <option value="sahkoposti">✉️ Sähköposti</option>
+            <option value="tapaaminen">🤝 Tapaaminen</option>
+            <option value="tarjous">📄 Tarjous</option>
+          </select>
+          <div style="display:flex;gap:6px">
+            <input class="form-control" id="act-input" placeholder="Kuvaus…" style="flex:1;min-width:0">
+            <button class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="addActivity()">Lisää</button>
           </div>
           <div style="display:flex;gap:6px">
             <div id="act-tulos-wrap" style="display:none;flex:1">
@@ -1206,7 +1206,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-11.3';
+const BUILD_ID = '2026-08-11.4';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
