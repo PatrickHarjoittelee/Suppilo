@@ -1198,7 +1198,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-08.10';
+const BUILD_ID = '2026-08-08.11';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3646,16 +3646,34 @@ async function saveTiliProjekti() {
   } catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 
-function soitaJaLogi(numero, nimike) {
+// EI enää pelkkä puhelu-tyyppisen historiakommentin esitäyttö (vaati käsin
+// kirjoittamisen ja "Lisää"-klikkauksen ennen kuin mitään tallentui) — luo/
+// avaa suoraan oikean tyyppi:'soitto' TEHTÄVÄN, sama polku kuin
+// soitaNyt():lla (Tehtävät-välilehden oma "📞 Soita nyt"): ajallinen jälki
+// syntyy automaattisesti heti painalluksesta (created_at), ja tehtävä
+// avautuu muokattavaksi (aihe+muistiinpanot+tila) välittömästi. Näkyy myös
+// Historia-aikajanalla kuten mikä tahansa muu merkintä (ks. timelineItems/
+// isTimelineTask, jotka eivät erottele tehtäviä muista aktiviteeteista) —
+// sen "✏️ Avaa tehtävä" -painike vie takaisin samaan muokkaukseen milloin
+// tahansa myöhemmin.
+// window.open() ensin, ennen mitään await:ia, jotta selain tulkitsee sen
+// suoraksi käyttäjägesteen seuraukseksi (popup-esto) — sama syy kuin
+// soitaNyt():ssa.
+async function soitaJaLogi(numero, nimike, contactId) {
   window.open('tel:' + numero.replace(/\s/g,''), '_blank');
+  const overrides={
+    tyyppi:'soitto', tila:TASK_TILA.soitto[0],
+    due_date:new Date().toISOString().substring(0,10),
+    aihe:nimike||'Puhelu', contactId:contactId||null
+  };
+  const savedId=await addTask(overrides);
+  if (!savedId) return;
   document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
-  document.querySelector('[data-mt="historia"]').classList.add('active');
-  document.getElementById('mt-historia').classList.add('active');
-  const typeEl=document.getElementById('act-type');
-  if (typeEl) { typeEl.value='puhelu'; updateActFields(); }
-  const inputEl=document.getElementById('act-input');
-  if (inputEl) { inputEl.value=nimike ? nimike : ''; inputEl.focus(); }
+  document.querySelector('[data-mt="tehtavat"]').classList.add('active');
+  document.getElementById('mt-tehtavat').classList.add('active');
+  const p=allProspects.find(x=>x.spara_id===currentId); if (p) renderTaskList(p);
+  editTask(savedId);
 }
 
 async function saveTehtavat() {
@@ -4794,7 +4812,7 @@ function soitaJaLogiFromYh(numero, nimike) {
   const c=allContacts.find(x=>x.id===currentYhId); if (!c) return;
   closeYhModal();
   openModal(c.tili_id);
-  soitaJaLogi(numero, nimike);
+  soitaJaLogi(numero, nimike, c.id);
 }
 
 function toggleYhEdit() {
