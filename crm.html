@@ -1205,7 +1205,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-11.1';
+const BUILD_ID = '2026-08-11.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -4685,12 +4685,16 @@ function renderContactsInTiedot(p) {
   if (!contacts.length) html+='<div class="empty" style="padding:10px;font-size:12px">Ei yhteyshenkilöitä</div>';
   html += contacts.map(c=>`
     <div class="yh-item" onclick="openYhModal('${c.id}')">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-        <div>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+        <div style="min-width:0">
           <div class="yh-item-name">${esc(c.nimi)}</div>
           ${c.titteli?`<div style="font-size:11px;color:var(--text2);margin-top:2px">${esc(c.titteli)}</div>`:''}
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+            ${c.puhelin?`<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="event.stopPropagation();soitaJaLogiFromList('${c.id}',${esc(JSON.stringify(c.puhelin))},${esc(JSON.stringify(c.nimi||''))})">📞 ${esc(c.puhelin)}</button>`:''}
+            ${c.sahkoposti?`<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="event.stopPropagation();openEmailComposer('${c.id}')">✉️ ${esc(c.sahkoposti)}</button>`:''}
+          </div>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openYhModal('${c.id}')">Avaa →</button>
+        <button class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="event.stopPropagation();openYhModal('${c.id}')">Avaa →</button>
       </div>
     </div>`).join('');
   div.innerHTML=html+`
