@@ -592,8 +592,12 @@
     .ytj-item-name{font-weight:600;} .ytj-item-meta{font-size:11px;color:var(--text2);margin-top:2px;}
 
     /* Dashboard */
-    .dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;}
-    @media(max-width:640px){.dash-grid{grid-template-columns:1fr;}}
+    /* minmax(0,Nfr), EI paljas Nfr — sama CSS grid -ansa kuin .spara-kpi-row
+       aiemmin: ilman minmax(0,...) sarake ei kutistu alle sisällön
+       min-content-koon, jolloin pitkä yrityksen nimi tms. voisi pakottaa
+       koko rivin ja siten koko sivun leveämmäksi kuin näyttö. */
+    .dash-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr);gap:16px;margin-top:16px;}
+    @media(max-width:900px){.dash-grid{grid-template-columns:1fr;}}
     .dash-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;}
     .dash-section-title{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;font-weight:600;}
     .pipeline-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px;}
@@ -719,8 +723,9 @@
     .spara-funnel-count{font-family:'Fjalla One',sans-serif;font-size:15px;color:var(--spara-navy);text-align:right;}
     .spara-funnel-forecast{font-size:11px;color:var(--spara-ink-faint);text-align:right;}
     .spara-funnel-forecast strong{color:var(--spara-ink-soft);font-weight:600;}
-    .spara-dash-split{display:grid;grid-template-columns:1.35fr 1fr;gap:20px;}
-    @media(max-width:860px){.spara-dash-split{grid-template-columns:1fr;}}
+    /* minmax(0,Nfr) — sama CSS grid -blowout-suoja kuin .dash-grid:ssä. */
+    .spara-dash-split{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:20px;}
+    @media(max-width:900px){.spara-dash-split{grid-template-columns:1fr;}}
     .spara-dash-panel{border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-paper);}
     .spara-dash-panel-head{padding:14px 18px;border-bottom:1px solid var(--spara-hairline);display:flex;align-items:baseline;justify-content:space-between;}
     .spara-dash-panel-head h3{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.05em;font-size:12px;color:var(--spara-navy);margin:0;}
@@ -1200,7 +1205,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-08.13';
+const BUILD_ID = '2026-08-11.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2986,8 +2991,15 @@ function applyCrmState(crmRows) {
     try { if (row[9]) ov = JSON.parse(row[9]); } catch(_) {}
     let aiOpener = [];
     try { if (row[10]) aiOpener = JSON.parse(row[10]); } catch(_) {}
+    // row[7]: saveCrmState() kirjoittaa tähän new Date().toISOString():n JOKA
+    // kerta kun tili tallennetaan — se on siis jo valmiiksi "milloin tätä
+    // tiliä viimeksi muokattiin" -aikaleima, mutta tätä map-oliota ei
+    // aiemmin luettu takaisin mihinkään p-kenttään (hyppäsi suoraan
+    // row[6]:sta row[8]:aan) — käytetään nyt Dashboardin "Viimeksi lisätyt
+    // tai päivitetyt Tilit" -paneelissa (renderDashboardRecent).
     map[row[0]] = { vaihe:row[1]||null, omistaja:row[2]||null, seuraava_toimenpide:row[3]||null,
       seuraava_pvm:row[4]||null, muistiinpanot:row[5]||null, aktiviteetit:row[6]||'[]',
+      crm_updated_at:row[7]||null,
       crm_status:row[8]||'Prospekti', tili_override:ov, ai_opener:aiOpener, ai_opener_hash:row[11]||null, _crmRow:i+1 };
   });
   allProspects.forEach(p => {
@@ -2998,7 +3010,8 @@ function applyCrmState(crmRows) {
     Object.assign(p, { omistaja:s.omistaja, seuraava_toimenpide:s.seuraava_toimenpide,
       seuraava_pvm:s.seuraava_pvm, muistiinpanot:s.muistiinpanot,
       aktiviteetit:s.aktiviteetit||'[]', crm_status:s.crm_status||'Prospekti', tili_override:ov,
-      ai_opener:s.ai_opener||[], ai_opener_hash:s.ai_opener_hash||null, _crmRow:s._crmRow });
+      ai_opener:s.ai_opener||[], ai_opener_hash:s.ai_opener_hash||null, _crmRow:s._crmRow,
+      crm_updated_at:s.crm_updated_at });
     if (ov.yritys_nimi)       p.yritys_nimi       = ov.yritys_nimi;
     if (ov.y_tunnus    != null) p.y_tunnus         = ov.y_tunnus;
     if (ov.segmentti   != null) p.segmentti        = ov.segmentti;
@@ -3238,8 +3251,8 @@ function yhRowHtml(c) {
       <td><strong>${esc(c.nimi)}</strong></td>
       <td style="color:var(--text2)">${esc(c.titteli)}</td>
       <td style="color:var(--text2);font-size:11px">${p?esc(p.yritys_nimi):'–'}</td>
-      <td style="color:var(--text2);font-size:11px">${esc(c.puhelin)}</td>
-      <td style="color:var(--text2);font-size:11px">${esc(c.sahkoposti)}</td>
+      <td style="color:var(--text2);font-size:11px;white-space:normal">${c.puhelin?`${esc(c.puhelin)} <button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:10px" onclick="event.stopPropagation();soitaJaLogiFromList('${c.id}',${esc(JSON.stringify(c.puhelin))},${esc(JSON.stringify(c.nimi||''))})">📞</button>`:'–'}</td>
+      <td style="color:var(--text2);font-size:11px;white-space:normal">${c.sahkoposti?`${esc(c.sahkoposti)} <button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:10px" onclick="event.stopPropagation();openEmailComposer('${c.id}')">✉️</button>`:'–'}</td>
       <td style="color:var(--text2);font-size:11px">${fmtDateShort(c.created_at)}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openYhModal('${c.id}')">Avaa</button></td>
     </tr>`;
@@ -3253,8 +3266,8 @@ function yhRowSparaHtml(c) {
       <td><strong>${esc(c.nimi)}</strong></td>
       <td style="color:var(--spara-ink-faint)">${esc(c.titteli)}</td>
       <td style="color:var(--spara-ink-faint);font-size:11px">${p?esc(p.yritys_nimi):'–'}</td>
-      <td style="color:var(--spara-ink-faint);font-size:11px">${esc(c.puhelin)}</td>
-      <td style="color:var(--spara-ink-faint);font-size:11px">${esc(c.sahkoposti)}</td>
+      <td style="color:var(--spara-ink-faint);font-size:11px;white-space:normal">${c.puhelin?`${esc(c.puhelin)} <button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:10px" onclick="event.stopPropagation();soitaJaLogiFromList('${c.id}',${esc(JSON.stringify(c.puhelin))},${esc(JSON.stringify(c.nimi||''))})">📞</button>`:'–'}</td>
+      <td style="color:var(--spara-ink-faint);font-size:11px;white-space:normal">${c.sahkoposti?`${esc(c.sahkoposti)} <button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:10px" onclick="event.stopPropagation();openEmailComposer('${c.id}')">✉️</button>`:'–'}</td>
       <td style="color:var(--spara-ink-faint);font-size:11px">${fmtDateShort(c.created_at)}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openYhModal('${c.id}')">Avaa</button></td>
     </tr>`;
@@ -4570,6 +4583,25 @@ function projectDistributionHtml(colorForStage) {
   }).join('');
 }
 
+// Kolmas Dashboard-paneeli Seuraavat toimenpiteet / Projektijakauma -rivin
+// viereen. crm_updated_at (ks. applyCrmState) tulee saveCrmState():n rivin
+// aikaleimasta, joka kirjoitetaan JOKA kerta kun tili tallennetaan — kattaa
+// siis sekä juuri lisätyt (ensimmäinen tallennus) että päivitetyt (mikä
+// tahansa myöhempi tallennus) tilit samalla kentällä, ei tarvitse erotella
+// niitä. Tilit joita ei ole koskaan tallennettu CRM:n puolelta (esim.
+// koskemattomat ETJ+/Talopaketti-perusdatarivit) eivät saa tätä kenttää
+// lainkaan eivätkä siis näy — oikein, niille ei ole tapahtunut mitään.
+function renderDashboardRecent() {
+  const rows=allProspects.filter(p=>p.crm_updated_at)
+    .sort((a,b)=>b.crm_updated_at.localeCompare(a.crm_updated_at))
+    .slice(0,5);
+  if (!rows.length) return '<div class="empty" style="padding:16px">Ei vielä muutoksia</div>';
+  return rows.map(p=>`<div class="dash-item" onclick="openModal('${p.spara_id}')">
+      <div class="dash-item-date">${fmtDateShort(p.crm_updated_at)}</div>
+      <div><div class="dash-item-name">${esc(p.yritys_nimi)}</div>
+      <div class="dash-item-task">${kampBadge(p.kampanja)}</div></div></div>`).join('');
+}
+
 function dashboardShellClassicHtml() {
   return `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px" id="dash-kpis"></div>
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px">
@@ -4585,6 +4617,10 @@ function dashboardShellClassicHtml() {
         <div class="dash-section-title">Projektijakauma</div>
         <div id="dash-projects"></div>
       </div>
+      <div class="dash-section">
+        <div class="dash-section-title">Viimeksi lisätyt tai päivitetyt Tilit</div>
+        <div id="dash-recent"></div>
+      </div>
     </div>`;
 }
 function dashboardShellSparaHtml() {
@@ -4599,6 +4635,10 @@ function dashboardShellSparaHtml() {
       <div class="spara-dash-panel">
         <div class="spara-dash-panel-head"><h3>Projektijakauma</h3><span class="spara-dash-panel-note"></span></div>
         <div id="dash-projects"></div>
+      </div>
+      <div class="spara-dash-panel">
+        <div class="spara-dash-panel-head"><h3>Viimeksi muokatut</h3><span class="spara-dash-panel-note">lisätyt tai päivitetyt Tilit</span></div>
+        <div id="dash-recent"></div>
       </div>
     </div>`;
 }
@@ -4632,6 +4672,9 @@ function renderDashboard() {
 
   const prEl=document.getElementById('dash-projects');
   if (prEl) prEl.innerHTML=projectDistributionHtml(v=>V_COLORS[v]);
+
+  const recEl=document.getElementById('dash-recent');
+  if (recEl) recEl.innerHTML=renderDashboardRecent();
 }
 
 // ── Contacts (Yhteyshenkilöt) ─────────────────────────────────────────────────
@@ -4836,6 +4879,17 @@ function openTiliHistoryItemFromYh(sid, sourceIndex) {
 function soitaJaLogiFromYh(numero, nimike) {
   const c=allContacts.find(x=>x.id===currentYhId); if (!c) return;
   closeYhModal();
+  openModal(c.tili_id);
+  soitaJaLogi(numero, nimike, c.id);
+}
+// Sama kuin soitaJaLogiFromYh(), mutta Yhteyshenkilöt-TAULUKON riviltä
+// suoraan, ilman että Yh-modaalia on (tai on koskaan ollut) auki — ei siis
+// voi nojata currentYhId:hin. Kontakti tunnetaan täältä suoraan id:n
+// kautta, joten haetaan tili_id sen kautta ja avataan Tili-modaali (jotta
+// soitaJaLogi():n oma addTask() saa currentId:n asetettua ja tehtävä
+// syntyy oikealle tilille).
+function soitaJaLogiFromList(contactId, numero, nimike) {
+  const c=allContacts.find(x=>x.id===contactId); if (!c) return;
   openModal(c.tili_id);
   soitaJaLogi(numero, nimike, c.id);
 }
