@@ -1206,7 +1206,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-11.4';
+const BUILD_ID = '2026-08-11.5';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2549,18 +2549,41 @@ async function syncContactEmails(contactId, opts) {
           tila:'Uusi',done:false,aihe:m.subject||'(ei aihetta)',
           teksti:`Saapunut: "${m.subject||'(ei aihetta)'}"`,
           tekija:null,muistiinpanot:null,created_at:m.ts||new Date().toISOString(),
-          due_date:null,contactId,graphId:m.id,graphLink:m.webLink||null,
+          due_date:null,contactId,graphId:m.id,graphLink:m.webLink||null,conversationId:m.conversationId||null,
           thread:[{dir:'in',graphId:m.id,ts:m.ts,subject:m.subject,preview:truncateEmailBody(m.bodyText),webLink:m.webLink||null}]});
         added++;
+      } else if (m.dir==='out' && c.created_at && m.ts && new Date(m.ts)>=new Date(c.created_at)) {
+        // Vain kontaktin CRM:ään-lisäyksen JÄLKEEN lähetetyt saavat oman
+        // tiketin — periaatteellinen raja, ei mielivaltainen päivämäärä:
+        // kaikki ENNEN sitä on määritelmällisesti "vuosien CRM:ään
+        // liittymätöntä kirjeenvaihtoa" (ks. kommentti alla), kaikki SEN
+        // JÄLKEEN on vähintään mahdollista CRM-relevanttia — tämä kattaa
+        // juuri sen tavallisen tapauksen että myyjä aloittaa täysin uuden
+        // keskustelun suoraan Outlookista CRM:n komponoijan ohi, jolloin
+        // millekään aiemmalle tiketille ei tietenkään ole conversationId/
+        // koodi-täsmäystä. c.created_at voi puuttua vanhoilta, ennen
+        // aikaleiman lisäystä migratoiduilta kontakteilta (ks.
+        // toMigrate-haara ylempänä) — silloin ei arvata mitään, ohitetaan
+        // kuten ennenkin. tekijä=kirjautunut käyttäjä (ei null kuten
+        // saapuvalla puolella): Lähetetyt-kansio on aina "minun", lähettäjä
+        // siis tiedetään eikä sitä tarvitse jättää tyhjäksi.
+        acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,6),tyyppi:'sahkoposti',
+          tila:'Toimitettu',done:false,aihe:m.subject||'(ei aihetta)',
+          teksti:`Lähetetty: "${m.subject||'(ei aihetta)'}"`,
+          tekija:currentUser.nimi||currentUserEmail||null,muistiinpanot:null,created_at:m.ts||new Date().toISOString(),
+          due_date:null,contactId,graphId:m.id,graphLink:m.webLink||null,conversationId:m.conversationId||null,
+          thread:[{dir:'out',graphId:m.id,ts:m.ts,subject:m.subject,preview:truncateEmailBody(m.bodyText),webLink:m.webLink||null}]});
+        added++;
       }
-      // m.dir==='out' && ei täsmäävää tikettiä: EI luoda uutta tikettiä.
-      // Ensimmäinen versio teki tämän ("Lähetetty (Outlookista, CRM:n ohi)")
-      // ja tulos oli virhe — Lähetetyt-kansio voi sisältää vuosien
-      // CRM:ään liittymätöntä kirjeenvaihtoa samaan osoitteeseen (esim.
-      // ennen kuin tälle kontaktille oli koskaan yhtään CRM-tikettiä), ja
-      // jokaisesta syntyi tyhjä "Toimitettu"-roskatehtävä. Tämän haun
-      // ainoa tarkoitus on täydentää OLEMASSA OLEVIA tikettejä (ks. ticket-
-      // haara yllä) — vastaamaton lähetetty viesti ohitetaan hiljaa.
+      // m.dir==='out', ei täsmäävää tikettiä, JA viesti on VANHEMPI kuin
+      // kontaktin CRM-lisäyshetki (tai created_at puuttuu): ohitetaan
+      // hiljaa edelleen. Ensimmäinen versio loi tiketin JOKAISESTA
+      // vastaamattomasta Lähetetyt-viestistä iästä riippumatta ("Lähetetty
+      // (Outlookista, CRM:n ohi)") ja tulos oli virhe — Lähetetyt-kansio voi
+      // sisältää vuosien CRM:ään liittymätöntä kirjeenvaihtoa samaan
+      // osoitteeseen, ja jokaisesta syntyi tyhjä roskatehtävä
+      // (cleanupOrphanSentEmailEntries() siivoaa nekin jos joku vanha
+      // pääsisi tästä huolimatta läpi).
     });
     if (linked || added) {
       p.aktiviteetit=JSON.stringify(acts);
