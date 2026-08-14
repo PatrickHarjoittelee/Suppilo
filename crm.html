@@ -1206,7 +1206,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-11.5';
+const BUILD_ID = '2026-08-11.6';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2411,6 +2411,27 @@ function truncateEmailBody(text) {
 // kirjattu lähetyshetkellä sendOutlookEmail:ssa, joten kaksinkertaista
 // kirjausta ei synny). Uudet viestit tallennetaan graphId:llä varustettuna
 // aktiviteettina, jotta sama viesti ei tallennu uudelleen seuraavalla synkillä.
+// Sivuttaa @odata.nextLink:n kautta enintään maxPages sivua. Sekä
+// fetchIncomingEmails:n $filter- että fetchSentEmails:n $search-haku
+// palauttavat vain YHDEN $top-kokoisen sivun ilman tätä — pitkäaikaiselle
+// kumppanille (esim. talopakettivalmistaja jolle on vuosien varrella
+// kertynyt kymmeniä viestejä) todellinen, olemassa oleva viesti saattoi
+// silloin jäädä kokonaan ensimmäisen sivun ulkopuolelle ja näyttäytyä
+// käyttäjälle täysin löytymättömänä — havaittu käyttäjän raportoimana
+// puuttuvana lähetettynä viestinä joka oli olemassa mutta ei mahtunut
+// $top=20:n sisään.
+async function fetchGraphPages(url, token, maxPages) {
+  let out=[], next=url, pages=0;
+  while (next && pages<maxPages) {
+    const r=await fetch(next,{headers:{Authorization:`Bearer ${token}`}});
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+    const data=await r.json();
+    out=out.concat(data.value||[]);
+    next=data['@odata.nextLink']||null;
+    pages++;
+  }
+  return out;
+}
 async function fetchIncomingEmails(address, token) {
   const safeAddr=address.replace(/'/g,"''");
   // Ei $orderby:tä: Graph hylkää pyynnön (400 InefficientFilter) kun
@@ -2424,11 +2445,8 @@ async function fetchIncomingEmails(address, token) {
   const url='https://graph.microsoft.com/v1.0/me/messages'
     +`?$filter=${encodeURIComponent(`from/emailAddress/address eq '${safeAddr}'`)}`
     +'&$select=id,subject,bodyPreview,body,receivedDateTime,webLink,conversationId'
-    +'&$top=20';
-  const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  const data=await r.json();
-  return data.value||[];
+    +'&$top=25';
+  return fetchGraphPages(url, token, 4);
 }
 
 // Hakee tälle kontaktille lähetetyt viestit jotka EIVÄT kulkeneet CRM:n oman
@@ -2457,14 +2475,18 @@ async function fetchSentEmails(address, token) {
   // body mukana samasta syystä kuin fetchIncomingEmails:ssa — muuten CRM:n
   // ohi lähetetyt (tämän funktion koko olemassaolon syy) näkyisivät
   // ketjussa vain otsikkona, saapuneet taas oikealla esikatselulla.
+  // EI $orderby:tä tässäkään: Graph ei tue $orderby:tä yhdessä $search:n
+  // kanssa ollenkaan (eri rajoitus kuin fetchIncomingEmails:n $filter-
+  // tapauksessa, mutta lopputulos sama — ei voi pyytää palvelinta
+  // järjestämään). $search:n oma relevanssijärjestys ei ole taattu
+  // aikajärjestys, joten fetchGraphPages hakee useamman sivun jottei
+  // yksittäinen vanhempi mutta silti olemassa oleva viesti jää kokonaan
+  // ensimmäisen sivun ulkopuolelle.
   const url='https://graph.microsoft.com/v1.0/me/mailFolders/SentItems/messages'
     +`?$search=${encodeURIComponent(`"to:${safeAddr}"`)}`
     +'&$select=id,subject,bodyPreview,body,sentDateTime,webLink,conversationId'
-    +'&$top=20';
-  const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  const data=await r.json();
-  return data.value||[];
+    +'&$top=25';
+  return fetchGraphPages(url, token, 4);
 }
 
 // Tunnistaa mihin lähetettyyn tikettiin saapunut vastaus kuuluu: ensisijaisesti
@@ -2591,7 +2613,13 @@ async function syncContactEmails(contactId, opts) {
       if (currentId===p.spara_id) { renderActivities(p); renderTaskList(p); }
     }
     if (statusEl) statusEl.textContent='Viimeksi tarkistettu: '+fmtDT(new Date().toISOString());
-    if (!silent) showToast((linked||added)?`${added} uutta viestiä, ${linked} liitetty olemassa olevaan tikettiin ✓`:'Ei uusia viestejä','success');
+    // Kertoo myös löydettyjen viestien kokonaismäärän kun mitään uutta ei
+    // tullut — muuten "Ei uusia viestejä" näyttää identtiseltä sekä silloin
+    // kun Graph-haku ei löytänyt osoitteelle mitään (esim. väärä osoite
+    // tallennettu, tai Mail.Read-oikeus puuttuu) että silloin kun se löysi
+    // viestejä jotka jo tunnettiin/eivät täyttäneet ehtoja — ero on
+    // oleellinen vianetsinnässä.
+    if (!silent) showToast((linked||added)?`${added} uutta viestiä, ${linked} liitetty olemassa olevaan tikettiin ✓`:`Ei uusia viestejä (${msgs.length} löytyi Outlookista, ei uutta lisättävää)`,'success');
   } catch(e) {
     if (statusEl) statusEl.textContent='Tarkistus epäonnistui';
     if (!silent) showToast('Sähköpostien haku epäonnistui: '+e.message,'error');
