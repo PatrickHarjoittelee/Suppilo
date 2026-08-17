@@ -1206,7 +1206,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-11.6';
+const BUILD_ID = '2026-08-11.7';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -6238,6 +6238,15 @@ async function saveNewTili() {
     allProspects.push(p);
     await saveCrmState(p);
     closeAddTili();
+    // Avataan juuri luotu tili heti sen omaan modaaliin sen sijaan että
+    // jäisi vain sulkeutuneen lomakkeen taakse — käyttäjä näkee suoraan
+    // että tallennus onnistui ja mihin tiliin, eikä tarvitse etsiä sitä
+    // Tilit-taulukosta käsin. Sivuvaikutuksena tämä myös poistaa
+    // mahdollisuuden että aktiivinen taulukkosuodatin (esim. f-kampanja)
+    // saisi juuri tallennetun tilin näyttämään siltä kuin se "katosi" —
+    // openModal(id) toimii suodattimista riippumatta, samaan tapaan kuin
+    // yllä olevan Y-tunnus-duplikaattihaaran openModal(existing.spara_id).
+    openModal(id);
     buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard();
     showToast('Tili lisätty: ' + name, 'success');
   } catch(e) {
@@ -6259,11 +6268,34 @@ async function saveNewTili() {
 // hyväksytä mitään automaattisesti — väärä positiivinen on halpa
 // (yksi ylimääräinen rivi listassa), väärä negatiivinen (osuma jää
 // huomaamatta) on juuri se ongelma jota tällä korjataan.
+// KORJAUS (havaittu käyttäjän raportoimana "tili katoaa, siirryn toiselle
+// tilille" -bugina): ensimmäinen versio teki koko ehdotusrivistä
+// klikattavan onmousedown:lla (kopioitu suoraan YTJ-dropdownin
+// kuvakaappauksesta ilman että tarkistin sopiiko sama perustelu tähän) —
+// mousedown käynnistää navigoinnin JO KOSKETUKSEN/PAINALLUKSEN ALUSSA,
+// ennen varsinaista klikkausta, ja koska ehdotuslaatikko päivittyi JOKA
+// näppäinpainalluksella (raw.length>=3 riitti, eli jo 3 kirjaimen jälkeen)
+// mikä tahansa satunnainen kosketus lomakkeen tällä kohtaa kesken
+// kirjoittamisen saattoi sulkea koko "Lisää tili" -lomakkeen ja hypätä
+// täysin eri, olemassa olevaan tiliin — kaikki siihen asti kirjoitettu
+// hävisi jäljettömiin ilman mitään vahvistusta. Nyt: (1) vain oma pieni
+// "Avaa →" -nappi on klikattava, ei koko rivi — tahaton kosketus rivin
+// muualla ei tee mitään; (2) tavallinen onclick, ei onmousedown — tässä
+// laatikossa ei ole YTJ-dropdownin kaltaista onblur-piilotusta jota
+// pitäisi ehtiä edellä, joten mousedown-kikulle ei ollut koskaan oikeaa
+// perustetta; (3) 300ms debounce + nostettu 3:sta 4 merkkiin ennen
+// tarkistusta — vähentää laatikon välkkymistä/sijainnin hyppimistä kesken
+// kirjoittamisen, joka osaltaan altisti tahattomille kosketuksille.
 const ADD_TILI_DUP_THRESHOLD=0.6;
+let _addTiliDupDebounce=null;
 function checkAddTiliDuplicates() {
+  clearTimeout(_addTiliDupDebounce);
+  _addTiliDupDebounce=setTimeout(renderAddTiliDuplicates, 300);
+}
+function renderAddTiliDuplicates() {
   const box=document.getElementById('addtili-dup-suggestions'); if (!box) return;
   const raw=(document.getElementById('tf_name')?.value||'').trim();
-  if (raw.length<3) { box.style.display='none'; box.innerHTML=''; return; }
+  if (raw.length<4) { box.style.display='none'; box.innerHTML=''; return; }
   const norm=normalizeCompanyName(raw);
   const scored=allProspects.map(p=>({p, score:Math.max(
       stringSimilarity(norm,normalizeCompanyName(p.yritys_nimi)),
@@ -6272,11 +6304,14 @@ function checkAddTiliDuplicates() {
     .sort((a,b)=>b.score-a.score).slice(0,3);
   if (!scored.length) { box.style.display='none'; box.innerHTML=''; return; }
   box.style.display='';
-  box.innerHTML=`<div style="font-size:11px;font-weight:600;color:var(--orange);margin-bottom:4px">⚠️ Mahdollisia osumia CRM:ssä jo — klikkaa avataksesi sen sijaan:</div>
+  box.innerHTML=`<div style="font-size:11px;font-weight:600;color:var(--orange);margin-bottom:4px">⚠️ Mahdollisia osumia CRM:ssä jo:</div>
     <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">` +
-    scored.map(({p})=>`<div class="ytj-dropdown-item" onmousedown="openExistingInsteadOfAddTili('${p.spara_id}')">
-      <div class="ytj-item-name">${esc(p.yritys_nimi)}</div>
-      <div class="ytj-item-meta">${[p.segmentti,p.kaupunki].filter(Boolean).map(esc).join(' · ')||' '}</div>
+    scored.map(({p})=>`<div class="ytj-dropdown-item" style="cursor:default;display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <div style="min-width:0">
+        <div class="ytj-item-name">${esc(p.yritys_nimi)}</div>
+        <div class="ytj-item-meta">${[p.segmentti,p.kaupunki].filter(Boolean).map(esc).join(' · ')||' '}</div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="openExistingInsteadOfAddTili('${p.spara_id}')">Avaa →</button>
     </div>`).join('') + `</div>`;
 }
 function openExistingInsteadOfAddTili(sid) {
