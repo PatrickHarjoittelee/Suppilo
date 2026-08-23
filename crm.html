@@ -1206,7 +1206,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-11.7';
+const BUILD_ID = '2026-08-23.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1379,6 +1379,23 @@ function activeAiModel() {
 function activeAiProviderLabel() {
   return aiProvider()==='openai' ? 'OpenAI' : 'Anthropic';
 }
+// "Failed to fetch" on selaimen OMA, geneerinen verkkotason virhe —
+// fetch()-promise hylättiin ennen kuin mitään HTTP-vastausta edes
+// saatiin palvelimelta. Se EI ole sama asia kuin vanhentunut/väärä
+// API-avain: avainongelma näkyisi sen sijaan tarkkana "401 ..."
+// -virheenä palvelimen omalla selityksellä (ks. `${response.status}
+// ${await response.text()}` -haarat jotka jo kertovat täsmälleen mikä
+// meni pieleen kun palvelin EHTI vastata). Todennäköisimmät syyt: ei
+// juuri nyt internet-yhteyttä, mainoksenesto-/tietosuojalaajennus tai
+// verkon palomuuri/VPN estää yhteyden, tai selaimen CORS-esitarkistus
+// epäonnistui. Tarkoituksella pysyy domainriippumattomana — sama
+// selitys pätee riippumatta siitä minkä fetch-kutsun (Anthropic,
+// OpenAI, PRH, Graph, Sheets) selain jätti tavoittamatta.
+function friendlyAiError(e) {
+  const raw=(e&&e.message)||String(e);
+  if (!/failed to fetch/i.test(raw)) return raw;
+  return raw+' — tämä on selaimen verkkotason virhe (pyyntö ei koskaan tavoittanut palvelinta), EI vanhentunut/väärä API-avain: väärä avain näkyisi tarkkana "401 ..."-virheenä. Tarkista ensin internet-yhteys, sitten mainoksenesto-/tietosuojalaajennukset ja VPN/verkon palomuuri.';
+}
 // Anthropicin palvelinpuolen verkkohaku-työkalu — Claude päättää itse
 // haetaanko mitään, ei erillistä clientin toteuttamaa hakukierrosta.
 // Työkaluversio riippuu mallista: Opus 5 tukee uudempaa (dynaaminen
@@ -1511,7 +1528,7 @@ async function openAiOpenerPanel() {
       variants=await generateAiOpeners(ctx);
     } catch(e) {
       if (stillCurrent()) {
-        showToast('Personointi epäonnistui: '+e.message,'error');
+        showToast('Personointi epäonnistui: '+friendlyAiError(e),'error');
         btn.disabled=false; btn.textContent='✨ Personoi avaus';
       }
       return;
@@ -5757,7 +5774,7 @@ async function runProspectingBatch() {
       renderProspectingProgress(processedCount, totalCount, 'Haetaan ehdotuksia tekoälyltä…');
       aiCandidates=await generateProspectCandidates(segmentti, chunkSize, excludeNames);
     } catch(e) {
-      const msg='Tekoälyn haku epäonnistui: '+e.message;
+      const msg='Tekoälyn haku epäonnistui: '+friendlyAiError(e);
       showToast(msg,'error');
       batchErrors.push(msg);
       break;
@@ -5929,7 +5946,7 @@ async function runSignalMonitoringBatch() {
       renderSignalMonitoringProgress(processedCount, targets.length, 'Haetaan signaaleja tekoälyltä…');
       updates=await generateSignalUpdates(chunk.map(p=>({name:p.yritys_nimi, city:p.kaupunki, existingSignaali:p.signaali||''})));
     } catch(e) {
-      const msg='Tekoälyn haku epäonnistui: '+e.message;
+      const msg='Tekoälyn haku epäonnistui: '+friendlyAiError(e);
       showToast(msg,'error');
       batchErrors.push(msg);
       break;
@@ -6055,7 +6072,7 @@ async function runNewLeadsPhase(kampanja, segmentti, totalCount, createdAccounts
       renderSignalMonitoringProgress(processedCount, totalCount, 'Haetaan uusia liidejä tekoälyltä…');
       aiCandidates=await generateProspectCandidates(segmentti, chunkSize, excludeNames);
     } catch(e) {
-      const msg='Uusien liidien haku epäonnistui: '+e.message;
+      const msg='Uusien liidien haku epäonnistui: '+friendlyAiError(e);
       showToast(msg,'error');
       batchErrors.push(msg);
       break;
@@ -6125,7 +6142,7 @@ async function refreshSingleAccountSignal(sid) {
     if (currentId===sid) { applyFilters(); renderDashboard(); openModal(sid); }
     showToast(u.has_new_signal?'Uusi signaali löytyi ✓':'Tarkistettu — ei uutta signaalia ✓','success');
   } catch(e) {
-    showToast('Signaalin päivitys epäonnistui: '+e.message,'error');
+    showToast('Signaalin päivitys epäonnistui: '+friendlyAiError(e),'error');
   } finally {
     if (currentId===sid) {
       const btn2=document.getElementById('signal-refresh-btn');
