@@ -1261,7 +1261,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-23.2';
+const BUILD_ID = '2026-08-23.3';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1393,6 +1393,10 @@ window.addEventListener('load', () => {
         console.log('Google-kirjautuminen onnistui, myönnetyt oikeudet:', resp.scope);
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('app').style.display = 'block';
+        // Kattaa myös retrySessionFromBanner():n prompt:'consent'-haaran,
+        // joka päätyy tähän samaan callbackiin — ei tarvitse omaa
+        // onnistumiskäsittelyä sille erikseen.
+        hideSessionExpiredBanner();
         try {
           const ui = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: auth() });
           const j = await ui.json();
@@ -2820,10 +2824,55 @@ async function fetchWithTokenRetry(url, buildOpts) {
   let r = await fetch(url, buildOpts());
   if (r.status === 401) {
     try { await silentTokenRefresh(); }
-    catch(e) { throw new Error('Kirjautuminen vanhentunut eikä sitä voitu uusia automaattisesti — kirjaudu sisään uudelleen. (' + e.message + ')'); }
+    catch(e) {
+      // Käyttäjän raportoima "tallennus näyttää onnistuvan mutta ei jää
+      // Sheetsiin" -oire selittyy tällä: saveNewTili()/createProspectAccountsBatch
+      // EIVÄT koskaan lisää mitään allProspects-muistiin ennen kuin
+      // await sheetAppend(...) on onnistunut — jos kirjautuminen on vanhentunut
+      // eikä sitä saada uusittua hiljaa, tämä heittää AINA virheen eikä mitään
+      // tallennu paikallisestikaan. Ongelma ei siis ole "tallentuu vain
+      // välimuistiin" vaan että virhe (alla oleva toast) jää helposti
+      // huomaamatta 3.5s toast-ilmoituksena. Näytetään siksi myös pysyvä,
+      // koko näytön levyinen banneri jota ei voi ohittaa vahingossa.
+      showSessionExpiredBanner();
+      throw new Error('Kirjautuminen vanhentunut eikä sitä voitu uusia automaattisesti — kirjaudu sisään uudelleen. (' + e.message + ')');
+    }
     r = await fetch(url, buildOpts());
   }
   return r;
+}
+
+let _sessionExpiredBannerShown=false;
+function showSessionExpiredBanner() {
+  if (_sessionExpiredBannerShown) return;
+  _sessionExpiredBannerShown=true;
+  const b=document.createElement('div');
+  b.id='session-expired-banner';
+  b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:3000;background:var(--red);color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:center;gap:14px;font-size:13px;flex-wrap:wrap;box-shadow:0 2px 10px rgba(0,0,0,.3)';
+  b.innerHTML=`<span>⚠ Google-kirjautuminen vanheni — mikään ei tallennu Sheetsiin ennen kuin kirjaudut uudelleen.</span>
+    <button class="btn btn-sm" style="background:#fff;color:var(--red);font-weight:700" onclick="retrySessionFromBanner()">Kirjaudu uudelleen</button>
+    <button class="btn btn-ghost btn-sm" style="border-color:#fff;color:#fff" onclick="hideSessionExpiredBanner()">✕</button>`;
+  document.body.prepend(b);
+}
+function hideSessionExpiredBanner() {
+  document.getElementById('session-expired-banner')?.remove();
+  _sessionExpiredBannerShown=false;
+}
+// Ensin hiljainen uusinta (ei vaadi klikkausta Google-popupissa, toimii jos
+// selaimen Google-sessio on yhä voimassa). Jos sekin epäonnistuu, pyydetään
+// näkyvä, interaktiivinen suostumus (prompt:'consent') saman tokenClientin
+// kautta — tulos käsitellään olemassa olevassa initTokenClient():n
+// callbackissa (asettaa accessToken:n ja poistaa tämän bannerin), ei
+// tarvitse kahta erillistä onnistumispolkua.
+async function retrySessionFromBanner() {
+  try {
+    await silentTokenRefresh();
+    hideSessionExpiredBanner();
+    showToast('Kirjautuminen uusittu ✓','success');
+  } catch(e) {
+    if (!tokenClient) { showToast('Kirjautuminen ei ole valmis — lataa sivu uudelleen','error'); return; }
+    tokenClient.requestAccessToken({ prompt: 'consent' });
+  }
 }
 
 async function apiGet(path) {
