@@ -783,6 +783,7 @@
       <button class="btn btn-primary btn-sm" onclick="toggleQuickAdd(event)" title="Lisää" aria-label="Lisää">+</button>
       <div class="quick-add-menu" id="quick-add-menu" style="display:none">
         <button class="qa-item" onclick="openProspectingModal();closeQuickAdd()">🔍 Älykäs prospektointi</button>
+        <button class="qa-item" onclick="openChatGptImportModal();closeQuickAdd()">🤖 Tuo ChatGPT:stä</button>
         <button class="qa-item" onclick="openSignalMonitoringModal();closeQuickAdd()">📡 Signaaliseuranta</button>
         <button class="qa-item" onclick="openAddTili();closeQuickAdd()">🏢 Uusi tili</button>
         <button class="qa-item" onclick="openGlobalContact();closeQuickAdd()">👤 Uusi yhteystieto</button>
@@ -1072,6 +1073,8 @@
         <div class="form-group"><label>Sähköposti</label><input class="form-control" id="tf_sahkoposti" type="email" placeholder="nimi@yritys.fi"></div>
         <div class="form-group"><label>Rekisteröity</label><input class="form-control" id="tf_rekisteroity" readonly></div>
         <div class="form-group full"><label>Lisätiedot</label><textarea class="form-control" id="tf_lisatiedot" rows="2"></textarea></div>
+        <div class="form-group full"><label>Signaali</label><input class="form-control" id="tf_signaali" placeholder="Konkreettinen havainto (esim. ChatGPT-tutkimuksesta)"></div>
+        <div class="form-group full"><label>Perustelu</label><textarea class="form-control" id="tf_perustelu" rows="2" placeholder="Miksi relevantti"></textarea></div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
         <button class="btn btn-ghost" onclick="closeAddTili()">Peruuta</button>
@@ -1131,6 +1134,58 @@
       </div>
       <div id="prospecting-progress" style="display:none"></div>
       <div id="prospecting-summary" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ChatGPT-tuonti modal -->
+<div class="modal-overlay hidden" id="chatgpt-import-modal" onclick="closeChatGptImportMaybe(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">🤖 Tuo ChatGPT:stä</div>
+      <button class="modal-close" onclick="closeChatGptImportModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="chatgpt-import-form">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.5">
+          Liitä ChatGPT:n tuottama JSON tähän. Jokainen ehdotus todennetaan
+          PRH:n avoimesta yritysrekisteristä ennen tiliä — ehdotukset joita
+          ei löydy rekisteristä hylätään eikä niistä koskaan luoda tiliä.
+          Yksi kandidaatti avaa Lisää tili -lomakkeen esitäytettynä
+          tarkistettavaksi; useampi käsitellään erässä samaan tapaan kuin
+          Älykäs Prospektointi.
+        </div>
+        <div class="form-grid">
+          <div class="form-group full"><label>Projekti</label><select class="form-control" id="cgpt-projekti"></select></div>
+        </div>
+        <div class="form-group full" style="margin-top:10px">
+          <label>ChatGPT:n JSON-vastaus</label>
+          <textarea class="form-control" id="cgpt-paste" rows="8" placeholder='{"candidates":[{"name":"...","city":"","signaali":"","perustelu":""}]}'></textarea>
+        </div>
+        <div style="margin-top:14px">
+          <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:8px">Luodaanko tilille myös (koskee vain useamman kandidaatin erää):</label>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="cgpt-want-contact"> a. Yhteyshenkilö <span style="color:var(--text2);font-size:11px">(sähköposti/puhelin jäävät aina tyhjäksi, tarkista ennen yhteydenottoa)</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="cgpt-want-signal" checked> b. Signaali ja perustelu
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="cgpt-want-deal"> c. Kauppa Kontaktoi-vaiheeseen
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="cgpt-want-draft"> d. Avaussähköposti luonnoksena (ei lähetetä automaattisesti)
+            </label>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
+          <button class="btn btn-ghost" onclick="closeChatGptImportModal()">Peruuta</button>
+          <button class="btn btn-primary" onclick="submitChatGptImportPaste()">Tuo</button>
+        </div>
+      </div>
+      <div id="chatgpt-import-progress" style="display:none"></div>
+      <div id="chatgpt-import-summary" style="display:none"></div>
     </div>
   </div>
 </div>
@@ -1206,7 +1261,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-23.1';
+const BUILD_ID = '2026-08-23.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1214,7 +1269,56 @@ document.addEventListener('DOMContentLoaded', () => {
   // kahvat contenteditable-kentissä, jotta vain alla oleva oma toteutus
   // (kuvasuhde aina lukittu, näyttää mitat) ohjaa kuvien koon muokkausta.
   try { document.execCommand('enableObjectResizing', false, false); } catch(_) {}
+  readImportParamOnLoad();
 });
+
+// ?import=<encodeURIComponent(JSON.stringify({candidates:[...]}))> —
+// vaihtoehtoinen syöttöreitti "Tuo ChatGPT:stä" -liitälomakkeelle, sama
+// candidates-muoto ja sama parseAndNormalizeImportText/routeImportCandidates
+// (määritelty myöhemmin tiedostossa — function-hoisting kattaa tämän, koska
+// readImportParamOnLoad() itse kutsutaan vasta DOMContentLoadedista, kun
+// koko skripti on jo jäsennetty). HUOM ChatGPT:lle annettavassa URL-mallissa:
+// linkin PITÄÄ osoittaa suoraan crm.html:ään, ei paljaaseen repo-juureen —
+// index.html on pelkkä <meta http-equiv="refresh">-uudelleenohjaus joka
+// pudottaa query-stringin kokonaan.
+//
+// URLSearchParams.get() palauttaa jo puretun (decodeURIComponent:oidun)
+// arvon. Jäsennys/validointi tehdään HETI täällä (ei vasta pollerissa) —
+// rikkinäinen linkki näkyy virheenä heti latauksella, ei vasta kun
+// Google-kirjautuminen joskus valmistuu.
+const IMPORT_URL_MAX_CANDIDATES=3;
+const IMPORT_URL_MAX_RAW_LENGTH=6000; // chat-kuplat/sähköposti/SMS eivät aina kestä paljon pidempää linkkiä
+let pendingImportPayload=null;
+function readImportParamOnLoad() {
+  let raw;
+  try { raw=new URLSearchParams(location.search).get('import'); }
+  catch(e) { return; }
+  if (!raw) return;
+  if (raw.length>IMPORT_URL_MAX_RAW_LENGTH) {
+    showToast('Linkki sisältää liikaa dataa — liitä JSON-teksti "Tuo ChatGPT:stä" -ikkunassa sen sijaan','error');
+    return;
+  }
+  let candidates;
+  try { candidates=parseAndNormalizeImportText(raw); }
+  catch(e) { showToast('ChatGPT-tuonnin linkki ei kelvannut: '+e.message,'error'); return; }
+  if (candidates.length>IMPORT_URL_MAX_CANDIDATES) {
+    showToast(`Linkki sisältää liikaa kandidaatteja (${candidates.length}) — liitä JSON-teksti "Tuo ChatGPT:stä" -ikkunassa sen sijaan`,'error');
+    return;
+  }
+  pendingImportPayload=candidates;
+}
+// Sama "jää odottamaan + pollaa" -kaava kuin window.Spara.openCustomer():n
+// pendingCustomerId (Android-silta-IIFE tiedoston lopussa) — mutta OMANA
+// pollerina pääohjelman skoopissa, ei sotkettuna siihen tarkoituksella
+// koskemattomaan siltaan. Pollaus eikä yksi hook loadData():n
+// valmistumiseen, koska Google-kirjautuminen on ihmisen tahdissa, ei
+// rajattu viive.
+setInterval(() => {
+  if (pendingImportPayload && allProspects.length) {
+    const candidates=pendingImportPayload; pendingImportPayload=null;
+    routeImportCandidates(candidates, {kampanja:baseProjektiNimi('BASE_MUU'), wantContact:false, wantSignal:true, wantDeal:false, wantDraft:false});
+  }
+}, 1000);
 
 const CLIENT_ID = '305442089079-umco1cv64ei5i8vu9pfefo4dm4fp3kj4.apps.googleusercontent.com';
 const SHEET_ID  = '1NpkHd0nTpWvaOP6GrwyFo1-P2_dohUn6BdTV-rmT0og';
@@ -5294,9 +5398,27 @@ const YTJ_BROADEN_SEARCH_BELOW=0.4;
 // yhteenvedon "Hylätty"-listassa, hyväksytty EPÄvarma osuma loisi väärän
 // tilin. { accepted:true, data:<_prhToTiliForm-muotoinen>, matchScore,
 // matchedName } tai { accepted:false, reason, closestMatch? }.
-async function verifyCandidateAgainstYtj({name, city}) {
+// yTunnusHint: valinnainen, VAIN nopeuttava vihje (esim. ChatGPT-tuonnista) —
+// ei koskaan luoteta suoraan. Jos muodoltaan kelvollinen Y-tunnus, kokeillaan
+// ensin suoraa PRH-hakua sillä; hyväksytään VAIN jos nimi silti täsmää
+// samalla YTJ_MATCH_THRESHOLD:lla kuin nimihaussakin — väärä/vanhentunut
+// vihje ei siis koskaan johda huonompaan lopputulokseen kuin ilman vihjettä,
+// se vain pudotaan läpi tavalliseen nimihakuun. Sama /^\d{7}-\d$/-muototesti
+// kuin ytjInputChanged():ssä käyttää tunnistaakseen käsin syötetyn Y-tunnuksen.
+async function verifyCandidateAgainstYtj({name, city, yTunnusHint}) {
   const trimmedName=(name||'').trim();
   if (!trimmedName) return {accepted:false, reason:'Ei nimeä ehdotuksessa'};
+  const hint=(yTunnusHint||'').trim();
+  if (/^\d{7}-\d$/.test(hint)) {
+    try {
+      const direct=await prhFetchByBusinessId(hint);
+      const score=Math.max(
+        stringSimilarity(normalizeCompanyName(trimmedName), normalizeCompanyName(direct.tf_name)),
+        containmentScore(normalizeCompanyName(trimmedName), normalizeCompanyName(direct.tf_name))
+      );
+      if (score>=YTJ_MATCH_THRESHOLD) return {accepted:true, data:direct, matchScore:score, matchedName:direct.tf_name};
+    } catch(e) { /* vihje ei kelvannut/ei löytynyt — pudotaan läpi nimihakuun */ }
+  }
   let results;
   try { results=await prhSearchByName(trimmedName); }
   catch(e) { return {accepted:false, reason:'PRH-haku epäonnistui: '+e.message}; }
@@ -5730,6 +5852,47 @@ function renderProspectingSummary(created, rejected, errors) {
 // ensimmäiset 10 tiliä turvallisesti luotuina, ei kadonneina, ja "Peruuta"
 // tarkoittaa oikeasti jotain (jo valmiit lohkot pysyvät).
 const PROSPECTING_CHUNK_SIZE=5;
+
+// Yhden lohkon tarkistus+luonti — poimittu runProspectingBatch:sta ja
+// runNewLeadsPhase:sta, jotka toistivat rivi riviltä saman silmukan (vain
+// muuttujanimet/virhetekstit/progress-funktio erosivat). Kolmas kutsuja
+// (ChatGPT-tuonti, ks. runChatGptImportBatch) olisi tehnyt tästä
+// kolmannen kopion — puretaan nyt sen sijaan, koska juuri tämä silmukka
+// on koko turvaverkon ydin (YTJ-todennus + duplikaattiesto ennen mitään
+// kirjoitusta). onCandidate(name): kutsutaan ennen jokaisen kandidaatin
+// todennusta (progress-UI). onSaving(): kutsutaan juuri ennen
+// createProspectAccountsBatch-kutsua (myös progress-UI, eri viesti).
+// shouldCancel(): kutsuja voi antaa oman peruutus-tarkistuksensa — sama
+// tarkkuus (per kandidaatti) kuin alkuperäisissä silmukoissa.
+// acceptedThisRun/rejectedOut ovat kutsujan omistamia taulukoita, jotka
+// tämä funktio täyttää — kutsuja käyttää niitä koko monilohkoisen ajon
+// yli (esim. saman yrityksen ehdottaminen kahdesti eri lohkossa).
+// Virheenkäsittely createProspectAccountsBatch:n heitolle jätetään
+// tarkoituksella kutsujalle (sen oma try/catch, oma virheteksti) —
+// tämä funktio ei nielaise sitä.
+async function verifyAndCreateCandidatesChunk(rawCandidates, opts, acceptedThisRun, rejectedOut, onCandidate, onSaving, shouldCancel) {
+  const chunkVerified=[];
+  for (const c of rawCandidates) {
+    if (shouldCancel && shouldCancel()) break;
+    if (onCandidate) onCandidate(c.name);
+    const verify=await verifyCandidateAgainstYtj({name:c.name, city:c.city, yTunnusHint:c.y_tunnus});
+    if (!verify.accepted) { rejectedOut.push({name:c.name, reason:verify.reason}); continue; }
+    if (checkDuplicateAccount(verify.data.tf_ytunnus, acceptedThisRun)) {
+      rejectedOut.push({name:c.name, reason:'Duplikaatti — yritys on jo CRM:ssä tai tässä erässä'});
+      continue;
+    }
+    const merged={...verify.data, signaali:c.signaali, perustelu:c.perustelu,
+      openingParagraph:c.opening_paragraph,
+      contactSuggestion:c.contact_name?{nimi:c.contact_name, titteli:c.contact_title}:null};
+    chunkVerified.push(merged);
+    acceptedThisRun.push(merged);
+  }
+  if (!chunkVerified.length) return [];
+  if (onSaving) onSaving();
+  const ids=await createProspectAccountsBatch(chunkVerified, opts);
+  return ids.map(id=>allProspects.find(x=>x.spara_id===id)).filter(Boolean);
+}
+
 async function runProspectingBatch() {
   if (prospectingInProgress) return;
   const kampanja=document.getElementById('pm-projekti').value;
@@ -5790,35 +5953,17 @@ async function runProspectingBatch() {
       continue;
     }
 
-    const chunkVerified=[];
-    for (const c of aiCandidates) {
-      if (prospectingCancelled) break;
-      processedCount++;
-      renderProspectingProgress(processedCount, totalCount, `${c.name}: tarkistetaan YTJ:stä…`);
-      const verify=await verifyCandidateAgainstYtj({name:c.name, city:c.city});
-      if (!verify.accepted) { rejected.push({name:c.name, reason:verify.reason}); continue; }
-      if (checkDuplicateAccount(verify.data.tf_ytunnus, acceptedThisRun)) {
-        rejected.push({name:c.name, reason:'Duplikaatti — yritys on jo CRM:ssä tai tässä erässä'});
-        continue;
-      }
-      const merged={...verify.data, signaali:c.signaali, perustelu:c.perustelu,
-        openingParagraph:c.opening_paragraph,
-        contactSuggestion:c.contact_name?{nimi:c.contact_name, titteli:c.contact_title}:null};
-      chunkVerified.push(merged);
-      acceptedThisRun.push(merged);
-    }
-
-    if (chunkVerified.length) {
-      try {
-        renderProspectingProgress(processedCount, totalCount, 'Tallennetaan…');
-        const ids=await createProspectAccountsBatch(chunkVerified, opts);
-        ids.forEach(id=>{ const p=allProspects.find(x=>x.spara_id===id); if (p) createdAccounts.push(p); });
-      } catch(e) {
-        const msg='Tallennus epäonnistui kesken erän: '+e.message;
-        showToast(msg,'error');
-        batchErrors.push(msg);
-        break;
-      }
+    try {
+      const created=await verifyAndCreateCandidatesChunk(aiCandidates, opts, acceptedThisRun, rejected,
+        name=>{processedCount++; renderProspectingProgress(processedCount, totalCount, `${name}: tarkistetaan YTJ:stä…`);},
+        ()=>renderProspectingProgress(processedCount, totalCount, 'Tallennetaan…'),
+        ()=>prospectingCancelled);
+      createdAccounts.push(...created);
+    } catch(e) {
+      const msg='Tallennus epäonnistui kesken erän: '+e.message;
+      showToast(msg,'error');
+      batchErrors.push(msg);
+      break;
     }
   }
 
@@ -6083,37 +6228,232 @@ async function runNewLeadsPhase(kampanja, segmentti, totalCount, createdAccounts
       continue;
     }
 
-    const chunkVerified=[];
-    for (const c of aiCandidates) {
-      if (signalMonitoringCancelled) break;
-      processedCount++;
-      renderSignalMonitoringProgress(processedCount, totalCount, `${c.name}: tarkistetaan YTJ:stä…`);
-      const verify=await verifyCandidateAgainstYtj({name:c.name, city:c.city});
-      if (!verify.accepted) { rejectedLeads.push({name:c.name, reason:verify.reason}); continue; }
-      if (checkDuplicateAccount(verify.data.tf_ytunnus, acceptedThisRun)) {
-        rejectedLeads.push({name:c.name, reason:'Duplikaatti — yritys on jo CRM:ssä tai tässä erässä'});
-        continue;
-      }
-      const merged={...verify.data, signaali:c.signaali, perustelu:c.perustelu,
-        openingParagraph:c.opening_paragraph,
-        contactSuggestion:c.contact_name?{nimi:c.contact_name, titteli:c.contact_title}:null};
-      chunkVerified.push(merged);
-      acceptedThisRun.push(merged);
-    }
-
-    if (chunkVerified.length) {
-      try {
-        renderSignalMonitoringProgress(processedCount, totalCount, 'Tallennetaan…');
-        const ids=await createProspectAccountsBatch(chunkVerified, opts);
-        ids.forEach(id=>{ const p=allProspects.find(x=>x.spara_id===id); if (p) createdAccounts.push(p); });
-      } catch(e) {
-        const msg='Uusien liidien tallennus epäonnistui kesken erän: '+e.message;
-        showToast(msg,'error');
-        batchErrors.push(msg);
-        break;
-      }
+    try {
+      const created=await verifyAndCreateCandidatesChunk(aiCandidates, opts, acceptedThisRun, rejectedLeads,
+        name=>{processedCount++; renderSignalMonitoringProgress(processedCount, totalCount, `${name}: tarkistetaan YTJ:stä…`);},
+        ()=>renderSignalMonitoringProgress(processedCount, totalCount, 'Tallennetaan…'),
+        ()=>signalMonitoringCancelled);
+      createdAccounts.push(...created);
+    } catch(e) {
+      const msg='Uusien liidien tallennus epäonnistui kesken erän: '+e.message;
+      showToast(msg,'error');
+      batchErrors.push(msg);
+      break;
     }
   }
+}
+
+// Monen kandidaatin tapaus (liitä-JSON tai ?import=-linkki, ks. myös
+// openAddTiliWithImportPrefill yhden kandidaatin tapaukselle). Rakenteeltaan
+// runNewLeadsPhase:n sisarfunktio, mutta EI koskaan kutsu tekoälyä —
+// kandidaatit ovat jo käsillä (ChatGPT tuotti ne oman keskustelunsa
+// puolella) — joten silmukka on pelkkä lohkotus + verifyAndCreateCandidatesChunk,
+// ei generateProspectCandidates-vaihetta lainkaan.
+let chatGptImportInProgress=false;
+let chatGptImportCancelled=false;
+function cancelChatGptImportBatch() { chatGptImportCancelled=true; }
+
+// Sumea nimivertailu ennen YTJ-todennusta — TARKOITUKSELLA vain neuvoa-antava
+// signaali ihmiselle yhteenvedossa, ei uusi automaattinen este. Kun
+// kandidaatti on jo päässyt Y-tunnuksella todennettuun vaiheeseen
+// (checkDuplicateAccount), se on vahvempi, yksiselitteinen avain kuin sumea
+// nimi — lisäsumeus SEN JÄLKEEN voisi vain tuoda vääriä positiivisia, ei
+// parantaa varmuutta. Samat primitiivit kuin checkAddTiliDuplicates():ssa jo
+// käyttää (ADD_TILI_DUP_THRESHOLD), ei uusia.
+function fuzzyMatchExisting(name) {
+  const norm=normalizeCompanyName(name);
+  let best=null, bestScore=0;
+  for (const p of allProspects) {
+    const score=Math.max(
+      stringSimilarity(norm, normalizeCompanyName(p.yritys_nimi)),
+      containmentScore(norm, normalizeCompanyName(p.yritys_nimi))
+    );
+    if (score>=ADD_TILI_DUP_THRESHOLD && score>bestScore) { best=p.yritys_nimi; bestScore=score; }
+  }
+  return best;
+}
+
+async function runChatGptImportBatch(candidates, opts) {
+  chatGptImportCancelled=false;
+  chatGptImportInProgress=true;
+  // classList.remove('hidden') myös tässä (ei vain openChatGptImportModal():ssa)
+  // — ?import=-linkin kautta tultaessa modaali ei ole vielä koskaan ollut
+  // auki, liitä-lomakkeesta tultaessa tämä on harmiton no-op.
+  document.getElementById('chatgpt-import-modal')?.classList.remove('hidden');
+  document.getElementById('chatgpt-import-form').style.display='none';
+  document.getElementById('chatgpt-import-summary').style.display='none';
+  document.getElementById('chatgpt-import-progress').style.display='';
+  const totalCount=candidates.length;
+  renderChatGptImportProgress(0, totalCount, 'Aloitetaan…');
+
+  const chunks=[];
+  for (let i=0;i<candidates.length;i+=PROSPECTING_CHUNK_SIZE) chunks.push(candidates.slice(i,i+PROSPECTING_CHUNK_SIZE));
+
+  const createdAccounts=[], rejected=[], acceptedThisRun=[], batchErrors=[], fuzzyNotes=[];
+  let processedCount=0;
+
+  for (const chunk of chunks) {
+    if (chatGptImportCancelled) break;
+    try {
+      const created=await verifyAndCreateCandidatesChunk(chunk, opts, acceptedThisRun, rejected,
+        name=>{
+          processedCount++;
+          const fm=fuzzyMatchExisting(name);
+          if (fm) fuzzyNotes.push(`"${name}" muistuttaa nimeltään: "${fm}"`);
+          renderChatGptImportProgress(processedCount, totalCount, `${name}: tarkistetaan YTJ:stä…`);
+        },
+        ()=>renderChatGptImportProgress(processedCount, totalCount, 'Tallennetaan…'),
+        ()=>chatGptImportCancelled);
+      createdAccounts.push(...created);
+    } catch(e) {
+      const msg='Tuonnin tallennus epäonnistui kesken erän: '+e.message;
+      showToast(msg,'error');
+      batchErrors.push(msg);
+      break;
+    }
+  }
+
+  chatGptImportInProgress=false;
+  document.getElementById('chatgpt-import-progress').style.display='none';
+  document.getElementById('chatgpt-import-summary').style.display='';
+  renderChatGptImportSummary(createdAccounts, rejected, batchErrors, fuzzyNotes);
+}
+
+// Lähes identtinen renderProspectingProgress:n kanssa — tarkoituksella oma,
+// pieni kopio: turvakriittinen silmukka on jo eriytetty
+// verifyAndCreateCandidatesChunk:iin, esityskerroksen kahdennus on halpa
+// eikä sillä ole samaa riskiä kuin YTJ/dedup-logiikalla olisi ollut.
+function renderChatGptImportProgress(current, total, label) {
+  const el=document.getElementById('chatgpt-import-progress'); if (!el) return;
+  const pct=total?Math.round(current/total*100):0;
+  el.innerHTML=`
+    <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Käsitellään ${current}/${total}${label?' — '+esc(label):''}</div>
+    <div style="background:var(--bg3);border-radius:8px;height:8px;overflow:hidden;margin-bottom:14px">
+      <div style="background:var(--accent);height:100%;width:${pct}%;transition:width .2s"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" onclick="cancelChatGptImportBatch()">Peruuta</button>
+    </div>`;
+}
+
+function renderChatGptImportSummary(created, rejected, errors, fuzzyNotes) {
+  const el=document.getElementById('chatgpt-import-summary'); if (!el) return;
+  const errorHtml=(errors&&errors.length)
+    ? `<div style="background:color-mix(in srgb,var(--red) 15%,transparent);border:1px solid var(--red);border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:12px;color:var(--red)">⚠ ${errors.map(e=>esc(e)).join('<br>⚠ ')}</div>`
+    : '';
+  const fuzzyHtml=(fuzzyNotes&&fuzzyNotes.length)
+    ? `<div style="background:color-mix(in srgb,var(--orange) 15%,transparent);border:1px solid var(--orange);border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:12px;color:var(--orange)">⚠ Nimeltään samankaltaisia löytyi jo CRM:ssä — tarkista ettei kyse ole duplikaatista:<br>${fuzzyNotes.map(n=>esc(n)).join('<br>')}</div>`
+    : '';
+  const createdHtml=created.length
+    ? created.map(p=>`<div class="ytj-dropdown-item" style="cursor:pointer" onclick="closeChatGptImportModal();openModal('${p.spara_id}')">
+        <div class="ytj-item-name">${esc(p.yritys_nimi)}</div>
+        <div class="ytj-item-meta">${esc(p.spara_id)}${p.kaupunki?' · '+esc(p.kaupunki):''}</div>
+      </div>`).join('')
+    : '<div style="font-size:12px;color:var(--text2)">Ei luotuja tilejä</div>';
+  const rejectedHtml=rejected.length
+    ? rejected.map(r=>`<div class="ytj-dropdown-item">
+        <div class="ytj-item-name">${esc(r.name)}</div>
+        <div class="ytj-item-meta" style="color:var(--red)">${esc(r.reason)}</div>
+      </div>`).join('')
+    : '<div style="font-size:12px;color:var(--text2)">Ei hylättyjä ehdotuksia</div>';
+  el.innerHTML=`
+    ${errorHtml}
+    ${fuzzyHtml}
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--green)">✓ Luotu (${created.length})</div>
+    <div style="max-height:180px;overflow-y:auto;margin-bottom:16px">${createdHtml}</div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--red)">✕ Hylätty (${rejected.length})</div>
+    <div style="max-height:180px;overflow-y:auto;margin-bottom:16px">${rejectedHtml}</div>
+    <div style="display:flex;justify-content:flex-end">
+      <button class="btn btn-primary" onclick="closeChatGptImportModal()">Sulje</button>
+    </div>`;
+}
+
+// candidates: aina taulukko (myös yhdelle kandidaatille — ks. dokumentoitu
+// JSON-muoto). Yksi kandidaatti -> esitäytetty "Lisää tili" -lomake täydellä
+// ihmisen tarkistuksella (openAddTiliWithImportPrefill); useampi -> erä
+// samalla turvaputkella kuin Älykäs Prospektointi. Sama reititys riippumatta
+// tuliko candidates-taulukko liitä-lomakkeesta vai ?import=-linkistä.
+function routeImportCandidates(candidates, opts) {
+  if (candidates.length===1) {
+    document.getElementById('chatgpt-import-modal')?.classList.add('hidden');
+    openAddTiliWithImportPrefill(candidates[0], opts&&opts.kampanja);
+  } else {
+    runChatGptImportBatch(candidates, opts);
+  }
+}
+
+const IMPORT_MAX_CANDIDATES=20;
+// Sama katto kuin pm-maara-valikon oma maksimi (Älykäs Prospektointi) —
+// ei kohdella ChatGPT-lähdettä sovelluksen omaa AI-prospektointia
+// luotettavampana/suurempana. Ylitys hylätään selkeällä virheellä, ei
+// hiljaisella katkaisulla — piilotetusti pudotetut kandidaatit olisivat
+// pahempi yllätys kuin "jaa kahteen erään" -viesti.
+const IMPORT_MAX_TEXT_LENGTH=200000; // ~200 kB turvaraja ennen JSON.parse-yritystä
+
+// Pakottaa jokaisen kentän merkkijonoksi ja katkaisee liian pitkät —
+// ChatGPT:n tuloste ei kulje strukturoidun-tulosteen skeeman läpi kuten
+// sisäinen AI-kutsu (generateProspectCandidates), joten väärät tyypit ovat
+// oikea riski, ei paranoiaa. Ei toista tyhjän-nimen-tarkistusta — hoituu jo
+// verifyCandidateAgainstYtj():n omalla, yhdenmukaisella virheviestillä.
+function normalizeImportCandidate(raw) {
+  const str=(x,max)=>{ const s=String(x==null?'':x).trim(); return s.length>max?s.slice(0,max):s; };
+  return {
+    name: str(raw&&raw.name, 300),
+    city: str(raw&&raw.city, 300),
+    y_tunnus: str(raw&&raw.y_tunnus, 300),
+    signaali: str(raw&&raw.signaali, 2000),
+    perustelu: str(raw&&raw.perustelu, 2000),
+    opening_paragraph: str(raw&&raw.opening_paragraph, 2000),
+    contact_name: str(raw&&raw.contact_name, 300),
+    contact_title: str(raw&&raw.contact_title, 300)
+  };
+}
+
+// Jaettu jäsennys sekä liitä-lomakkeelle että ?import=-linkille.
+// parseProspectCandidatesJson (määritelty Älykäs Prospektoinnin yhteydessä)
+// odottaa jo täsmälleen {"candidates":[...]}-muotoa, joten se on
+// uudelleenkäytettävissä sellaisenaan — dokumentoitu ChatGPT-skeema on
+// tarkoituksella sama.
+function parseAndNormalizeImportText(text) {
+  if (!text) throw new Error('Liitä ensin ChatGPT:n JSON-vastaus');
+  if (text.length>IMPORT_MAX_TEXT_LENGTH) throw new Error('Liitetty teksti on liian pitkä');
+  const raw=parseProspectCandidatesJson(text);
+  if (!raw.length) throw new Error('candidates-taulukko on tyhjä');
+  if (raw.length>IMPORT_MAX_CANDIDATES) throw new Error(`Liikaa kandidaatteja kerralla (${raw.length}) — jaa useampaan tuontiin, enintään ${IMPORT_MAX_CANDIDATES} kerralla`);
+  return raw.map(normalizeImportCandidate);
+}
+
+function openChatGptImportModal() {
+  populateProjektiSelects();
+  document.getElementById('cgpt-paste').value='';
+  document.getElementById('cgpt-want-contact').checked=false;
+  document.getElementById('cgpt-want-signal').checked=true;
+  document.getElementById('cgpt-want-deal').checked=false;
+  document.getElementById('cgpt-want-draft').checked=false;
+  document.getElementById('chatgpt-import-form').style.display='';
+  document.getElementById('chatgpt-import-progress').style.display='none';
+  document.getElementById('chatgpt-import-summary').style.display='none';
+  document.getElementById('chatgpt-import-modal').classList.remove('hidden');
+}
+function closeChatGptImportModal() {
+  if (chatGptImportInProgress) { showToast('Erä on käynnissä — käytä Peruuta-nappia pysäyttääksesi','error'); return; }
+  document.getElementById('chatgpt-import-modal').classList.add('hidden');
+}
+function closeChatGptImportMaybe(e) { if (e.target===document.getElementById('chatgpt-import-modal')) closeChatGptImportModal(); }
+
+function submitChatGptImportPaste() {
+  const text=(document.getElementById('cgpt-paste')?.value||'').trim();
+  let candidates;
+  try { candidates=parseAndNormalizeImportText(text); }
+  catch(e) { showToast('Tuonti epäonnistui: '+e.message,'error'); return; }
+  const opts={
+    kampanja:document.getElementById('cgpt-projekti').value,
+    wantContact:document.getElementById('cgpt-want-contact').checked,
+    wantSignal:document.getElementById('cgpt-want-signal').checked,
+    wantDeal:document.getElementById('cgpt-want-deal').checked,
+    wantDraft:document.getElementById('cgpt-want-draft').checked
+  };
+  routeImportCandidates(candidates, opts);
 }
 
 // Yhden tilin pikaversio — sama napin-sisäinen spinner -UX kuin
@@ -6157,7 +6497,8 @@ function openAddTili() {
   document.getElementById('addtili-ytj-status').textContent = '';
   hideYtjDropdown('addtili');
   ['tf_name','tf_ytunnus','tf_toimiala','tf_yhtiömuoto','tf_osoite','tf_postinumero',
-   'tf_kaupunki','tf_www','tf_yhteyshenkilö','tf_sahkoposti','tf_rekisteroity','tf_lisatiedot']
+   'tf_kaupunki','tf_www','tf_yhteyshenkilö','tf_sahkoposti','tf_rekisteroity','tf_lisatiedot',
+   'tf_signaali','tf_perustelu']
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   const kSel=document.getElementById('tf_kampanja');
   if (kSel) kSel.value=baseProjektiNimi('BASE_MUU');
@@ -6189,6 +6530,8 @@ async function saveNewTili() {
   const huomiot        = document.getElementById('tf_lisatiedot')?.value.trim()||'';
   const www            = document.getElementById('tf_www')?.value.trim()||'';
   const y_tunnus       = document.getElementById('tf_ytunnus')?.value.trim()||'';
+  const signaali       = document.getElementById('tf_signaali')?.value.trim()||'';
+  const perustelu      = document.getElementById('tf_perustelu')?.value.trim()||'';
   const nowIso = new Date().toISOString();
   const row = [
     id, kampanja, '',
@@ -6196,7 +6539,7 @@ async function saveNewTili() {
     osoite, kaupunkiVal, y_tunnus,
     '', '', '',
     '', '', www,
-    '', '', '',
+    signaali, perustelu, '',
     huomiot, '', '',
     rekisteroity, yhteyshenkilö, '', '',
     henk_sahkoposti, '', nowIso
@@ -6240,7 +6583,7 @@ async function saveNewTili() {
       osoite, kaupunki:kaupunkiVal, y_tunnus,
       liikevaihto_meur:null, kulutusarvio_mwh:null, pisteet:null,
       vaihde_puhelin:null, yleinen_sahkoposti:null, www,
-      signaali:null, perustelu:null, velvoiteluokka:null,
+      signaali:signaali||null, perustelu:perustelu||null, velvoiteluokka:null,
       huomiot, kontaktoinnin_tila:null, tulos_seuraava_toimi:null,
       lahde:rekisteroity, 'yhteyshenkilö':yhteyshenkilö, titteli:null, suora_numero:null,
       henk_sahkoposti, linkedin:null, created_at:nowIso,
@@ -6334,6 +6677,43 @@ function renderAddTiliDuplicates() {
 function openExistingInsteadOfAddTili(sid) {
   closeAddTili();
   openModal(sid);
+}
+
+// ── ChatGPT-prospektien tuonti ──────────────────────────────────────────────
+// Yhden kandidaatin tapaus: avataan olemassa oleva "Lisää tili" -lomake
+// esitäytettynä sen sijaan että rakennettaisiin rinnakkainen tarkistus-UI —
+// vastaa suoraan käyttäjän omaa toivetta ("avaa näkymä jossa tiedot on jo
+// täytetty, paina lopuksi Tallenna"). candidate.name on VAIN YTJ-haun
+// siemen — samaan tapaan kuin Älykäs Prospektoinnin AI-kandidaatit — ei
+// koskaan kirjoiteta tiliksi ilman että joko automaattinen tai ihmisen oma
+// YTJ-haku sitä ensin vahvistaa. Sähköpostia ei aseteta lainkaan: skeemassa
+// (ks. dokumentoitu JSON ChatGPT:lle) ei ole kenttää sille — sama sääntö
+// kuin createProspectAccountsBatch:n AI-ehdotetulle kontaktille, pakotettu
+// rakenteellisesti eikä vain sopimuksella.
+function openAddTiliWithImportPrefill(candidate, kampanja) {
+  openAddTili();
+  if (kampanja) { const sel=document.getElementById('tf_kampanja'); if (sel) sel.value=kampanja; }
+  document.getElementById('addtili-ytj-input').value = candidate.y_tunnus || candidate.name || '';
+  fillTiliForm({
+    tf_name: candidate.name,
+    tf_signaali: candidate.signaali,
+    tf_perustelu: candidate.perustelu,
+    tf_yhteyshenkilö: candidate.contact_name
+      ? candidate.contact_name + (candidate.contact_title ? ' — '+candidate.contact_title : '')
+      : '',
+    tf_lisatiedot: candidate.opening_paragraph
+      ? 'ChatGPT-ehdotus avausriville: '+candidate.opening_paragraph : ''
+  });
+  // fillTiliForm asettaa .value:n suoraan, ei laukaise oninput:ia —
+  // sama kutsu jonka selectYtjSuggestion() jo tekee ohjelmallisen
+  // täytön jälkeen.
+  checkAddTiliDuplicates();
+  // Sama ihmisen-valvoma-mukavuusheuristiikka kuin YTJ-hakulaatikon omalla
+  // "Hae"-napilla — ei koskaan tallenna mitään itsestään, vain täyttää
+  // kentät jos löytyy riittävän varma osuma. Epäonnistuminen näkyy
+  // laatikon omana inline-statustekstinä (ei toastina) — hiljainen
+  // degradaatio "kirjoita itse" -tilaan, ei häiritsevä ponnahdusikkuna.
+  fetchAndFillYTJ('addtili').catch(()=>{});
 }
 
 // ── Asetukset ─────────────────────────────────────────────────────────────────
@@ -6563,7 +6943,7 @@ function populateProjektiSelects() {
   // projektit" -vaihtoehtoa, oletusarvo 'Muu Projekti' jos aiempi arvo
   // ei enää kelpaa.
   const muu=baseProjektiNimi('BASE_MUU');
-  ['tf_kampanja','pm-projekti','sm-nl-projekti'].forEach(id=>{
+  ['tf_kampanja','pm-projekti','sm-nl-projekti','cgpt-projekti'].forEach(id=>{
     const sel=document.getElementById(id); if(!sel) return;
     const prev=sel.value||muu;
     sel.innerHTML=opts;
