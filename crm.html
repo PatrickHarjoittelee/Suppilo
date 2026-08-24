@@ -1261,7 +1261,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-23.3';
+const BUILD_ID = '2026-08-23.4';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -6657,7 +6657,15 @@ async function saveNewTili() {
     // yllä olevan Y-tunnus-duplikaattihaaran openModal(existing.spara_id).
     openModal(id);
     buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard();
-    showToast('Tili lisätty: ' + name, 'success');
+    // Nimetään tallennuskohta (välilehti + rivi) näkyviin sen sijaan että
+    // toast sanoisi vain "Tili lisätty" — käyttäjä on toistuvasti epäillyt
+    // ettei tallennus mene Sheetsiin asti, vaikka koodi kirjoittaa sen aina
+    // ENNEN kuin mitään näytetään (ks. yllä oleva await sheetAppend, joka
+    // heittäisi virheen eikä koskaan pääsisi tänne asti epäonnistuessaan).
+    // Kun toast kertoo tarkan välilehden ja rivin, "ei näy Sheetsissä"
+    // -epäilyn voi tarkistaa suoraan sieltä sen sijaan että arvattaisiin
+    // mistä katsoa (esim. eri gid/välilehti kuin "Tilit").
+    showToast(`Tili lisätty: ${name} (välilehti "Tilit", rivi ${rowIndex})`, 'success');
   } catch(e) {
     showToast('Virhe: ' + e.message, 'error');
   } finally {
