@@ -1261,7 +1261,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-23.5';
+const BUILD_ID = '2026-08-23.6';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -5339,7 +5339,8 @@ async function createProspectAccountsBatch(candidates, opts) {
     .reduce((max,sid)=>Math.max(max,parseInt(sid.replace('ID',''))), 20260119);
 
   const tiliColA = await sheetGet(`${MAIN_TAB}!A:A`);
-  let tiliRowIndex = tiliColA.length+1;
+  const tiliStartRow = tiliColA.length+1;
+  let tiliRowIndex = tiliStartRow;
   let yhRowIndex = null;
   if (opts.wantContact) yhRowIndex = (await sheetGet(`${YH_TAB}!A:A`)).length+1;
 
@@ -5420,7 +5421,25 @@ async function createProspectAccountsBatch(candidates, opts) {
     newProspects.push(p);
   }
 
-  await sheetAppend(`${MAIN_TAB}!A:AB`, tiliRows);
+  // KORJAUS (löytynyt käyttäjän raportoimana ja kuvakaappauksella
+  // vahvistettuna, 2026-08-24): sheetAppend() Tilit-välilehdelle käyttää
+  // Sheetsin values:append-päätepistettä avoimella A:AB-alueella, joka
+  // yrittää PÄÄTELLÄ itse mihin riviin uusi data kuuluu etsimällä
+  // "taulukon" rajat. Jos välissä on YHTÄKIN täysin tyhjää riviä A:AB-
+  // sarakkeissa (syntyy mm. confirmDeleteTili():n rivinTyhjennyksestä —
+  // se tyhjentää rivin sisällön mutta EI poista riviä, juuri _rowIndex-
+  // korruption välttämiseksi, ks. commit c5eedd4), Sheetsin taulukon-
+  // tunnistus voi tulkita väärin missä "taulukko" päättyy ja liittää
+  // uuden datan sivuttain olemassa olevan A:AB-datan OIKEALLE PUOLELLE
+  // (havaittu: käyttäjän tili päätyi sarakkeille ~AB-BC, täsmälleen
+  // 28 saraketta — saman levyinen kuin A:AB — sen sijaan että olisi
+  // mennyt seuraavalle riville). Korjaus: kirjoitetaan Tilit-riville
+  // TÄSMÄLLISEEN, jo laskettuun rivinumeroon (sheetPut, ei sheetAppend)
+  // — ei jätetä Sheetsin arvattavaksi mihin data kuuluu. Sama korjaus
+  // saveNewTili():ssa. CRM-tila/Yhteyshenkilöt-välilehdillä ei ole
+  // vastaavaa rivintyhjennysmekanismia eikä siis samaa aukko-riskiä,
+  // joten niiden sheetAppend jätetty ennalleen.
+  await sheetPut(`${MAIN_TAB}!A${tiliStartRow}:AB${tiliStartRow+tiliRows.length-1}`, tiliRows);
   await sheetAppend(`${CRM_TAB}!A:L`, crmRows);
   if (contactRows.length) await sheetAppend(`${YH_TAB}!A:H`, contactRows);
 
@@ -6673,8 +6692,15 @@ async function saveNewTili() {
 
     if (saveBtn) saveBtn.textContent='Tallennetaan…';
     const colA = await sheetGet(`${MAIN_TAB}!A:A`);
-    await sheetAppend(`${MAIN_TAB}!A:AB`, [row]);
     const rowIndex = colA.length + 1;
+    // sheetPut TÄSMÄLLISEEN riviin, EI sheetAppend — ks. perustelu
+    // createProspectAccountsBatch():n vastaavan kohdan yllä (rivi ~5423):
+    // sheetAppend():n oma taulukontunnistus voi eksyä jos Tilit-
+    // välilehdellä on tyhjiä rivejä (confirmDeleteTili() tyhjentää,
+    // ei poista) ja liittää datan sivuttain olemassa olevan datan
+    // oikealle puolelle rivin sijaan — juuri se mitä käyttäjä raportoi
+    // (tili päätyi sarakkeille ~AB-BC E:n sijaan).
+    await sheetPut(`${MAIN_TAB}!A${rowIndex}:AB${rowIndex}`, [row]);
     const p = {
       spara_id:id, kampanja, prioriteetti:null,
       segmentti, yritys_nimi:name, juridinen_yhtio:yhtiömuoto,
