@@ -1261,7 +1261,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-23.4';
+const BUILD_ID = '2026-08-23.5';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2858,6 +2858,55 @@ function hideSessionExpiredBanner() {
   document.getElementById('session-expired-banner')?.remove();
   _sessionExpiredBannerShown=false;
 }
+
+// Sovelluksessa ei ollut ENNEN TÄTÄ mitään globaalia virhekäsittelijää.
+// Jokainen try/catch on omassa funktiossaan — jos jokin virhe tapahtuu
+// NIIDEN ulkopuolella (esim. ennen saveNewTili():n omaa try-lohkoa, tai
+// missä tahansa muualla käsittelijässä jota ei ole erikseen suojattu),
+// selain vain hiljaa pysäyttää sen funktion suorituksen: ei toastia, ei
+// bänneriä, ei mitään näkyvää — virhe näkyy VAIN DevTools-konsolissa jota
+// tavallinen käyttäjä ei avaa. Tämä selittäisi täydellisesti raportin
+// "en näe mitään virhettä, mutta uutta tiliä ei silti ilmesty Sheetsiin":
+// koodin lukeminen (kolmeen kertaan tässä sessiossa) ei ole löytänyt
+// mitään tapaa jolla ITSE Sheets-kirjoitus voisi epäonnistua hiljaa, mutta
+// kumpikaan lukukerta ei kata virhettä joka estäisi Sheets-kirjoitusyritystä
+// koskaan edes ALKAMASTA. Näytetään nyt JOKAINEN muuten näkymätön virhe
+// samalla pysyvä-bänneri-periaatteella kuin session-expired-tapauksessa,
+// tekstinä joka voi kopioida suoraan diagnoosia varten.
+function showRuntimeErrorBanner(msg) {
+  let b=document.getElementById('runtime-error-banner');
+  if (!b) {
+    b=document.createElement('div');
+    b.id='runtime-error-banner';
+    b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:3001;background:var(--red);color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:center;gap:14px;font-size:12px;flex-wrap:wrap;box-shadow:0 2px 10px rgba(0,0,0,.3)';
+    document.body.prepend(b);
+  }
+  b.innerHTML=`<span>⚠ Odottamaton virhe sovelluksessa — kopioi ja lähetä eteenpäin:</span>
+    <code id="runtime-error-text" style="background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px;user-select:all;max-width:60vw;overflow-wrap:break-word">${esc(msg)}</code>
+    <button class="btn btn-sm" style="background:#fff;color:var(--red);font-weight:700" onclick="copyRuntimeError()">Kopioi</button>
+    <button class="btn btn-ghost btn-sm" style="border-color:#fff;color:#fff" onclick="document.getElementById('runtime-error-banner')?.remove()">✕</button>`;
+}
+function copyRuntimeError() {
+  const txt=document.getElementById('runtime-error-text')?.textContent||'';
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(txt)
+      .then(()=>showToast('Virhe kopioitu leikepöydälle','success'))
+      .catch(()=>showToast('Kopiointi ei onnistunut — valitse teksti käsin','error'));
+  } else showToast('Kopiointi ei onnistunut — valitse teksti käsin','error');
+}
+window.addEventListener('error', (e) => {
+  // "Script error." ilman muuta tietoa tarkoittaa eri originista (esim.
+  // selainlaajennus) tulevaa virhettä jota CORS piilottaa tahallaan — ei
+  // koskaan hyödyllistä diagnoosin kannalta, joten ei näytetä sitä.
+  if (!e || e.message==='Script error.') return;
+  showRuntimeErrorBanner(`${e.message} (${(e.filename||'').split('/').pop()||'?'}:${e.lineno||'?'})`);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const reason=e?.reason;
+  const msg=reason?.message || (typeof reason==='string'?reason:JSON.stringify(reason));
+  showRuntimeErrorBanner('Käsittelemätön virhe (promise): '+msg);
+});
+
 // Ensin hiljainen uusinta (ei vaadi klikkausta Google-popupissa, toimii jos
 // selaimen Google-sessio on yhä voimassa). Jos sekin epäonnistuu, pyydetään
 // näkyvä, interaktiivinen suostumus (prompt:'consent') saman tokenClientin
