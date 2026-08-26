@@ -66,6 +66,13 @@
     .qa-item { display:block;width:100%;text-align:left;padding:11px 16px;font-size:13px;font-weight:500;color:var(--text);background:none;border:none;cursor:pointer;font-family:inherit;border-bottom:1px solid var(--border);transition:background .15s; }
     .qa-item:last-child { border-bottom:none; }
     .qa-item:hover { background:var(--bg3);color:var(--accent); }
+    /* Kanbanin monivalintainen projektisuodatin — sama pudotuspaneeli-
+       kaava kuin quick-add-menu, mutta vasemmalle ankkuroituna napin alle
+       (ei kelluva pyöreä nappi oikeassa alakulmassa). */
+    .kb-pf-panel { position:absolute;left:0;top:calc(100% + 6px);background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.55);z-index:901;min-width:240px;max-height:320px;overflow-y:auto;padding:4px 0; }
+    .kb-pf-panel.hidden { display:none; }
+    .kb-pf-item { display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap; }
+    .kb-pf-item:hover { background:var(--bg3); }
     .login-logo-img { max-width:200px;width:100%;margin:0 auto 24px;display:block; }
     @media (max-width:640px) {
       header { padding:0 10px;gap:8px;height:52px; }
@@ -430,6 +437,21 @@
     [data-dash-theme="spara"] #prospecting-modal .btn-primary,
     [data-dash-theme="spara"] #signal-monitoring-modal .btn-primary,
     [data-dash-theme="spara"] #email-modal .btn-primary{background:var(--spara-navy);color:var(--spara-on-dark);}
+
+    /* Sähköpostin Aihe- ja Viesti-kentät: aina valkoinen tausta + musta
+       oletusteksti, RIIPPUMATTA aktiivisesta dashboard-teemasta — pyydetty
+       nimenomaisesti erikseen (ei siis sama asia kuin yllä oleva Spara-
+       teemoitus, joka käyttäisi kermanväristä --spara-cream:ia). Sähköposti
+       näkyy vastaanottajalle aina valkoisella pohjalla riippumatta siitä
+       missä teemassa CRM sattuu olemaan kirjoitushetkellä, joten kirjoitus-
+       näkymän kannattaa vastata sitä eikä sovelluksen omaa tummaa/vaaleaa
+       teemaa. #email-modal-etuliite + kaksinkertainen ID nostaa spesifisyyden
+       riittävän korkeaksi voittamaan sekä peruskielen .form-control:in että
+       yllä olevan Spara-teemakohtaisen ylikirjoituksen ilman !important:ia.
+       color:#000 kattaa vain OLETUSvärin — liitetyllä/liimatulla sisällöllä
+       voi yhä olla oma inline-värinsä, se on tarkoituksellista. */
+    #email-modal #email-subject,
+    #email-modal #email-body-html { background:#fff; color:#000; }
 
     /* Kanban */
     .kanban{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;}
@@ -871,11 +893,10 @@
 
   <div class="tab-content" id="tab-kanban">
     <div class="toolbar">
-      <select id="k-kampanja">
-        <option value="">Kaikki projektit</option>
-        <option>ETJ+</option><option>Talopakettivalmistajat FIN</option><option>Talopakettivalmistajat SWE</option>
-        <option>Muu Projekti</option>
-      </select>
+      <div class="kb-pf-wrap" style="position:relative">
+        <button type="button" class="btn btn-ghost btn-sm" id="kb-pf-btn" onclick="toggleKanbanProjektiFilter(event)">Projektit: Kaikki ▾</button>
+        <div class="kb-pf-panel hidden" id="kb-pf-panel" onclick="event.stopPropagation()"></div>
+      </div>
     </div>
     <div class="kanban" id="kanban-board"></div>
   </div>
@@ -1261,7 +1282,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-23.6';
+const BUILD_ID = '2026-08-24.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3422,7 +3443,6 @@ async function confirmDeleteTili(sid) {
 // ── Filters ───────────────────────────────────────────────────────────────────
 ['f-haku','f-kampanja','f-prioriteetti','f-segmentti'].forEach(id =>
   document.getElementById(id)?.addEventListener('input', () => { page=0; applyFilters(); }));
-document.getElementById('k-kampanja').addEventListener('change', renderKanban);
 
 function applyFilters() {
   const haku=document.getElementById('f-haku').value.toLowerCase();
@@ -3718,10 +3738,53 @@ function normalizeTask(a){
 }
 function nearestTask(p){return parseActs(p).map(normalizeTask).filter(a=>a.due_date&&!taskIsDone(a)).sort((a,b)=>a.due_date.localeCompare(b.due_date))[0];}
 
-function getAllKaupat(filterKampanja) {
+// ── Kanban: monivalintainen projektisuodatin ────────────────────────────────
+// Käyttäjä pyysi nimenomaan mahdollisuutta suodattaa Kanban useammalla
+// projektilla SAMAAN AIKAAN (esim. sekä Talopakettivalmistajat FIN että
+// SWE nähdäkseen molempien tapaukset yhdessä näkymässä) — tavallinen
+// natiivi <select> sallii vain yhden valinnan kerrallaan, joten se
+// korvattiin pudotuspaneelilla jossa on valintaruutu per projekti.
+let kanbanProjektiFilter = new Set();
+
+function toggleKanbanProjektiFilter(e) {
+  e.stopPropagation();
+  const panel=document.getElementById('kb-pf-panel'); if (!panel) return;
+  const opening=panel.classList.contains('hidden');
+  closeQuickAdd(); closeUserMenu();
+  if (opening) { renderKanbanProjektiFilterPanel(); panel.classList.remove('hidden'); }
+  else panel.classList.add('hidden');
+}
+function closeKanbanProjektiFilter() {
+  document.getElementById('kb-pf-panel')?.classList.add('hidden');
+}
+function renderKanbanProjektiFilterPanel() {
+  const panel=document.getElementById('kb-pf-panel'); if (!panel) return;
+  const nimet=allProjektitNimet();
+  panel.innerHTML = nimet.length ? nimet.map(n=>`<label class="kb-pf-item">
+      <input type="checkbox" ${kanbanProjektiFilter.has(n)?'checked':''} onchange="toggleKanbanProjektiOption(${esc(JSON.stringify(n))})">
+      ${esc(n)}
+    </label>`).join('') : '<div style="padding:10px 14px;font-size:12px;color:var(--text2)">Ei projekteja</div>';
+}
+function toggleKanbanProjektiOption(nimi) {
+  if (kanbanProjektiFilter.has(nimi)) kanbanProjektiFilter.delete(nimi);
+  else kanbanProjektiFilter.add(nimi);
+  updateKanbanProjektiFilterBtn();
+  renderKanban();
+}
+function updateKanbanProjektiFilterBtn() {
+  const btn=document.getElementById('kb-pf-btn'); if (!btn) return;
+  const n=kanbanProjektiFilter.size;
+  const label = n===0 ? 'Kaikki' : n===1 ? [...kanbanProjektiFilter][0] : n+' valittu';
+  btn.textContent = 'Projektit: '+label+' ▾';
+}
+
+// filterSet: Set<string> valittuja projektinimiä. Tyhjä (tai puuttuva) Set
+// tarkoittaa "ei suodateta" — sama semantiikka kuin vanhan k-kampanja-
+// <select>:in value=="" ("Kaikki projektit").
+function getAllKaupat(filterSet) {
   const out=[];
   allProspects.forEach(p=>{
-    if (filterKampanja && p.kampanja!==filterKampanja) return;
+    if (filterSet && filterSet.size && !filterSet.has(p.kampanja)) return;
     parseActs(p).forEach(a=>{
       if (a.tyyppi==='kauppa') out.push({p, task:normalizeTask(a)});
     });
@@ -3762,8 +3825,7 @@ function kanbanColSparaHtml(v, cards, colSum) {
 
 function renderKanban() {
   applyDashboardThemeAttr();
-  const kf=document.getElementById('k-kampanja').value;
-  const kaupat=getAllKaupat(kf);
+  const kaupat=getAllKaupat(kanbanProjektiFilter);
   const board=document.getElementById('kanban-board');
   board.innerHTML='';
   const theme=dashboardTheme();
@@ -7064,12 +7126,19 @@ function allProjektitNimet() { return [...baseProjektitNimet(), ...customProjekt
 function populateProjektiSelects() {
   const nimet=allProjektitNimet();
   const opts=nimet.map(n=>`<option>${esc(n)}</option>`).join('');
-  ['f-kampanja','k-kampanja','yh-f-kampanja'].forEach(id=>{
+  ['f-kampanja','yh-f-kampanja'].forEach(id=>{
     const sel=document.getElementById(id); if(!sel) return;
     const prev=sel.value;
     sel.innerHTML='<option value="">Kaikki projektit</option>'+opts;
     if (nimet.includes(prev)) sel.value=prev;
   });
+  // Kanbanin projektisuodatin on oma Set eikä <select> (monivalinta) —
+  // pudotetaan valinnasta nimet jotka eivät enää ole olemassa (poistettu/
+  // nimetty uudelleen), sama periaate kuin yllä olevien <select>-kenttien
+  // "jos aiempi arvo ei enää kelpaa" -käsittely.
+  [...kanbanProjektiFilter].forEach(n=>{ if(!nimet.includes(n)) kanbanProjektiFilter.delete(n); });
+  updateKanbanProjektiFilterBtn();
+  if (!document.getElementById('kb-pf-panel')?.classList.contains('hidden')) renderKanbanProjektiFilterPanel();
   // tf_kampanja (Lisää tili) ja pm-projekti (Älykäs Prospektointi) ovat
   // "mihin luodaan" -valitsimia, ei suodattimia — ei tyhjää "Kaikki
   // projektit" -vaihtoehtoa, oletusarvo 'Muu Projekti' jos aiempi arvo
@@ -7649,7 +7718,7 @@ function toggleQuickAdd(e) {
   m.style.display=m.style.display==='none'?'':'none';
 }
 function closeQuickAdd() { const m=document.getElementById('quick-add-menu'); if(m) m.style.display='none'; }
-document.addEventListener('click', ()=>{ closeQuickAdd(); closeUserMenu(); });
+document.addEventListener('click', ()=>{ closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); });
 
 // ── Global Add Contact ────────────────────────────────────────────────────────
 function openGlobalContact() {
