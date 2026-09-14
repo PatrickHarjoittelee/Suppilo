@@ -1282,7 +1282,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-08-24.1';
+const BUILD_ID = '2026-09-14.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2025,6 +2025,23 @@ function emailInsertLink(targetId) {
   el.focus();
   document.execCommand('createLink',false,url);
 }
+// Sähköpostissa <button> ei toimi luotettavasti (useimmat asiakkaat
+// poistavat sen) — tyylikäs "painike" tehdään aina inline-tyylitetyllä
+// <a>-linkillä, alan vakiokäytäntö HTML-sähköposteissa. insertHTML lisää
+// koko palan kerralla kursorin kohtaan, samaan tapaan kuin execCommand
+// muuallakin tässä editorissa. esc() sekä tekstille että URL:lle, koska
+// molemmat päätyvät suoraan HTML-attribuuttiin/-sisältöön käyttäjän omasta
+// syötteestä (prompt), sama kurinalaisuus kuin muuallakin sovelluksessa.
+function emailInsertButton(targetId) {
+  const text=(prompt('Painikkeen teksti','Lue lisää')||'').trim();
+  if (!text) return;
+  const url=(prompt('Painikkeen linkki (https://…)')||'').trim();
+  if (!url) return;
+  const el=document.getElementById(targetId||'email-body-html'); if (!el) return;
+  el.focus();
+  document.execCommand('insertHTML',false,
+    `<a href="${esc(url)}" target="_blank" rel="noopener" style="display:inline-block;padding:12px 24px;background:#1B2A4A;color:#ffffff;text-decoration:none;border-radius:6px;font-family:Arial,sans-serif;font-weight:bold;font-size:14px">${esc(text)}</a>`);
+}
 
 function signatureHtml() {
   return currentUser.allekirjoitus ? `<p><br></p>${currentUser.allekirjoitus}` : '';
@@ -2240,6 +2257,27 @@ function renderEmailAttachments() {
 
 function newTicketCode() { return 'SP-'+Date.now().toString(36).slice(-5).toUpperCase(); }
 
+// Tikettikoodi upotettiin AIEMMIN aiheen (Subject) perään sulkeisiin —
+// käyttäjä piti tätä "kryptisenä" vastaanottajalle, koska koko aihe
+// näkyy sellaisenaan hänelle. Koodi tarvitaan silti (varatunniste jos
+// conversationId jostain syystä katkeaa, ks. syncContactEmails), joten
+// se upotetaan nyt viestin RUNKOON, aivan loppuun (allekirjoituksenkin
+// alle, koska allekirjoitus on jo osa bodyHtml:ää siinä vaiheessa kun
+// tämä lisätään — ks. sendOutlookEmail/scheduleOutlookEmail). Sama
+// [XX-XXXXXX]-hakasulkeissa oleva muoto kuin ennen — syncContactEmails:n
+// regex tunnistaa sen edelleen ilman muutoksia itse kaavaan, vain
+// hakukohde vaihtuu aiheesta runkoon.
+//
+// EI display:none/visibility:hidden:ia: osa sähköpostiyhdyskäytävistä
+// poistaa ne tunnettuna piilotekstin/phishingin heuristiikkana, jolloin
+// koodi katoaisi juuri sieltä mistä sen pitäisi löytyä myöhemmin
+// vastauksesta. font-size:1px + valkoinen teksti riittää tekemään siitä
+// käytännössä huomaamattoman ilman että mikään aktiivisesti POISTAA sen
+// rungosta ennen perille päätymistä.
+function ticketTagHtml(ticketCode) {
+  return `<div style="font-size:1px;line-height:1px;color:#ffffff;margin:0;padding:0">[${ticketCode}]</div>`;
+}
+
 // Rakentaa Graph-viestiobjektin sekä välittömälle (sendOutlookEmail) että
 // ajastetulle (scheduleOutlookEmail) lähetykselle. Puhdas funktio, ei I/O.
 function buildEmailMessagePayload(subjectOut, bodyHtml, to, extendedProperties) {
@@ -2295,13 +2333,16 @@ async function sendOutlookEmail() {
 
     // Tiketin koodi pysyy samana koko ketjun ajan (vanha tunnistetaan
     // olemassa olevalta tehtävältä) — vain uusi tiketti saa tuoreen koodin.
-    // Näkyy sulkeissa aiheessa varaosoitteena conversationId-vastaukselle,
-    // jos vastaus jostain syystä katkaisisi Graphin oman ketjutuksen
-    // (esim. vastaanottaja aloittaa täysin uuden viestin samalla aiheella).
+    // Upotetaan RUNKOON (ticketTagHtml, ks. määrittely) näkymättömänä
+    // varatunnisteena conversationId-vastaukselle, jos vastaus jostain
+    // syystä katkaisisi Graphin oman ketjutuksen (esim. vastaanottaja
+    // aloittaa täysin uuden viestin samalla aiheella) — EI enää aiheeseen,
+    // joka näkyisi vastaanottajalle sellaisenaan. bodyHtml (ilman tagia)
+    // säilyy muuttujana ennallaan storableBodyHtml/preview-käyttöön alla —
+    // tallennettuun/esikatseltuun sisältöön ei haluta ylimääräistä riviä.
     const ticketCode=task?.ticketCode||newTicketCode();
-    const subjectOut=subject.includes(`[${ticketCode}]`)?subject:`${subject} [${ticketCode}]`;
 
-    const message=buildEmailMessagePayload(subjectOut, bodyHtml, to);
+    const message=buildEmailMessagePayload(subject, bodyHtml+ticketTagHtml(ticketCode), to);
     const created=await createAndSendGraphMessage(token, message);
 
     if (p) {
@@ -2314,7 +2355,7 @@ async function sendOutlookEmail() {
       // tässä oli erillinen, tiukempi 200 merkin slice — juuri se epäsuhta
       // minkä takia lähetetyt näkyivät vain otsikkona, saapuneet oikealla
       // esikatselulla).
-      const threadEntry={dir:'out',graphId:created.id,ts:new Date().toISOString(),subject:subjectOut,preview:truncateEmailBody(htmlToPlainText(bodyHtml))};
+      const threadEntry={dir:'out',graphId:created.id,ts:new Date().toISOString(),subject,preview:truncateEmailBody(htmlToPlainText(bodyHtml))};
       // Lähetetty viesti EI aiemmin tallentanut bodyHtml:ää minnekään —
       // vain luonnokset (buildDraftEmailActivity) tekivät niin. Seurauksena
       // "Kirjoita ja lähetä" jo lähetetyn tehtävän kohdalla avasi tyhjän
@@ -2383,10 +2424,11 @@ async function scheduleOutlookEmail(deferredIso) {
     const p=allProspects.find(x=>x.spara_id===emailDraftContext.tiliId);
     const acts=p?parseActs(p):[];
     let task=(p&&emailDraftContext.taskId) ? acts.find(a=>a.id===emailDraftContext.taskId) : null;
+    // Sama korjaus kuin sendOutlookEmail():ssa — tikettikoodi upotetaan
+    // runkoon (ticketTagHtml) eikä enää aiheeseen.
     const ticketCode=task?.ticketCode||newTicketCode();
-    const subjectOut=subject.includes(`[${ticketCode}]`)?subject:`${subject} [${ticketCode}]`;
 
-    const message=buildEmailMessagePayload(subjectOut, bodyHtml, to, [{id:'SystemTime 0x3FEF', value:deferredIso}]);
+    const message=buildEmailMessagePayload(subject, bodyHtml+ticketTagHtml(ticketCode), to, [{id:'SystemTime 0x3FEF', value:deferredIso}]);
     const created=await createAndSendGraphMessage(token, message);
 
     if (p) {
@@ -2400,7 +2442,7 @@ async function scheduleOutlookEmail(deferredIso) {
       // deferredIso (toimitushetki, seurataan jo erikseen
       // scheduledSendAt/due_date:ssä) — tämä on historialoki tapahtumasta
       // "ajastin viestin", ei ennuste tulevasta toimituksesta.
-      const threadEntry={dir:'out',graphId:created.id,ts:nowIso,subject:subjectOut,preview:truncateEmailBody(htmlToPlainText(bodyHtml))};
+      const threadEntry={dir:'out',graphId:created.id,ts:nowIso,subject,preview:truncateEmailBody(htmlToPlainText(bodyHtml))};
       const storableBodyHtml=emailDraftBodyTooLarge(bodyHtml)?null:bodyHtml;
       if (task) {
         task.thread=task.thread||[];
@@ -2637,12 +2679,22 @@ async function fetchSentEmails(address, token) {
 
 // Tunnistaa mihin lähetettyyn tikettiin saapunut vastaus kuuluu: ensisijaisesti
 // Graphin omalla conversationId:llä (luotettavin, ei riipu siitä mitä
-// vastaanottaja tekee viestin otsikolle), toissijaisesti aiheeseen upotetulla
-// [SP-xxxxx]-koodilla (varalta, jos vastaus jostain syystä katkaisee Graphin
-// ketjutuksen, esim. vastaanottaja aloittaa täysin uuden viestiketjun samalla
-// aiheella). Jos kumpikaan ei täsmää, viesti kirjataan omaksi uudeksi
-// tiketiksi tilaan "Uusi" — ei enää pelkäksi historialokiksi, jotta myös
-// aidosti uudet yhteydenotot näkyvät ja etenevät Tehtävät-välilehdellä.
+// vastaanottaja tekee viestin otsikolle), toissijaisesti näkymättömästi
+// runkoon upotetulla [SP-xxxxx]-koodilla (varalta, jos vastaus jostain
+// syystä katkaisee Graphin ketjutuksen, esim. vastaanottaja aloittaa
+// täysin uuden viestiketjun samalla aiheella). Koodi upotetaan nykyään
+// ticketTagHtml():lla runkoon (ks. sendOutlookEmail/scheduleOutlookEmail),
+// mutta haetaan tässä sekä aiheesta ETTÄ rungosta — ennen tätä muutosta
+// lähetetyt, yhä auki olevat tiketit kantavat koodin vielä vanhassa
+// paikassa (aiheessa), joten pelkkä rungon tarkistus rikkoisi niiden
+// vastausten täsmäytyksen. Vastaus tavallisesti lainaa koko alkuperäisen
+// rungon (myös näkymättömän tagin) normaalin "Re:"-lainauskäytännön
+// mukaisesti, joten tämä toimii yhtä luotettavasti kuin aiempi aihepohjainen
+// versio, usein luotettavamminkin (aihetta muokataan käsin useammin kuin
+// rungon lainausta poistetaan). Jos kumpikaan ei täsmää, viesti kirjataan
+// omaksi uudeksi tiketiksi tilaan "Uusi" — ei enää pelkäksi
+// historialokiksi, jotta myös aidosti uudet yhteydenotot näkyvät ja
+// etenevät Tehtävät-välilehdellä.
 async function syncContactEmails(contactId, opts) {
   const silent=!!(opts&&opts.silent);
   const c=allContacts.find(x=>x.id===contactId); if (!c||!c.sahkoposti) return;
@@ -2686,7 +2738,7 @@ async function syncContactEmails(contactId, opts) {
     uusi.forEach(m=>{
       let ticket=byConv.get(m.conversationId);
       if (!ticket) {
-        const codeMatch=(m.subject||'').match(/\[([A-Z]{2}-[A-Z0-9]{4,6})\]/);
+        const codeMatch=((m.subject||'')+' '+(m.bodyText||'')).match(/\[([A-Z]{2}-[A-Z0-9]{4,6})\]/);
         if (codeMatch) ticket=byCode.get(codeMatch[1]);
       }
       if (ticket) {
@@ -7350,8 +7402,11 @@ function renderTemplatesList() {
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('bold','tpl-${t.id}-sisalto')"><b>B</b></button>
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('italic','tpl-${t.id}-sisalto')"><i>I</i></button>
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('underline','tpl-${t.id}-sisalto')"><u>U</u></button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('insertUnorderedList','tpl-${t.id}-sisalto')">• Lista</button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('insertOrderedList','tpl-${t.id}-sisalto')">1. Lista</button>
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertLink('tpl-${t.id}-sisalto')">🔗 Linkki</button>
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertImage('tpl-${t.id}-sisalto')">🖼️ Kuva</button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertButton('tpl-${t.id}-sisalto')">🔘 Painike</button>
               <button type="button" class="btn btn-ghost btn-sm emoji-toggle-btn" onclick="toggleEmojiPicker(this,'tpl-${t.id}-sisalto')">🙂</button>
             </div>
             <div class="form-control email-body-html" id="tpl-${t.id}-sisalto" contenteditable="true" style="min-height:90px">${t.sisalto}</div>
@@ -7894,8 +7949,11 @@ async function saveGlobalTask() {
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('bold','set-allekirjoitus')" title="Lihavointi"><b>B</b></button>
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('italic','set-allekirjoitus')" title="Kursiivi"><i>I</i></button>
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('underline','set-allekirjoitus')" title="Alleviivaus"><u>U</u></button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('insertUnorderedList','set-allekirjoitus')" title="Luettelo">• Lista</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('insertOrderedList','set-allekirjoitus')" title="Numeroitu luettelo">1. Lista</button>
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertLink('set-allekirjoitus')" title="Lisää linkki">🔗 Linkki</button>
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertImage('set-allekirjoitus')" title="Lisää kuva (esim. logo)">🖼️ Kuva</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertButton('set-allekirjoitus')" title="Lisää painike">🔘 Painike</button>
             <button type="button" class="btn btn-ghost btn-sm emoji-toggle-btn" onclick="toggleEmojiPicker(this,'set-allekirjoitus')" title="Lisää hymiö">🙂</button>
           </div>
           <div class="form-control email-body-html" id="set-allekirjoitus" contenteditable="true" style="min-height:90px"></div>
@@ -8015,8 +8073,11 @@ async function saveGlobalTask() {
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('bold','tpl-uusi-sisalto')"><b>B</b></button>
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('italic','tpl-uusi-sisalto')"><i>I</i></button>
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('underline','tpl-uusi-sisalto')"><u>U</u></button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('insertUnorderedList','tpl-uusi-sisalto')">• Lista</button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('insertOrderedList','tpl-uusi-sisalto')">1. Lista</button>
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertLink('tpl-uusi-sisalto')">🔗 Linkki</button>
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertImage('tpl-uusi-sisalto')">🖼️ Kuva</button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertButton('tpl-uusi-sisalto')">🔘 Painike</button>
               <button type="button" class="btn btn-ghost btn-sm emoji-toggle-btn" onclick="toggleEmojiPicker(this,'tpl-uusi-sisalto')">🙂</button>
             </div>
             <div class="form-control email-body-html" id="tpl-uusi-sisalto" contenteditable="true" style="min-height:90px"></div>
@@ -8132,8 +8193,10 @@ async function saveGlobalTask() {
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('italic')" title="Kursiivi"><i>I</i></button>
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('underline')" title="Alleviivaus"><u>U</u></button>
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('insertUnorderedList')" title="Luettelo">• Lista</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('insertOrderedList')" title="Numeroitu luettelo">1. Lista</button>
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertLink()" title="Lisää linkki">🔗 Linkki</button>
             <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertImage('email-body-html')" title="Lisää kuva">🖼️ Kuva</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="emailInsertButton('email-body-html')" title="Lisää painike">🔘 Painike</button>
             <button type="button" class="btn btn-ghost btn-sm emoji-toggle-btn" onclick="toggleEmojiPicker(this,'email-body-html')" title="Lisää hymiö">🙂</button>
           </div>
           <div class="form-control email-body-html" id="email-body-html" contenteditable="true"></div>
