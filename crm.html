@@ -1282,7 +1282,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-17.5';
+const BUILD_ID = '2026-09-17.6';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -8366,7 +8366,7 @@ async function saveGlobalTask() {
      scriptinä pääsovelluksen OMAN scriptin jälkeen (ei iframe-erottelua),
      jotta esim. ?import=-syväliike ja muu location.search-pohjainen koodi
      toimii normaalisti samassa dokumentissa. -->
-<script src="media-seuranta.js"></script>
+<script src="media-seuranta.js?v=2026-09-17.3"></script>
 
 </body>
 </html>

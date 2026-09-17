@@ -7,9 +7,17 @@
 
   const WATCH_TAB = 'Seurannat';
   const SIGNAL_TAB = 'Signaalit';
-  const WATCH_COLS = ['id','nimi','hakusanat','lahteet','alue','min_pisteet','aktiivinen','created_at','updated_at'];
+  // vaaditut/poissuljetut lisätty sarakkeiden LOPPUUN (J/K) — vanhat,
+  // jo olemassa olevat Seurannat-rivit toimivat ennallaan (puuttuvat
+  // sarakkeet luetaan tyhjinä merkkijonoina, ei aseta mitään vaatimus-/
+  // poissulkuehtoa). ensureSheets() luo nämä otsikot vain UUTEEN
+  // välilehteen — jos Seurannat-välilehti on jo olemassa vanhalla
+  // 9-sarakkeisella otsikolla, otsikkorivi ei päivity automaattisesti,
+  // mutta data toimii silti (sama tapa kuin muuallakin sovelluksessa
+  // vanhentuneiden otsikoiden kanssa).
+  const WATCH_COLS = ['id','nimi','hakusanat','lahteet','alue','min_pisteet','aktiivinen','created_at','updated_at','vaaditut','poissuljetut'];
   const SIGNAL_COLS = ['id','seuranta_id','otsikko','lahde','url','julkaistu_at','deadline','organisaatio','y_tunnus','tili_id','yhteyshenkilo_id','pisteet','tila','tiivistelma','created_at'];
-  const MEDIA_VERSION = '2026-09-17.2';
+  const MEDIA_VERSION = '2026-09-17.3';
 
   let watches = [];
   let signals = [];
@@ -119,11 +127,11 @@
   async function loadMediaData() {
     await ensureSheets();
     if (typeof sheetGet !== 'function') throw new Error('Google Sheets -lukutoiminto puuttuu.');
-    const w = await sheetGet(`${WATCH_TAB}!A:I`);
+    const w = await sheetGet(`${WATCH_TAB}!A:K`);
     watches = w.slice(1).map((r, i) => ({
       id:r[0], nimi:r[1]||'', hakusanat:r[2]||'', lahteet:r[3]||'', alue:r[4]||'',
       min_pisteet:Number(r[5]||0), aktiivinen:String(r[6]||'true').toLowerCase()!=='false',
-      created_at:r[7]||'', updated_at:r[8]||'', _rowIndex:i+2
+      created_at:r[7]||'', updated_at:r[8]||'', vaaditut:r[9]||'', poissuljetut:r[10]||'', _rowIndex:i+2
     })).filter(x => x.id);
     const s = await sheetGet(`${SIGNAL_TAB}!A:O`);
     signals = s.slice(1).map((r, i) => ({
@@ -172,8 +180,36 @@
     });
   }
 
+  // Pilkulla erotetut ryhmät ovat toisistaan riippumattomia — | -merkillä
+  // eroteltu saman ryhmän SISÄLLÄ tarkoittaa "riittää että yksikin näistä
+  // esiintyy" (TAI), esim. "LED|valaistus" on yksi käsite kahdella
+  // sanalla ilmaistuna. Käytetään samaa jäsennystä sekä vaadituille että
+  // poissuljetuille sanoille (sama syöttömalli molemmissa kentissä),
+  // mutta ryhmien YHDISTÄMISTAPA eroaa tarkoituksella: vaadituissa
+  // KAIKKIEN pilkulla erotettujen ryhmien on täytyttävä (JA) — "tarjous,
+  // LED|valaistus" tarkoittaa "tarjous JA (LED TAI valaistus)". Poisluetuissa
+  // RIITTÄÄ että yksikin ryhmä täyttyy (TAI) — "asuinrakennus, loma-asunto"
+  // hylkää signaalin jos KUMPI TAHANSA näistä löytyy, ei vain jos molemmat.
+  // Tämä vastaa tavallista odotusta: poissuljettu-lista on lista itsenäisiä
+  // hylkäysehtoja, ei yksi yhteinen JA-ehto.
+  function parseKeywordGroups(raw) {
+    return String(raw||'').split(',').map(g=>g.trim()).filter(Boolean)
+      .map(g=>g.split('|').map(w=>w.trim().toLowerCase()).filter(Boolean))
+      .filter(g=>g.length);
+  }
+  function groupMatches(hay, group) { return group.some(w=>hay.includes(w)); }
+
+  // Palauttaa -1 kun signaali on TÄYSIN hylätty (vaadittu ehto ei
+  // täyty, tai poissuljettu ehto täyttyy) — eri asia kuin pisteet:0,
+  // koska min_pisteet voi olla 0 eikä pelkkä nollapiste silloin
+  // suodattaisi mitään pois. Kutsujat (searchGdelt/searchTed) hylkäävät
+  // -1:n aina, riippumatta watch.min_pisteet-arvosta.
   function scoreSignal(text, watch) {
     const hay = String(text||'').toLowerCase();
+    const required = parseKeywordGroups(watch.vaaditut);
+    if (required.length && !required.every(g=>groupMatches(hay,g))) return -1;
+    const excluded = parseKeywordGroups(watch.poissuljetut);
+    if (excluded.length && excluded.some(g=>groupMatches(hay,g))) return -1;
     const words = String(watch.hakusanat||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
     let score = 0;
     words.forEach(w => { if (hay.includes(w)) score += 22; });
@@ -203,6 +239,8 @@
         <div class="media-watch-main">
           <div class="media-watch-title">${escMedia(w.nimi)}</div>
           <div class="media-watch-meta">${escMedia(w.hakusanat || 'Ei hakusanoja')} · ${escMedia(w.lahteet || 'Kaikki lähteet')} ${w.alue ? '· '+escMedia(w.alue) : ''}</div>
+          ${w.vaaditut ? `<div class="media-watch-meta">✅ Pitää sisältää: ${escMedia(w.vaaditut)}</div>` : ''}
+          ${w.poissuljetut ? `<div class="media-watch-meta">🚫 Ei saa sisältää: ${escMedia(w.poissuljetut)}</div>` : ''}
         </div>
         <div class="media-watch-actions">
           <span class="media-score">≥ ${Number(w.min_pisteet||0)} p</span>
@@ -272,6 +310,8 @@
   async function createWatch() {
     const name = (document.getElementById('media-watch-name')?.value || '').trim();
     const words = (document.getElementById('media-watch-words')?.value || '').trim();
+    const required = (document.getElementById('media-watch-required')?.value || '').trim();
+    const excluded = (document.getElementById('media-watch-excluded')?.value || '').trim();
     const sources = Array.from(document.querySelectorAll('[name="media-source"]:checked')).map(x=>x.value).join(',');
     const area = (document.getElementById('media-watch-area')?.value || '').trim();
     const minScore = Number(document.getElementById('media-watch-score')?.value || 0);
@@ -281,11 +321,11 @@
     if (typeof sheetAppend !== 'function') return;
     const now = new Date().toISOString();
     const id = 'SEU'+Date.now();
-    const row = [id,name,words,sources,area,minScore,'true',now,now];
-    await sheetAppend(`${WATCH_TAB}!A:I`, [row]);
+    const row = [id,name,words,sources,area,minScore,'true',now,now,required,excluded];
+    await sheetAppend(`${WATCH_TAB}!A:K`, [row]);
     const a = await sheetGet(`${WATCH_TAB}!A:A`);
-    watches.push({id,nimi:name,hakusanat:words,lahteet:sources,alue:area,min_pisteet:minScore,aktiivinen:true,created_at:now,updated_at:now,_rowIndex:a.length});
-    ['media-watch-name','media-watch-words','media-watch-area'].forEach(x=>{const el=document.getElementById(x); if(el) el.value='';});
+    watches.push({id,nimi:name,hakusanat:words,lahteet:sources,alue:area,min_pisteet:minScore,aktiivinen:true,created_at:now,updated_at:now,vaaditut:required,poissuljetut:excluded,_rowIndex:a.length});
+    ['media-watch-name','media-watch-words','media-watch-required','media-watch-excluded','media-watch-area'].forEach(x=>{const el=document.getElementById(x); if(el) el.value='';});
     renderWatches();
     if (typeof showToast==='function') showToast('Seuranta lisätty ✓','success');
   }
@@ -329,7 +369,7 @@
         url:a.url||'', julkaistu_at:a.seendate||'', deadline:'', organisaatio:a.domain||'', y_tunnus:'', tili_id:'', yhteyshenkilo_id:'',
         pisteet:scoreSignal(text,watch), tila:'uusi', tiivistelma:a.language ? `Kieli: ${a.language}` : '', created_at:new Date().toISOString()
       };
-    }).filter(x=>x.pisteet >= Number(watch.min_pisteet||0));
+    }).filter(x=>x.pisteet >= 0 && x.pisteet >= Number(watch.min_pisteet||0));
   }
 
   async function searchTed(watch) {
@@ -356,7 +396,7 @@
         id:'SIG'+Date.now()+'T'+i, seuranta_id:watch.id, otsikko:title, lahde:'TED', url, julkaistu_at:pub, deadline,
         organisaatio:buyer, y_tunnus:'', tili_id:'', yhteyshenkilo_id:'', pisteet:scoreSignal(`${title} ${buyer}`,watch), tila:'uusi', tiivistelma:'EU:n julkinen hankintailmoitus', created_at:new Date().toISOString()
       };
-    }).filter(x=>x.pisteet >= Number(watch.min_pisteet||0));
+    }).filter(x=>x.pisteet >= 0 && x.pisteet >= Number(watch.min_pisteet||0));
   }
 
   function hilmaSearchUrl(watch) {
@@ -421,7 +461,9 @@
           <div class="media-panel-head"><h3>Seurannat</h3><span class="media-panel-note">Mitä haluat löytää?</span></div>
           <div class="media-watch-form">
             <input class="form-control" id="media-watch-name" placeholder="Seurannan nimi, esim. ETJ+ julkiset hankinnat">
-            <input class="form-control" id="media-watch-words" placeholder="Hakusanat pilkuilla: energiatehokkuus, energiakatselmus, LED…">
+            <input class="form-control" id="media-watch-words" placeholder="Hakusanat pilkuilla (nostavat pisteitä): energiatehokkuus, energiakatselmus, LED…">
+            <input class="form-control" id="media-watch-required" placeholder="Pitää sisältää (valinnainen): pilkulla JA-ehtoja, |-merkillä TAI-vaihtoehtoja — esim. tarjous, LED|valaistus">
+            <input class="form-control" id="media-watch-excluded" placeholder="Ei saa sisältää (valinnainen): pilkulla erillisiä hylkäysehtoja — esim. asuinrakennus, loma-asunto">
             <div class="media-form-row">
               <input class="form-control" id="media-watch-area" placeholder="Alue, esim. Uusimaa">
               <input class="form-control" id="media-watch-score" type="number" min="0" max="100" value="35" title="Vähimmäispisteet">
