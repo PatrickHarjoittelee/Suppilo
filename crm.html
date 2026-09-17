@@ -1282,7 +1282,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-17.4';
+const BUILD_ID = '2026-09-17.5';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3028,6 +3028,23 @@ async function sheetBatchUpdate(data) {
 }
 
 // ── Load ──────────────────────────────────────────────────────────────────────
+// Oli aiemmin loadData():n oma paikallinen const-funktio — ei siis
+// koskaan ollut globaalisti kutsuttavissa, vaikka nimeltään ja
+// tyyliltään näyttää samalta kuin muut apiGet/sheetGet/sheetAppend-
+// tason jaetut apufunktiot. media-seuranta.js (toisen agentin lisäämä
+// Seuranta-välilehti) olettaa juuri tätä: se tarkistaa
+// "typeof addSheet !== 'function'" ennen omien Sheets-välilehtiensä
+// (Seurannat/Signaalit) luontia, ja koska funktiota ei ollut olemassa
+// tässä scopessa lainkaan, tarkistus epäonnistui AINA — käyttäjälle
+// näkyi "Google Sheets -yhteys ei ole vielä käytettävissä" riippumatta
+// kirjautumistilasta. Nostettu tänne moduulitason function-julistukseksi
+// (näkyy koko scriptille funktiojulistuksena, ei enää vain loadData():n
+// sisällä) — loadData():n omat 6 kutsupaikkaa toimivat muuttumattomina.
+async function addSheet(t,cols) {
+  await apiPost(':batchUpdate',{requests:[{addSheet:{properties:{title:t}}}]});
+  await sheetAppend(`${t}!A1`,[cols]);
+}
+
 async function loadData() {
   document.getElementById('tbody-lista').innerHTML =
     '<tr><td colspan="9" class="loading"><div class="spinner"></div><br>Ladataan Google Sheetsistä…</td></tr>';
@@ -3035,10 +3052,6 @@ async function loadData() {
     const meta = await apiGet('?fields=sheets.properties');
     const sheets = meta.sheets;
     const tabNames = sheets.map(s => s.properties.title);
-    const addSheet = async (t,cols) => {
-      await apiPost(':batchUpdate',{requests:[{addSheet:{properties:{title:t}}}]});
-      await sheetAppend(`${t}!A1`,[cols]);
-    };
     if (!tabNames.includes(CRM_TAB)) await addSheet(CRM_TAB, CRM_COLS);
     if (!tabNames.includes(YH_TAB))  await addSheet(YH_TAB,  YH_COLS);
     if (!tabNames.includes(USERS_TAB)) await addSheet(USERS_TAB, USERS_COLS);
