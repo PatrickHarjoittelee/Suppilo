@@ -181,7 +181,13 @@
     .toolbar { display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center; }
     .toolbar input,.toolbar select { background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:7px 11px;font-size:13px;font-family:inherit;outline:none;transition:border-color .2s; }
     .toolbar input:focus,.toolbar select:focus{border-color:var(--accent);}
-    .toolbar input{min-width:200px;} .toolbar select{min-width:140px;}
+    /* :not([type=checkbox]) — muuten tämä venyttää myös työkalupalkin
+       SISÄLLÄ olevien pudotuspaneelien valintaruudut (esim. Kanbanin
+       projektisuodatin) 200px leveiksi, koska CSS-jälkeläisvalitsin
+       osuu mihin tahansa syvyyteen DOM:ssa, ei vain suoriin lapsiin —
+       valintaruutu ja sen teksti näyttivät siksi repeytyneen kauas
+       toisistaan vaikka HTML/flex-gap oli oikein. */
+    .toolbar input:not([type=checkbox]){min-width:200px;} .toolbar select{min-width:140px;}
     .spacer{flex:1;} .result-count{font-size:12px;color:var(--text2);}
 
     /* Table */
@@ -901,6 +907,7 @@
 
   <div class="tab-content" id="tab-kanban">
     <div class="toolbar">
+      <input type="text" id="k-haku" placeholder="Hae yritystä tai yhteyshenkilöä…">
       <div class="kb-pf-wrap" style="position:relative">
         <button type="button" class="btn btn-ghost btn-sm" id="kb-pf-btn" onclick="toggleKanbanProjektiFilter(event)">Projektit: Kaikki ▾</button>
         <div class="kb-pf-panel hidden" id="kb-pf-panel" onclick="event.stopPropagation()"></div>
@@ -1290,7 +1297,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-18.4';
+const BUILD_ID = '2026-09-18.5';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3627,6 +3634,7 @@ async function confirmDeleteTili(sid) {
 // ── Filters ───────────────────────────────────────────────────────────────────
 ['f-haku','f-kampanja','f-prioriteetti','f-segmentti'].forEach(id =>
   document.getElementById(id)?.addEventListener('input', () => { page=0; applyFilters(); }));
+document.getElementById('k-haku')?.addEventListener('input', renderKanban);
 
 function applyFilters() {
   const haku=document.getElementById('f-haku').value.toLowerCase();
@@ -4029,7 +4037,17 @@ function kanbanColSparaHtml(v, cards, colSum) {
 
 function renderKanban() {
   applyDashboardThemeAttr();
-  const kaupat=getAllKaupat(kanbanProjektiFilter);
+  // Hakukenttä jatkosuodattaa Projektit-valinnan JÄLKEEN — getAllKaupat
+  // palauttaa jo projektien mukaan rajatun listan, tämä vain karsii siitä
+  // lisää. Samat kentät joita kortti itsekin näyttää (kanbanCardHtml):
+  // yrityksen nimi, yhteyshenkilö, kaupan aihe — löytää siis saman
+  // yrityksen eri kauppa-vaiheista tai tietyn yhteyshenkilön.
+  const haku=(document.getElementById('k-haku')?.value||'').trim().toLowerCase();
+  let kaupat=getAllKaupat(kanbanProjektiFilter);
+  if (haku) kaupat=kaupat.filter(({p,task})=>
+    (p.yritys_nimi||'').toLowerCase().includes(haku) ||
+    (p['yhteyshenkilö']||'').toLowerCase().includes(haku) ||
+    (task.aihe||'').toLowerCase().includes(haku));
   const board=document.getElementById('kanban-board');
   board.innerHTML='';
   const theme=dashboardTheme();
