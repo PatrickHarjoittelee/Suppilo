@@ -73,6 +73,14 @@
     .kb-pf-panel.hidden { display:none; }
     .kb-pf-item { display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap; }
     .kb-pf-item:hover { background:var(--bg3); }
+    /* Sähköpostin monivalintainen vastaanottajapoiminta — sama
+       pudotuspaneeli-kaava kuin Kanbanin projektisuodattimella
+       (kb-pf-*), oma pieni luokkajoukko ettei kahta erillistä
+       ominaisuutta kytketä tarpeettomasti samaan CSS-luokkaan. */
+    .email-to-picker-panel { position:absolute;left:0;top:calc(100% + 6px);background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.55);z-index:901;min-width:260px;max-height:260px;overflow-y:auto;padding:4px 0; }
+    .email-to-picker-panel.hidden { display:none; }
+    .email-to-picker-item { display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap; }
+    .email-to-picker-item:hover { background:var(--bg3); }
     .login-logo-img { max-width:200px;width:100%;margin:0 auto 24px;display:block; }
     @media (max-width:640px) {
       header { padding:0 10px;gap:8px;height:52px; }
@@ -1282,7 +1290,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-17.6';
+const BUILD_ID = '2026-09-18.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1639,7 +1647,7 @@ function aiOpenerButtonState(p) {
 async function openAiOpenerPanel() {
   if (!emailDraftContext) return;
   // Kuvakaappaus arvoista (ei viittaus) — emailDraftContext.contactId voi
-  // muuttua paikan päällä (pickEmailToContact) haun ollessa kesken, joten
+  // muuttua paikan päällä (toggleEmailToContact) haun ollessa kesken, joten
   // viittauksen vertailu ei riittäisi havaitsemaan vastaanottajan vaihtoa.
   const draftCtx={tiliId:emailDraftContext.tiliId, contactId:emailDraftContext.contactId};
   const p=allProspects.find(x=>x.spara_id===draftCtx.tiliId); if (!p) return;
@@ -1871,13 +1879,20 @@ function openEmailComposer(opts) {
   if (opts.contactId && !c) { showToast('Yhteyshenkilöltä puuttuu sähköpostiosoite','error'); return; }
   if (!c && withEmail.length===1) c=withEmail[0];
 
-  emailDraftContext={contactId:c?c.id:null, tiliId:p.spara_id, taskId:opts.taskId||null};
+  // contactIds: KAIKKI valintaruudulla valitut vastaanottajat (useita jos
+  // tilillä on useampi sähköpostillinen yhteyshenkilö). contactId pysyy
+  // ENSIMMÄISENÄ näistä — sitä käyttävät edelleen mm. sendOutlookEmail
+  // (tiketin/historiavaan liittäminen) ja syncContactEmails, jotka
+  // olettavat yhden "omistava" kontaktin per sähköpostitiketti. Jos
+  // useampi vastaanottaja valitaan, viesti MENEE oikeasti kaikille
+  // Graphin kautta, mutta CRM-historia näkyy vain tämän ensimmäisen
+  // kontaktin alla — tietoinen, pieni rajaus jottei koko tiketti/kontakti-
+  // mallia tarvitse muuttaa yhdestä-moneen-suhteeksi tätä varten.
+  emailDraftContext={contactId:c?c.id:null, contactIds:c?[c.id]:[], tiliId:p.spara_id, taskId:opts.taskId||null};
 
   const pickerWrap=document.getElementById('email-to-picker-wrap');
-  const picker=document.getElementById('email-to-contact');
   if (!opts.contactId && withEmail.length) {
-    picker.innerHTML='<option value="">— valitse yhteyshenkilö —</option>'+
-      withEmail.map(x=>`<option value="${x.id}"${c&&x.id===c.id?' selected':''}>${esc(x.nimi)} (${esc(x.sahkoposti)})</option>`).join('');
+    renderEmailToPicker();
     pickerWrap.style.display='';
   } else {
     pickerWrap.style.display='none';
@@ -1980,15 +1995,53 @@ function startNewEmailTask() {
   openEmailComposer({tiliId:currentId});
 }
 
-function pickEmailToContact(contactId) {
+// Monivalintainen vastaanottajapoiminta — sama pudotuspaneeli-kaava kuin
+// Kanbanin projektisuodattimella (toggleKanbanProjektiFilter ym.).
+// emailDraftContext.contactIds pitää kirjaa KAIKISTA rastitetuista
+// kontakteista; #email-to-kentän arvo rakennetaan aina niiden pohjalta,
+// joten kentän jälkikäteinen käsin muokkaus (esim. ylimääräisen osoitteen
+// lisäys pilkulla) säilyy koskemattomana KUNNES jokin valintaruutu taas
+// muuttuu — sama periaate kuin vanhalla yhden-valinnan pudotusvalikolla.
+function renderEmailToPicker() {
+  const panel=document.getElementById('email-to-picker-panel'); if (!panel||!emailDraftContext) return;
+  const p=allProspects.find(x=>x.spara_id===emailDraftContext.tiliId); if (!p) return;
+  const withEmail=allContacts.filter(x=>x.tili_id===p.spara_id && x.sahkoposti);
+  const ids=emailDraftContext.contactIds||[];
+  panel.innerHTML = withEmail.length ? withEmail.map(x=>`<label class="email-to-picker-item">
+      <input type="checkbox" ${ids.includes(x.id)?'checked':''} onchange="toggleEmailToContact(${esc(JSON.stringify(x.id))})">
+      ${esc(x.nimi)} (${esc(x.sahkoposti)})
+    </label>`).join('') : '<div style="padding:10px 14px;font-size:12px;color:var(--text2)">Ei sähköpostillisia yhteyshenkilöitä</div>';
+  updateEmailToPickerBtn();
+}
+function toggleEmailToContact(contactId) {
   if (!emailDraftContext) return;
-  const c=allContacts.find(x=>x.id===contactId);
-  emailDraftContext.contactId=c?c.id:null;
-  document.getElementById('email-to').value=c?c.sahkoposti:'';
-  // Vastaanottaja vaihtui — edellisen kontaktin AI-avausehdotukset eivät
-  // enää päde (titteli/personointi voi olla eri), joten piilota paneeli.
+  const ids=emailDraftContext.contactIds||(emailDraftContext.contactIds=[]);
+  const i=ids.indexOf(contactId);
+  if (i>=0) ids.splice(i,1); else ids.push(contactId);
+  emailDraftContext.contactId=ids[0]||null;
+  document.getElementById('email-to').value=ids.map(id=>allContacts.find(x=>x.id===id)?.sahkoposti).filter(Boolean).join(', ');
+  updateEmailToPickerBtn();
+  // Vastaanottaja(t) vaihtuivat — edellisen kontaktin AI-avausehdotukset
+  // eivät enää välttämättä päde (titteli/personointi voi olla eri tai
+  // useampi), joten piilota paneeli.
   const p=allProspects.find(x=>x.spara_id===emailDraftContext.tiliId);
   if (p) aiOpenerButtonState(p);
+}
+function updateEmailToPickerBtn() {
+  const btn=document.getElementById('email-to-picker-btn'); if (!btn) return;
+  const n=(emailDraftContext?.contactIds||[]).length;
+  btn.textContent = (n===0 ? 'Valitse yhteyshenkilöt' : n===1 ? '1 valittu' : n+' valittu') + ' ▾';
+}
+function toggleEmailToPicker(e) {
+  e.stopPropagation();
+  const panel=document.getElementById('email-to-picker-panel'); if (!panel) return;
+  const opening=panel.classList.contains('hidden');
+  closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter();
+  if (opening) { renderEmailToPicker(); panel.classList.remove('hidden'); }
+  else panel.classList.add('hidden');
+}
+function closeEmailToPicker() {
+  document.getElementById('email-to-picker-panel')?.classList.add('hidden');
 }
 
 function closeEmailComposer() {
@@ -2278,13 +2331,26 @@ function ticketTagHtml(ticketCode) {
   return `<div style="font-size:1px;line-height:1px;color:#ffffff;margin:0;padding:0">[${ticketCode}]</div>`;
 }
 
+// "osoitteeseen X" vs. "osoitteisiin X, Y" — pelkkä ${to} confirm()-
+// dialogissa lukisi kieliopillisesti oudolta kun vastaanottajia on
+// useampi (yksikkömuotoinen "osoitteeseen" ennen pilkkueroteltua listaa).
+function recipientPhrase(to) {
+  const n=String(to||'').split(',').map(s=>s.trim()).filter(Boolean).length;
+  return (n>1?'osoitteisiin ':'osoitteeseen ')+to;
+}
+
 // Rakentaa Graph-viestiobjektin sekä välittömälle (sendOutlookEmail) että
 // ajastetulle (scheduleOutlookEmail) lähetykselle. Puhdas funktio, ei I/O.
 function buildEmailMessagePayload(subjectOut, bodyHtml, to, extendedProperties) {
+  // to: pilkulla eroteltu lista (yksikin osoite ilman pilkkua toimii
+  // ennallaan) — mahdollistaa usean vastaanottajan ilman Graph-kutsun
+  // omaa muutosta.
+  const toRecipients=String(to||'').split(',').map(s=>s.trim()).filter(Boolean)
+    .map(address=>({emailAddress:{address}}));
   const message={
     subject:subjectOut,
     body:{contentType:'HTML',content:bodyHtml},
-    toRecipients:[{emailAddress:{address:to}}]
+    toRecipients
   };
   if (emailAttachments.length) {
     message.attachments=emailAttachments.map(a=>({
@@ -2323,7 +2389,7 @@ async function sendOutlookEmail() {
   const bodyEmpty=!bodyEl.textContent.trim() && !bodyEl.querySelector('img,a');
   if (!to||!subject||bodyEmpty) { showToast('Vastaanottaja, aihe ja viesti ovat pakollisia','error'); return; }
   const btn=document.getElementById('email-send-btn');
-  if (!confirm(`Lähetetäänkö sähköposti Outlook-tililtä osoitteeseen ${to}?`)) return;
+  if (!confirm(`Lähetetäänkö sähköposti Outlook-tililtä ${recipientPhrase(to)}?`)) return;
   btn.disabled=true; btn.textContent='Lähetetään…';
   try {
     const token=await microsoftAccessToken();
@@ -2416,7 +2482,7 @@ async function scheduleOutlookEmail(deferredIso) {
   const bodyEmpty=!bodyEl.textContent.trim() && !bodyEl.querySelector('img,a');
   if (!to||!subject||bodyEmpty) { showToast('Vastaanottaja, aihe ja viesti ovat pakollisia','error'); return; }
   if (!deferredIso || Date.parse(deferredIso)<=Date.now()) { showToast('Valitse tuleva ajankohta','error'); return; }
-  if (!confirm(`Ajastetaanko sähköposti lähtemään ${fmtDT(deferredIso)} osoitteeseen ${to}?`)) return;
+  if (!confirm(`Ajastetaanko sähköposti lähtemään ${fmtDT(deferredIso)} ${recipientPhrase(to)}?`)) return;
   const btn=document.getElementById('email-schedule-confirm-btn');
   if (btn) { btn.disabled=true; btn.textContent='Ajastetaan…'; }
   try {
@@ -7786,7 +7852,7 @@ function toggleQuickAdd(e) {
   m.style.display=m.style.display==='none'?'':'none';
 }
 function closeQuickAdd() { const m=document.getElementById('quick-add-menu'); if(m) m.style.display='none'; }
-document.addEventListener('click', ()=>{ closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); });
+document.addEventListener('click', ()=>{ closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeEmailToPicker(); });
 
 // ── Global Add Contact ────────────────────────────────────────────────────────
 function openGlobalContact() {
@@ -8186,10 +8252,13 @@ async function saveGlobalTask() {
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-group full" id="email-to-picker-wrap" style="display:none">
-          <label>Yhteyshenkilö</label>
-          <select class="form-control" id="email-to-contact" onchange="pickEmailToContact(this.value)"></select>
+          <label>Yhteyshenkilöt</label>
+          <div class="email-to-picker" style="position:relative">
+            <button type="button" class="btn btn-ghost btn-sm" id="email-to-picker-btn" onclick="toggleEmailToPicker(event)">Valitse yhteyshenkilöt ▾</button>
+            <div class="email-to-picker-panel hidden" id="email-to-picker-panel" onclick="event.stopPropagation()"></div>
+          </div>
         </div>
-        <div class="form-group full"><label>Vastaanottaja</label><input class="form-control" id="email-to" type="email"></div>
+        <div class="form-group full"><label>Vastaanottaja(t)</label><input class="form-control" id="email-to" type="email" multiple placeholder="osoite1@yritys.fi, osoite2@yritys.fi"></div>
         <div class="form-group full" id="email-template-wrap" style="display:none">
           <label>Malli</label>
           <select class="form-control" id="email-template-picker" onchange="applyEmailTemplate(this.value)"></select>
