@@ -1290,7 +1290,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-18.2';
+const BUILD_ID = '2026-09-18.3';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3292,6 +3292,21 @@ async function initVirtualKaupat() {
     // Toimipaikoille ei luoda omaa virtuaalikauppaa. Konsernin yhteinen
     // kauppa elää parent_tili_id:n osoittamalla emotilillä.
     if (p.parent_tili_id) return;
+    // KORJAUS (käyttäjän raportoima "en saa Talopakettivalmistajien
+    // kauppoja poistettua"): tämä ehto oli aiemmin VAIN sillä_crmRow-
+    // rivillä joka päättää liitetäänkö UUSI CRM-rivi Sheetsiin — itse
+    // acts.push(virtuaalikauppa) yllä suoritettiin AINA kun tililtä
+    // puuttui kauppa, MYÖS tileille joilla _crmRow jo oli olemassa
+    // (eli joilla ON JO ollut CRM-tila-rivi — esim. koska käyttäjä
+    // poisti aiemman kaupan tarkoituksella, jättäen aktiviteetit
+    // tyhjäksi). Poistettu kauppa "palasi" siis aina seuraavalla
+    // sivunlatauksella, koska tämä funktio ei osannut erottaa "tätä
+    // tiliä ei ole KOSKAAN käsitelty CRM:ssä" tapauksesta "tililtä on
+    // TARKOITUKSELLA poistettu sen ainoa kauppa". _crmRow:n olemassaolo
+    // ITSESSÄÄN on jo luotettava merkki jommastakummasta CRM-käsittelystä
+    // (joko tämän funktion aiempi ajo tai mikä tahansa muu tallennus) —
+    // jos se on jo olemassa, ei kosketa tiliä enää täältä lainkaan.
+    if (p._crmRow) return;
     const acts = parseActs(p);
     if (acts.some(a => a.tyyppi === 'kauppa')) return;
     let aihe, arvo;
@@ -3302,12 +3317,10 @@ async function initVirtualKaupat() {
       tekija:null, muistiinpanot:p.signaali||null, created_at:ts, due_date:null, done:false});
     p.aktiviteetit = JSON.stringify(acts);
     if (!p.vaihe) p.vaihe = 'Tietojenkeruu';
-    if (!p._crmRow) {
-      const ov = p.tili_override&&Object.keys(p.tili_override).length?JSON.stringify(p.tili_override):'';
-      newRows.push([p.spara_id, p.vaihe||'', p.omistaja||'', p.seuraava_toimenpide||'',
-        p.seuraava_pvm||'', p.muistiinpanot||'', p.aktiviteetit, ts,
-        p.crm_status||'Prospekti', ov, '', '']);
-    }
+    const ov = p.tili_override&&Object.keys(p.tili_override).length?JSON.stringify(p.tili_override):'';
+    newRows.push([p.spara_id, p.vaihe||'', p.omistaja||'', p.seuraava_toimenpide||'',
+      p.seuraava_pvm||'', p.muistiinpanot||'', p.aktiviteetit, ts,
+      p.crm_status||'Prospekti', ov, '', '']);
   });
   if (newRows.length) {
     try {
