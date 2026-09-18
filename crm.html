@@ -3289,6 +3289,9 @@ async function initVirtualKaupat() {
   const etjNimi=baseProjektiNimi('BASE_ETJ_PLUS');
   const taloNimet=new Set([baseProjektiNimi('BASE_TALO_FIN'),baseProjektiNimi('BASE_TALO_SWE')]);
   allProspects.forEach(p => {
+    // Toimipaikoille ei luoda omaa virtuaalikauppaa. Konsernin yhteinen
+    // kauppa elää parent_tili_id:n osoittamalla emotilillä.
+    if (p.parent_tili_id) return;
     const acts = parseActs(p);
     if (acts.some(a => a.tyyppi === 'kauppa')) return;
     let aihe, arvo;
@@ -3328,6 +3331,20 @@ function detectVaihe(tila, tulos) {
 }
 
 function blankCrm() { return { omistaja:null, seuraava_toimenpide:null, seuraava_pvm:null, muistiinpanot:null, aktiviteetit:'[]', crm_status:'Prospekti', tili_override:{}, _crmRow:null }; }
+
+// Konserni-/toimipaikkahierarkia tallennetaan CRM-tila.tili_override-JSONiin,
+// jotta Tilit-välilehden perusdataan ei tarvitse lisätä uusia sarakkeita.
+// parent_tili_id = konserni-/emotilin Spara ID. Toimipaikan kontaktit ja
+// paikalliset tehtävät pysyvät toimipaikalla, mutta kauppa kuuluu emotilille.
+function parentTili(p) {
+  if (!p?.parent_tili_id) return null;
+  return allProspects.find(x=>x.spara_id===p.parent_tili_id) || null;
+}
+function childTilit(p) {
+  if (!p?.spara_id) return [];
+  return allProspects.filter(x=>x.parent_tili_id===p.spara_id);
+}
+function dealTili(p) { return parentTili(p) || p; }
 
 function parseProspects(rows) {
   const out = [];
@@ -3446,6 +3463,8 @@ function applyCrmState(crmRows) {
     if (ov['yhteyshenkilö'] != null) p['yhteyshenkilö'] = ov['yhteyshenkilö'];
     if (ov.henk_sahkoposti != null) p.henk_sahkoposti = ov.henk_sahkoposti;
     if (ov.huomiot     != null) p.huomiot          = ov.huomiot;
+    if (ov.parent_tili_id != null) p.parent_tili_id = ov.parent_tili_id || null;
+    if (ov.tili_tyyppi    != null) p.tili_tyyppi    = ov.tili_tyyppi || null;
   });
 }
 
@@ -3491,9 +3510,19 @@ async function saveTiliData(p) {
 }
 
 function renderTiedotEdit(p) {
+  const parentOptions=allProspects
+    .filter(x=>x.spara_id!==p.spara_id && !x.parent_tili_id)
+    .sort((a,b)=>(a.yritys_nimi||'').localeCompare(b.yritys_nimi||'','fi'))
+    .map(x=>`<option value="${x.spara_id}"${x.spara_id===p.parent_tili_id?' selected':''}>${esc(x.yritys_nimi)}</option>`).join('');
   document.getElementById('mt-info-edit').innerHTML = `
     <div class="form-grid">
       <div class="form-group full"><label>Yrityksen nimi *</label><input class="form-control" id="me-name" value="${esc(p.yritys_nimi)}"></div>
+      <div class="form-group full"><label>Emotili / konserni</label><select class="form-control" id="me-parent-tili"><option value="">Ei emotiliä</option>${parentOptions}</select></div>
+      <div class="form-group"><label>Tilin tyyppi</label><select class="form-control" id="me-tilityyppi">
+        <option value=""${!p.tili_tyyppi?' selected':''}>Tavallinen tili</option>
+        <option value="konserni"${p.tili_tyyppi==='konserni'?' selected':''}>Konserni / emoyhtiö</option>
+        <option value="toimipaikka"${p.tili_tyyppi==='toimipaikka'?' selected':''}>Toimipaikka / alitili</option>
+      </select></div>
       <div class="form-group"><label>Y-tunnus</label><input class="form-control" id="me-ytunnus" value="${esc(p.y_tunnus||'')}"></div>
       <div class="form-group"><label>Toimiala</label><input class="form-control" id="me-toimiala" value="${esc(p.segmentti||'')}"></div>
       <div class="form-group"><label>Yhtiömuoto</label><input class="form-control" id="me-yhtiömuoto" value="${esc(p.juridinen_yhtio||'')}"></div>
@@ -3530,11 +3559,15 @@ async function saveMuokkaa() {
   p.henk_sahkoposti = document.getElementById('me-sahkoposti')?.value.trim() || '';
   p.huomiot         = document.getElementById('me-lisatiedot')?.value.trim() || '';
   p.omistaja        = document.getElementById('me-omistaja')?.value.trim() || null;
+  p.parent_tili_id  = document.getElementById('me-parent-tili')?.value || null;
+  p.tili_tyyppi     = document.getElementById('me-tilityyppi')?.value || (p.parent_tili_id?'toimipaikka':null);
   p.tili_override   = {
+    ...(p.tili_override||{}),
     yritys_nimi: p.yritys_nimi, y_tunnus: p.y_tunnus, segmentti: p.segmentti,
     juridinen_yhtio: p.juridinen_yhtio, osoite: p.osoite, postinumero: p.postinumero,
     kaupunki: p.kaupunki, www: p.www, 'yhteyshenkilö': p['yhteyshenkilö'],
-    henk_sahkoposti: p.henk_sahkoposti, huomiot: p.huomiot
+    henk_sahkoposti: p.henk_sahkoposti, huomiot: p.huomiot,
+    parent_tili_id:p.parent_tili_id||'', tili_tyyppi:p.tili_tyyppi||''
   };
   try {
     await saveCrmState(p);
@@ -3581,7 +3614,8 @@ function applyFilters() {
   const prio=document.getElementById('f-prioriteetti').value;
   const seg=document.getElementById('f-segmentti').value;
   filteredRows = allProspects.filter(p => {
-    if (haku && !['yritys_nimi','kaupunki','yhteyshenkilö','signaali','osoite','segmentti'].some(k=>(p[k]||'').toLowerCase().includes(haku))) return false;
+    const hierarchyHay=[parentTili(p)?.yritys_nimi,...childTilit(p).map(x=>x.yritys_nimi)].filter(Boolean).join(' ').toLowerCase();
+    if (haku && !['yritys_nimi','kaupunki','yhteyshenkilö','signaali','osoite','segmentti'].some(k=>(p[k]||'').toLowerCase().includes(haku)) && !hierarchyHay.includes(haku)) return false;
     if (komp  && p.kampanja!==komp) return false;
     if (prio  && p.prioriteetti!==prio) return false;
     if (seg   && p.segmentti!==seg) return false;
@@ -3607,10 +3641,14 @@ document.querySelectorAll('#tbl-lista th[data-col]').forEach(th => {
 });
 
 function tableRowHtml(p) {
+  const parent=parentTili(p), children=childTilit(p);
+  const hmeta=parent
+    ? `<div style="color:var(--text2);font-size:10px;margin-top:2px">↳ ${esc(parent.yritys_nimi)}</div>`
+    : children.length ? `<div style="color:var(--text2);font-size:10px;margin-top:2px">🏢 ${children.length} toimipaikkaa</div>` : '';
   return `
     <tr onclick="openModal('${p.spara_id}')">
       <td class="${arvosanaClass(calcArvosana(p))}">${calcArvosana(p)??'–'}</td>
-      <td title="${esc(p.yritys_nimi)}"><strong>${esc(p.yritys_nimi)}</strong></td>
+      <td title="${esc(p.yritys_nimi)}"><strong>${esc(p.yritys_nimi)}</strong>${hmeta}</td>
       <td style="color:var(--text2)">${esc(p.segmentti)}</td>
       <td>${esc(p.kaupunki)}</td>
       <td style="color:var(--text2)">${esc(p['yhteyshenkilö'])}</td>
@@ -3624,10 +3662,14 @@ function tableRowHtml(p) {
 // toissijaisen tekstin inline-väri (ei luokka, joten CSS ei riitä) on
 // vaihdettu --text2:sta --spara-ink-faintiin.
 function tableRowSparaHtml(p) {
+  const parent=parentTili(p), children=childTilit(p);
+  const hmeta=parent
+    ? `<div style="color:var(--spara-ink-faint);font-size:10px;margin-top:2px">↳ ${esc(parent.yritys_nimi)}</div>`
+    : children.length ? `<div style="color:var(--spara-ink-faint);font-size:10px;margin-top:2px">🏢 ${children.length} toimipaikkaa</div>` : '';
   return `
     <tr onclick="openModal('${p.spara_id}')">
       <td class="${arvosanaClass(calcArvosana(p))}">${calcArvosana(p)??'–'}</td>
-      <td title="${esc(p.yritys_nimi)}"><strong>${esc(p.yritys_nimi)}</strong></td>
+      <td title="${esc(p.yritys_nimi)}"><strong>${esc(p.yritys_nimi)}</strong>${hmeta}</td>
       <td style="color:var(--spara-ink-faint)">${esc(p.segmentti)}</td>
       <td>${esc(p.kaupunki)}</td>
       <td style="color:var(--spara-ink-faint)">${esc(p['yhteyshenkilö'])}</td>
@@ -4050,6 +4092,7 @@ document.querySelectorAll('.mtab').forEach(t=>t.addEventListener('click',()=>{
 function openModal(sid) {
   currentId=sid;
   const p=allProspects.find(x=>x.spara_id===sid); if (!p) return;
+  const parent=parentTili(p), children=childTilit(p);
   document.getElementById('modal-title').textContent=p.yritys_nimi;
   const f=(label,val,full)=>{ if (val==null||val==='') return ''; return `<div class="info-block${full?' full':''}"><div class="info-label">${label}</div><div class="info-value">${val}</div></div>`; };
   const lnk=u=>u?`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`:null;
@@ -4069,6 +4112,9 @@ function openModal(sid) {
     ${f('Prioriteetti',p.prioriteetti?`<span class="badge p-${p.prioriteetti}">${p.prioriteetti}</span>`:null)}
     ${f('Arvosana',calcArvosana(p)?`<span class="${arvosanaClass(calcArvosana(p))}">${calcArvosana(p)}</span>`:null)}
     ${f('Yrityksen nimi',`<strong>${esc(p.yritys_nimi)}</strong>`,true)}
+    ${f('Tilityyppi',p.tili_tyyppi==='konserni'?'Konserni / emoyhtiö':p.tili_tyyppi==='toimipaikka'?'Toimipaikka / alitili':null)}
+    ${parent?f('Emotili / konserni',`<button class="btn btn-ghost btn-sm" onclick="openModal('${parent.spara_id}')">🏢 ${esc(parent.yritys_nimi)}</button> <span style="color:var(--text2);font-size:11px">Kauppa kirjataan tälle tilille</span>`,true):''}
+    ${children.length?f('Toimipaikat',children.map(ch=>`<button class="btn btn-ghost btn-sm" style="margin:2px 4px 2px 0" onclick="openModal('${ch.spara_id}')">${esc(ch.yritys_nimi)}</button>`).join(''),true):''}
     ${f('Konserni / juridinen',p.juridinen_yhtio,true)}
     ${f('Segmentti',p.segmentti)} ${f('Kaupunki',p.kaupunki)} ${f('Osoite',p.osoite)} ${f('Y-tunnus',p.y_tunnus)}
     ${f('Liikevaihto',p.liikevaihto_meur?p.liikevaihto_meur+' M€':null)} ${f('Kulutusarvio MWh/v',p.kulutusarvio_mwh)}
@@ -4347,8 +4393,12 @@ async function updateTaskEdit(taskId, overrides) {
 // overrides, ks. updateTaskEdit(). Palauttaa uuden tehtävän id:n onnistuessa.
 async function addTask(overrides) {
   if (!currentId) return null;
-  const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return null;
+  const sourceP=allProspects.find(x=>x.spara_id===currentId); if(!sourceP) return null;
   const tyyppi=overrides?.tyyppi ?? (document.getElementById('task-type')?.value||'kauppa');
+  // Jos käyttäjä luo kaupan hotellin/toimipaikan näkymästä, kauppa
+  // sidotaan automaattisesti konsernin emotilille. Muut tehtävät jäävät
+  // toimipaikalle, jotta paikallinen tekeminen ja kontaktihistoria säilyvät.
+  const p=(tyyppi==='kauppa' && sourceP.parent_tili_id) ? dealTili(sourceP) : sourceP;
   const tila=overrides?.tila ?? (document.getElementById('task-tila')?.value||'');
   const aihe=overrides?.aihe ?? (document.getElementById('task-aihe')?.value||'').trim();
   const due_date=overrides?.due_date ?? (document.getElementById('task-due')?.value||'');
@@ -4366,13 +4416,21 @@ async function addTask(overrides) {
   p.aktiviteetit=JSON.stringify(acts);
   if(tyyppi==='kauppa'&&tila){const prev=p.vaihe;const normTila=normalizeKauppaVaihe(tila);p.vaihe=normTila;if(prev!==normTila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${normTila}`,tekija);}
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
-  document.getElementById('e-toimenpide').value=p.seuraava_toimenpide||'';
-  document.getElementById('e-pvm').value=p.seuraava_pvm||'';
+  if (p===sourceP) {
+    document.getElementById('e-toimenpide').value=p.seuraava_toimenpide||'';
+    document.getElementById('e-pvm').value=p.seuraava_pvm||'';
+  }
   try {
     await saveCrmState(p);
     closeTaskForm();
-    renderTaskList(p); renderActivities(p); updateSummary(); applyFilters();
-    showToast('Tehtävä lisätty ✓','success');
+    if (p!==sourceP) {
+      openModal(p.spara_id);
+      updateSummary(); applyFilters();
+      showToast('Kauppa lisätty konsernitilille: '+p.yritys_nimi+' ✓','success');
+    } else {
+      renderTaskList(p); renderActivities(p); updateSummary(); applyFilters();
+      showToast('Tehtävä lisätty ✓','success');
+    }
     return id;
   } catch(e) { showToast('Virhe: '+e.message,'error'); return null; }
 }
