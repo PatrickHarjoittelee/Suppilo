@@ -1149,7 +1149,7 @@
               <input type="checkbox" id="pm-want-signal" checked> b. Signaali ja perustelu
             </label>
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
-              <input type="checkbox" id="pm-want-deal"> c. Kauppa Kontaktoi-vaiheeseen
+              <input type="checkbox" id="pm-want-deal"> c. Kauppa Tietojenkeruu-vaiheeseen
             </label>
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
               <input type="checkbox" id="pm-want-draft"> d. Avaussähköposti luonnoksena (ei lähetetä automaattisesti)
@@ -1201,7 +1201,7 @@
               <input type="checkbox" id="cgpt-want-signal" checked> b. Signaali ja perustelu
             </label>
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
-              <input type="checkbox" id="cgpt-want-deal"> c. Kauppa Kontaktoi-vaiheeseen
+              <input type="checkbox" id="cgpt-want-deal"> c. Kauppa Tietojenkeruu-vaiheeseen
             </label>
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
               <input type="checkbox" id="cgpt-want-draft"> d. Avaussähköposti luonnoksena (ei lähetetä automaattisesti)
@@ -1269,7 +1269,7 @@
             </div>
             <div style="font-size:11px;color:var(--text2);margin-top:6px">
               Uudet tilit todennetaan PRH:sta ennen luontia (sama turvakerros kuin
-              Älykäs Prospektoinnissa) ja luodaan suoraan Kontaktoi-vaiheeseen.
+              Älykäs Prospektoinnissa) ja luodaan suoraan Tietojenkeruu-vaiheeseen.
             </div>
           </div>
         </div>
@@ -1290,7 +1290,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-18.1';
+const BUILD_ID = '2026-09-18.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3298,10 +3298,10 @@ async function initVirtualKaupat() {
     if (p.kampanja === etjNimi) { aihe=etjNimi; arvo=299; }
     else if (taloNimet.has(p.kampanja)) { aihe=p.kampanja; arvo=7000; }
     else return;
-    acts.push({id:'TKv_'+p.spara_id, tyyppi:'kauppa', tila:'Kontaktoi', aihe, arvo,
+    acts.push({id:'TKv_'+p.spara_id, tyyppi:'kauppa', tila:'Tietojenkeruu', aihe, arvo,
       tekija:null, muistiinpanot:p.signaali||null, created_at:ts, due_date:null, done:false});
     p.aktiviteetit = JSON.stringify(acts);
-    if (!p.vaihe) p.vaihe = 'Kontaktoi';
+    if (!p.vaihe) p.vaihe = 'Tietojenkeruu';
     if (!p._crmRow) {
       const ov = p.tili_override&&Object.keys(p.tili_override).length?JSON.stringify(p.tili_override):'';
       newRows.push([p.spara_id, p.vaihe||'', p.omistaja||'', p.seuraava_toimenpide||'',
@@ -3785,19 +3785,30 @@ function renderYhTable() {
 function changeYhPage(d) { yhPage+=d; renderYhTable(); }
 
 // ── Kanban ─────────────────────────────────────────────────────────────────────
-const VAIHEET=['Kontaktoi','Selvitä tarve','Sovi tapaaminen','Tarjous työn alla','Sopimus syntynyt','Ei juuri nyt'];
-const VAIHE_LEGACY={'Liidi':'Kontaktoi','Mahdollisuus':'Selvitä tarve','Tapaaminen':'Sovi tapaaminen','Tarjous':'Tarjous työn alla','Päätös odottaa':'Tarjous työn alla','Sopimus':'Sopimus syntynyt','Voitettu':'Sopimus syntynyt','Hävitty':'Ei juuri nyt'};
-const V_COLORS={'Kontaktoi':'var(--blue)','Selvitä tarve':'var(--orange)','Sovi tapaaminen':'var(--purple)','Tarjous työn alla':'var(--yellow)','Sopimus syntynyt':'var(--green)','Ei juuri nyt':'var(--red)'};
+// Uudelleennimetty 2026-09-18: Kontaktoi->Tietojenkeruu, Selvitä tarve->Kontaktoi
+// (kaksi ensimmäistä vaihetta vaihtoivat nimeä, ei paikkaa putkessa).
+const VAIHEET=['Tietojenkeruu','Kontaktoi','Sovi tapaaminen','Tarjous työn alla','Sopimus syntynyt','Ei juuri nyt'];
+// VAIHE_LEGACY normalisoi VANHAT tallennetut arvot LUVUN yhteydessä — ei
+// koskaan kirjoiteta takaisin Sheetsiin, joten historialliset rivit voivat
+// yhä sisältää minkä tahansa aiemman kaavan arvon. Jokainen avain osoittaa
+// aina SUORAAN nykyiseen nimeen (ei ketjutettuja välivaiheita) — siksi
+// 'Liidi'/'Mahdollisuus' osoittavat nyt 'Tietojenkeruu'/'Kontaktoi':iin,
+// eivät enää välissä olleisiin 'Kontaktoi'/'Selvitä tarve' -nimiin, jotka
+// itsekin nyt tarkoittavat eri asiaa. normalizeKauppaVaihe tekee vain YHDEN
+// haun, ei ketjua — jos joskus nimetään uudelleen taas, päivitä KAIKKI
+// tätä samaa nykyistä nimeä osoittavat avaimet suoraan uuteen nimeen.
+const VAIHE_LEGACY={'Liidi':'Tietojenkeruu','Mahdollisuus':'Kontaktoi','Tapaaminen':'Sovi tapaaminen','Tarjous':'Tarjous työn alla','Päätös odottaa':'Tarjous työn alla','Sopimus':'Sopimus syntynyt','Voitettu':'Sopimus syntynyt','Hävitty':'Ei juuri nyt','Kontaktoi':'Tietojenkeruu','Selvitä tarve':'Kontaktoi'};
+const V_COLORS={'Tietojenkeruu':'var(--blue)','Kontaktoi':'var(--orange)','Sovi tapaaminen':'var(--purple)','Tarjous työn alla':'var(--yellow)','Sopimus syntynyt':'var(--green)','Ei juuri nyt':'var(--red)'};
 // Spara-teemalla EI ole omaa väripalettia vaiheittain (V_COLORS_SPARA
 // poistettu tässä korjauksessa) — pylväiden/suppilon värit eivät enää
 // vaihtele vaiheittain, vain "Ei juuri nyt" erottuu muista (harmaana).
 // Katso Kanban-CSS-lohkon ja projectDistributionHtml():n kommentit.
-const VAIHE_TN={'Kontaktoi':.05,'Selvitä tarve':.20,'Sovi tapaaminen':.40,'Tarjous työn alla':.60,'Sopimus syntynyt':1,'Ei juuri nyt':0};
+const VAIHE_TN={'Tietojenkeruu':.05,'Kontaktoi':.20,'Sovi tapaaminen':.40,'Tarjous työn alla':.60,'Sopimus syntynyt':1,'Ei juuri nyt':0};
 // Vaiheet joissa kauppa on vielä auki (ei voitettu eikä hävitty) — sama
 // määritelmä jota "Avoimena myyntiputkessa"-KPI (renderDashboard) ja
 // seuraavien toimenpiteiden priorisointi (computeTopTasks) molemmat käyttävät.
-const VAIHE_AVOIN=['Kontaktoi','Selvitä tarve','Sovi tapaaminen','Tarjous työn alla'];
-function normalizeKauppaVaihe(v) { return VAIHE_LEGACY[v] || v || 'Kontaktoi'; }
+const VAIHE_AVOIN=['Tietojenkeruu','Kontaktoi','Sovi tapaaminen','Tarjous työn alla'];
+function normalizeKauppaVaihe(v) { return VAIHE_LEGACY[v] || v || 'Tietojenkeruu'; }
 const fmtEur=n=>Math.round(n).toLocaleString('fi-FI')+' €';
 function kauppaStats(){
   const st={}; VAIHEET.forEach(v=>st[v]={n:0,sum:0});
@@ -5054,7 +5065,7 @@ function pipelineBoxesHtml(st) {
   }).join('');
 }
 // Oikea suppilovisualisointi laatikoiden sijaan — palkin pituus kertoo
-// vaiheen koon suhteessa suurimpaan vaiheeseen (yleensä Kontaktoi),
+// vaiheen koon suhteessa suurimpaan vaiheeseen (yleensä Tietojenkeruu),
 // jolloin putken kapeneminen näkyy visuaalisesti eikä vain numeroina.
 function pipelineFunnelHtml(st) {
   const maxN=Math.max(1,...VAIHEET.map(v=>st[v].n));
@@ -5653,9 +5664,9 @@ async function createProspectAccountsBatch(candidates, opts) {
     const acts=[];
     if (opts.wantDeal) {
       acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
-        tyyppi:'kauppa',tila:'Kontaktoi',aihe:opts.kampanja,arvo:0,tekija:null,
+        tyyppi:'kauppa',tila:'Tietojenkeruu',aihe:opts.kampanja,arvo:0,tekija:null,
         muistiinpanot:signaali||null,created_at:ts,due_date:null,done:false});
-      p.vaihe='Kontaktoi';
+      p.vaihe='Tietojenkeruu';
     }
     if (opts.wantDraft) {
       const opener=(c.openingParagraph||'').trim();
@@ -6554,7 +6565,7 @@ async function runSignalMonitoringBatch() {
 // EI KOSKAAN ohiteta, vain kutsupolku on eri (signaaliseurannan modaali
 // prospektointimodaalin sijaan). wantDeal:true on OLETUKSENA päällä,
 // toisin kuin yleisessä prospektointimodaalissa, koska tämän haaran koko
-// tarkoitus on pudottaa uudet tilit suoraan Kontaktoi-vaiheeseen.
+// tarkoitus on pudottaa uudet tilit suoraan Tietojenkeruu-vaiheeseen.
 // createdAccounts/rejectedLeads/batchErrors täytetään viittauksen kautta
 // (kutsujan omat taulukot) — ei paluuarvoa. Peruutus/edistyminen jaetaan
 // vaihe 1:n kanssa (signalMonitoringCancelled, renderSignalMonitoringProgress)
@@ -6965,11 +6976,17 @@ async function saveNewTili() {
       vaihe:null, _isTili:true, _rowIndex:rowIndex,
       ...blankCrm()
     };
+    // 'Liidi' oli vanhentunut jo ENNEN 2026-09-18-nimeämistä — tämä
+    // luontipolku (Lisää tili -lomake) ei ollut koskaan päivitetty
+    // 'Kontaktoi'/'Selvitä tarve'-kaavaan asti, vain VAIHE_LEGACY:n
+    // normalisointi luvun yhteydessä on piilottanut tämän. Korjattu
+    // nyt samalla kertaa muiden kahden luontipolun (initVirtualKaupat,
+    // createProspectAccountsBatch) kanssa yhtenäiseksi.
     const kauppa = {id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
-      tyyppi:'kauppa',tila:'Liidi',aihe:kampanja,arvo:0,tekija:null,muistiinpanot:p.signaali||null,
+      tyyppi:'kauppa',tila:'Tietojenkeruu',aihe:kampanja,arvo:0,tekija:null,muistiinpanot:p.signaali||null,
       created_at:new Date().toISOString(),due_date:null,done:false};
     p.aktiviteetit=JSON.stringify([kauppa]);
-    p.vaihe='Liidi';
+    p.vaihe='Tietojenkeruu';
     allProspects.push(p);
     await saveCrmState(p);
     closeAddTili();
