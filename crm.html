@@ -1290,7 +1290,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-18.3';
+const BUILD_ID = '2026-09-18.4';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3261,15 +3261,17 @@ async function loadData() {
       if (pj.nimi===pj.defaultNimi) return;
       allProspects.filter(p=>p.kampanja===pj.defaultNimi).forEach(p=>p.kampanja=pj.nimi);
     });
-    const etjNimi=baseProjektiNimi('BASE_ETJ_PLUS');
     const taloNimet=new Set([baseProjektiNimi('BASE_TALO_FIN'),baseProjektiNimi('BASE_TALO_SWE')]);
-    allProspects.filter(p=>p.spara_id?.startsWith('ID')).forEach(p=>{
-      if (p.kampanja===etjNimi) {
-        delete p._isTili;
-      } else if (taloNimet.has(p.kampanja)) {
-        delete p._isTili;
-        p.sija=parseInt(p.prioriteetti||'0')||null;
-      }
+    // delete p._isTili poistettu täältä 2026-09-18: käyttäjä vahvisti että
+    // ETJ+/Talopakettivalmistajat-kampanjoiden alla on nykyään pelkkiä
+    // oikeita yksittäisiä yritystilejä, ei enää yhtä suojattavaa
+    // pohjariviä — poisto/muokkaus sallitaan siis näille tileille nyt
+    // samalla tavalla kuin muillekin (ks. parseProspects():n vastaava
+    // korjaus). p.sija:n uudelleenlaskenta prioriteetti-kentästä säilyy
+    // ennallaan Talopaketti-tileille — eri huoli (näyttöjärjestys), ei
+    // liity poisto-oikeuteen.
+    allProspects.filter(p=>p.spara_id?.startsWith('ID') && taloNimet.has(p.kampanja)).forEach(p=>{
+      p.sija=parseInt(p.prioriteetti||'0')||null;
     });
     const tplRows = await sheetGet(`${TEMPLATES_TAB}!A:E`);
     // Sama map-ennen-filter-korjaus kuin allContacts:ssa (ks. kommentti
@@ -3376,12 +3378,17 @@ function parseProspects(rows) {
         tulos_seuraava_toimi:tulos, lahde:cv(c,21), 'yhteyshenkilö':cv(c,22), titteli:cv(c,23),
         suora_numero:cv(c,24), henk_sahkoposti:cv(c,25), linkedin:cv(c,26), created_at:cv(c,27),
         vaihe:detectVaihe(tila,tulos), _rowIndex:idx+1, ...blankCrm() };
+      // _isTili sallittiin aiemmin vain muille kuin ETJ+/Talopakettivalmistajat-
+      // tileille — käyttäjä vahvisti 2026-09-18 että näiden kampanjoiden
+      // alla on nykyään pelkkiä oikeita yksittäisiä yritystilejä, ei enää
+      // yhtä suojattavaa pohjariviä, joten poisto/muokkaus sallitaan nyt
+      // kaikille (ks. confirmDeleteTili/saveTiliProjekti). p.sija/
+      // liikevaihto_meur-erikoiskäsittely Talopaketti-tileille säilyy
+      // ennallaan — eri huoli (näyttöjärjestys), ei liity poisto-oikeuteen.
+      p._isTili = true;
       if (kampanja.startsWith('Talopakett')) {
         p.sija = parseInt(cv(c,2)||'0') || null;
         p.liikevaihto_meur = cn(c,9);
-      } else if (kampanja !== 'ETJ+') {
-        p._isTili = true;
-        p._rowIndex = idx + 1;
       }
       out.push(p);
     } else if (/^T\d+$/.test(c0)) {
