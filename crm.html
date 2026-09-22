@@ -1197,25 +1197,25 @@
     <div class="modal-body">
       <div id="chatgpt-import-form">
         <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.5">
-          Liitä ChatGPT:n tuottama JSON tähän. Jokainen ehdotus todennetaan
-          PRH:n avoimesta yritysrekisteristä ennen tiliä — ehdotukset joita
-          ei löydy rekisteristä hylätään eikä niistä koskaan luoda tiliä.
-          Yksi kandidaatti avaa Lisää tili -lomakkeen esitäytettynä
-          tarkistettavaksi; useampi käsitellään erässä samaan tapaan kuin
-          Älykäs Prospektointi.
+          Liitä ChatGPT:n tuottama varmennettu prospekti-JSON tähän. Jokainen yritys
+          todennetaan edelleen PRH:n avoimesta yritysrekisteristä ennen tiliä.
+          JSON voi sisältää myös kohteen/brändin, segmentin, varmennetun domainin,
+          ajantasaiseksi tarkistetun yhteyshenkilön sekä henkilökohtaisen sähköpostin
+          lähde- ja varmennustietoineen. Vain <strong>contact_status=verified</strong> ja
+          <strong>email_status=verified</strong> -osoite tallennetaan lähetettäväksi sähköpostiksi.
         </div>
         <div class="form-grid">
           <div class="form-group full"><label>Projekti</label><select class="form-control" id="cgpt-projekti"></select></div>
         </div>
         <div class="form-group full" style="margin-top:10px">
           <label>ChatGPT:n JSON-vastaus</label>
-          <textarea class="form-control" id="cgpt-paste" rows="8" placeholder='{"candidates":[{"name":"...","city":"","signaali":"","perustelu":""}]}'></textarea>
+          <textarea class="form-control" id="cgpt-paste" rows="10" placeholder='{"candidates":[{"name":"Virallinen yhtiö Oy","site_name":"Kohteen nimi","city":"Nokia","y_tunnus":"","segment":"Kylpylät","domain":"yritys.fi","domain_status":"verified","contact_name":"Etunimi Sukunimi","contact_title":"Hotellinjohtaja","contact_email":"etunimi.sukunimi@yritys.fi","contact_status":"verified","email_status":"verified","confidence":"high","verified_at":"2026-09-22","company_sources":[],"contact_sources":[],"email_sources":[]}]}'></textarea>
         </div>
         <div style="margin-top:14px">
           <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:8px">Luodaanko tilille myös (koskee vain useamman kandidaatin erää):</label>
           <div style="display:flex;flex-direction:column;gap:8px">
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
-              <input type="checkbox" id="cgpt-want-contact"> a. Yhteyshenkilö <span style="color:var(--text2);font-size:11px">(sähköposti/puhelin jäävät aina tyhjäksi, tarkista ennen yhteydenottoa)</span>
+              <input type="checkbox" id="cgpt-want-contact" checked> a. Yhteyshenkilö <span style="color:var(--text2);font-size:11px">(vain varmennettu henkilökohtainen sähköposti tuodaan; epävarma jää tyhjäksi)</span>
             </label>
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
               <input type="checkbox" id="cgpt-want-signal" checked> b. Signaali ja perustelu
@@ -1310,7 +1310,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-22.2';
+const BUILD_ID = '2026-09-22.3';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1378,6 +1378,8 @@ const MAIN_TAB  = 'Tilit';
 const TILIT_COLS = ['id','name','y_tunnus','toimiala','yhtiömuoto','osoite','postinumero','kaupunki','yhteyshenkilö','sahkoposti','rekisteroity','lisatiedot','created_at','www'];
 const YH_TAB  = 'Yhteyshenkilöt';
 const YH_COLS = ['id','tili_id','nimi','titteli','puhelin','sahkoposti','linkedin','created_at'];
+const YH_VERIFY_TAB = 'Yhteyshenkilövarmennus';
+const YH_VERIFY_COLS = ['contact_id','domain','domain_status','email_status','contact_status','company_sources','contact_sources','email_sources','verified_at','confidence'];
 const USERS_TAB = 'Käyttäjät';
 const USERS_COLS = ['email','nimi','puhelin','sahkoposti','updated_at','allekirjoitus','profiilikuva'];
 const TEMPLATES_TAB = 'Sähköpostimallit';
@@ -2100,6 +2102,9 @@ function isDirectContactEmail(c) {
   const email=(c?.sahkoposti||'').trim().toLowerCase();
   const name=(c?.nimi||'').trim();
   if (!name || name.startsWith('#') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return false;
+  // Massalähetys hyväksyy vain erikseen varmennetut prospektointikontaktit.
+  // Pelkkä "etunimi.sukunimi@"-näköinen osoite ei enää riitä.
+  if (c.email_status!=='verified' || c.contact_status!=='verified') return false;
   const local=email.split('@')[0];
   return !BULK_GENERIC_LOCALPARTS.has(local);
 }
@@ -2156,7 +2161,7 @@ function updateBulkEmailPreview() {
     <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px">
       <div style="font-size:13px;font-weight:700;margin-bottom:6px">Lähetykseen valittu ${x.selected.length} / ${x.eligible.length} kelvollista vastaanottajaa</div>
       <div style="font-size:11px;color:var(--text2);line-height:1.55">
-        Segmentissä ${x.accounts.length} tiliä · ilman suoraa henkilökohtaista osoitetta ${x.accountsWithoutDirect} tiliä
+        Segmentissä ${x.accounts.length} tiliä · ilman varmennettua henkilökohtaista osoitetta ${x.accountsWithoutDirect} tiliä
         · sama kampanja jo lähetetty ${x.alreadySent} vastaanottajalle${x.duplicateEmails?' · päällekkäisiä osoitteita ohitettu '+x.duplicateEmails:''}.
       </div>
       <div style="font-size:11px;margin-top:5px">Malli: <strong>${template?esc(template.nimi):'ei valittu'}</strong></div>
@@ -3422,6 +3427,7 @@ async function loadData() {
     const tabNames = sheets.map(s => s.properties.title);
     if (!tabNames.includes(CRM_TAB)) await addSheet(CRM_TAB, CRM_COLS);
     if (!tabNames.includes(YH_TAB))  await addSheet(YH_TAB,  YH_COLS);
+    if (!tabNames.includes(YH_VERIFY_TAB)) await addSheet(YH_VERIFY_TAB, YH_VERIFY_COLS);
     if (!tabNames.includes(USERS_TAB)) await addSheet(USERS_TAB, USERS_COLS);
     if (!tabNames.includes(PROJEKTIT_TAB)) await addSheet(PROJEKTIT_TAB, PROJEKTIT_COLS);
     if (!tabNames.includes(TEMPLATES_TAB)) await addSheet(TEMPLATES_TAB, TEMPLATES_COLS);
@@ -3528,6 +3534,16 @@ async function loadData() {
         ...Object.fromEntries(YH_COLS.map((k,j)=>[k,r[j]||''])), _rowIndex:i+2
       })).filter(c=>c.id);
     }
+    const yhVerifyRows = await sheetGet(`${YH_VERIFY_TAB}!A:J`);
+    const yhVerifyMap = new Map(
+      yhVerifyRows.slice(1).filter(r=>r[0]).map(r=>[r[0],{
+        domain:r[1]||'', domain_status:r[2]||'', email_status:r[3]||'', contact_status:r[4]||'',
+        company_sources:r[5]||'', contact_sources:r[6]||'', email_sources:r[7]||'',
+        verified_at:r[8]||'', confidence:r[9]||''
+      }])
+    );
+    allContacts.forEach(c=>Object.assign(c,yhVerifyMap.get(c.id)||{}));
+
     const usersRows = await sheetGet(`${USERS_TAB}!A:G`);
     if ((usersRows[0]?.[6]||'') !== 'profiilikuva') {
       await sheetPut(`${USERS_TAB}!G1`, [['profiilikuva']]);
@@ -5678,6 +5694,11 @@ function openYhModal(cid) {
     ${f('Puhelin',tel(c.puhelin,c.nimi))}
     ${f('Sähköposti',mail(c.sahkoposti))}
     ${f('LinkedIn',c.linkedin?`<a href="${esc(c.linkedin)}" target="_blank" rel="noopener">${esc(c.linkedin)}</a>`:null)}
+    ${f('Kontakti varmennettu',c.contact_status==='verified'?'Kyllä':(c.contact_status||null))}
+    ${f('Sähköposti varmennettu',c.email_status==='verified'?'Kyllä':(c.email_status||null))}
+    ${f('Domain',c.domain||null)}
+    ${f('Varmennettu',c.verified_at||null)}
+    ${f('Luottamus',c.confidence||null)}
   </div>`;
 
   html+=`<div class="cs-title" style="margin-top:16px">Tili</div>`;
@@ -5926,7 +5947,7 @@ function closeSignalMonitoringMaybe(e) { if (e.target===document.getElementById(
 // {tf_name, tf_ytunnus, tf_toimiala, tf_yhtiömuoto, tf_osoite,
 //  tf_postinumero, tf_kaupunki, tf_rekisteroity, tf_www,
 //  signaali, perustelu, openingParagraph,
-//  contactSuggestion:{nimi,titteli}|null}
+//  contactSuggestion:{nimi,titteli,email,puhelin,linkedin,contactStatus,emailStatus,domain,domainStatus,...}|null}
 // opts: {kampanja, wantContact, wantSignal, wantDeal, wantDraft}
 // Palauttaa luotujen tilien spara_id-listan.
 async function createProspectAccountsBatch(candidates, opts) {
@@ -5946,7 +5967,7 @@ async function createProspectAccountsBatch(candidates, opts) {
   let yhRowIndex = null;
   if (opts.wantContact) yhRowIndex = (await sheetGet(`${YH_TAB}!A:A`)).length+1;
 
-  const newProspects=[], tiliRows=[], crmRows=[], contactRows=[], newContacts=[];
+  const newProspects=[], tiliRows=[], crmRows=[], contactRows=[], newContacts=[], verifyRows=[];
 
   for (const c of candidates) {
     maxId += 1;
@@ -5961,22 +5982,32 @@ async function createProspectAccountsBatch(candidates, opts) {
     if (opts.wantContact && c.contactSuggestion && c.contactSuggestion.nimi) {
       contactId='YH'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
       contactName=c.contactSuggestion.nimi;
-      // Turvallisuussääntö: AI:n ehdottamaa sähköpostia/puhelinta EI
-      // KOSKAAN kirjoiteta kontaktiin. openEmailComposer() valitsee
-      // automaattisesti AINOAN sähköpostillisen kontaktin vastaanottajaksi
-      // ilman vahvistusta (rivi ~1029) — vahvistamaton AI-arvaus siellä
-      // tarkoittaisi että joku lähettäisi hiljaa väärään osoitteeseen.
-      contactRows.push([contactId, id, contactName,
-        'AI-ehdotus, ei vahvistettu'+(c.contactSuggestion.titteli?' — '+c.contactSuggestion.titteli:''),
-        '', '', '', ts]);
-      newContacts.push({id:contactId, tili_id:id, nimi:contactName,
-        titteli:contactRows[contactRows.length-1][3], puhelin:'', sahkoposti:'', linkedin:'', created_at:ts,
-        _rowIndex:yhRowIndex+contactRows.length-1});
+      const cs=c.contactSuggestion;
+      const verifiedPerson=cs.contactStatus==='verified';
+      const verifiedEmail=verifiedPerson && cs.emailStatus==='verified' &&
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cs.email||'');
+      const safeEmail=verifiedEmail?(cs.email||'').trim().toLowerCase():'';
+      const safePhone=verifiedPerson?(cs.puhelin||''):'';
+      const safeLinkedin=verifiedPerson?(cs.linkedin||''):'';
+      contactRows.push([contactId, id, contactName, cs.titteli||'', safePhone, safeEmail, safeLinkedin, ts]);
+      const vrow=[
+        contactId, cs.domain||'', cs.domainStatus||'', cs.emailStatus||'', cs.contactStatus||'',
+        JSON.stringify(cs.companySources||[]), JSON.stringify(cs.contactSources||[]), JSON.stringify(cs.emailSources||[]),
+        cs.verifiedAt||'', cs.confidence||''
+      ];
+      verifyRows.push(vrow);
+      newContacts.push({
+        id:contactId, tili_id:id, nimi:contactName, titteli:cs.titteli||'', puhelin:safePhone,
+        sahkoposti:safeEmail, linkedin:safeLinkedin, created_at:ts,
+        domain:vrow[1], domain_status:vrow[2], email_status:vrow[3], contact_status:vrow[4],
+        company_sources:vrow[5], contact_sources:vrow[6], email_sources:vrow[7],
+        verified_at:vrow[8], confidence:vrow[9], _rowIndex:yhRowIndex+contactRows.length-1
+      });
     }
 
     tiliRows.push([
       id, opts.kampanja, '',
-      c.tf_toimiala||'', c.tf_name, c.tf_yhtiömuoto||'',
+      c.segmentti||c.tf_toimiala||'', c.tf_name, c.tf_yhtiömuoto||'',
       c.tf_osoite||'', kaupunkiVal, c.tf_ytunnus||'',
       '', '', '',
       '', '', c.tf_www||'',
@@ -5988,7 +6019,7 @@ async function createProspectAccountsBatch(candidates, opts) {
 
     const p = {
       spara_id:id, kampanja:opts.kampanja, prioriteetti:null,
-      segmentti:c.tf_toimiala||'', yritys_nimi:c.tf_name, juridinen_yhtio:c.tf_yhtiömuoto||'',
+      segmentti:c.segmentti||c.tf_toimiala||'', yritys_nimi:c.tf_name, juridinen_yhtio:c.tf_yhtiömuoto||'',
       osoite:c.tf_osoite||'', kaupunki:kaupunkiVal, y_tunnus:c.tf_ytunnus||'',
       liikevaihto_meur:null, kulutusarvio_mwh:null, pisteet:null,
       vaihde_puhelin:null, yleinen_sahkoposti:null, www:c.tf_www||'',
@@ -6002,6 +6033,20 @@ async function createProspectAccountsBatch(candidates, opts) {
     tiliRowIndex += 1;
 
     const acts=[];
+    if (c.siteName || c.domain || (c.companySources&&c.companySources.length) || c.verifiedAt) {
+      acts.push({
+        id:'PV'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
+        tyyppi:'prospektointi_varmennus',
+        teksti:'Prospekti varmennettu ChatGPT-tuonnissa',
+        created_at:ts,
+        site_name:c.siteName||'',
+        domain:c.domain||'',
+        domain_status:c.domainStatus||'',
+        verified_at:c.verifiedAt||'',
+        confidence:c.confidence||'',
+        company_sources:c.companySources||[]
+      });
+    }
     if (opts.wantDeal) {
       acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
         tyyppi:'kauppa',tila:'Tietojenkeruu',aihe:opts.kampanja,arvo:0,tekija:null,
@@ -6044,6 +6089,7 @@ async function createProspectAccountsBatch(candidates, opts) {
   await sheetPut(`${MAIN_TAB}!A${tiliStartRow}:AB${tiliStartRow+tiliRows.length-1}`, tiliRows);
   await sheetAppend(`${CRM_TAB}!A:L`, crmRows);
   if (contactRows.length) await sheetAppend(`${YH_TAB}!A:H`, contactRows);
+  if (verifyRows.length) await sheetAppend(`${YH_VERIFY_TAB}!A:J`, verifyRows);
 
   allProspects.push(...newProspects);
   allContacts.push(...newContacts);
@@ -6602,7 +6648,20 @@ async function verifyAndCreateCandidatesChunk(rawCandidates, opts, acceptedThisR
     }
     const merged={...verify.data, signaali:c.signaali, perustelu:c.perustelu,
       openingParagraph:c.opening_paragraph,
-      contactSuggestion:c.contact_name?{nimi:c.contact_name, titteli:c.contact_title}:null};
+      segmentti:c.segment||'',
+      siteName:c.site_name||'',
+      domain:c.domain||'',
+      domainStatus:c.domain_status||'',
+      companySources:c.company_sources||[],
+      verifiedAt:c.verified_at||'',
+      confidence:c.confidence||'',
+      contactSuggestion:c.contact_name?{
+        nimi:c.contact_name, titteli:c.contact_title, email:c.contact_email, puhelin:c.contact_phone,
+        linkedin:c.contact_linkedin, contactStatus:c.contact_status, emailStatus:c.email_status,
+        domain:c.domain||'', domainStatus:c.domain_status||'',
+        companySources:c.company_sources||[], contactSources:c.contact_sources||[], emailSources:c.email_sources||[],
+        verifiedAt:c.verified_at||'', confidence:c.confidence||''
+      }:null};
     chunkVerified.push(merged);
     acceptedThisRun.push(merged);
   }
@@ -7093,7 +7152,11 @@ function renderChatGptImportSummary(created, rejected, errors, fuzzyNotes) {
 // samalla turvaputkella kuin Älykäs Prospektointi. Sama reititys riippumatta
 // tuliko candidates-taulukko liitä-lomakkeesta vai ?import=-linkistä.
 function routeImportCandidates(candidates, opts) {
-  if (candidates.length===1) {
+  const enrichedSingle=candidates.length===1 && (
+    candidates[0].contact_email || candidates[0].contact_status || candidates[0].email_status ||
+    candidates[0].domain || candidates[0].company_sources?.length || candidates[0].contact_sources?.length
+  );
+  if (candidates.length===1 && !enrichedSingle) {
     document.getElementById('chatgpt-import-modal')?.classList.add('hidden');
     openAddTiliWithImportPrefill(candidates[0], opts&&opts.kampanja);
   } else {
@@ -7116,15 +7179,37 @@ const IMPORT_MAX_TEXT_LENGTH=200000; // ~200 kB turvaraja ennen JSON.parse-yrity
 // verifyCandidateAgainstYtj():n omalla, yhdenmukaisella virheviestillä.
 function normalizeImportCandidate(raw) {
   const str=(x,max)=>{ const s=String(x==null?'':x).trim(); return s.length>max?s.slice(0,max):s; };
+  const arr=(x,maxItems=10,maxLen=800)=>{
+    const src=Array.isArray(x)?x:(x?[x]:[]);
+    return src.slice(0,maxItems).map(v=>str(v,maxLen)).filter(Boolean);
+  };
+  const status=(x,allowed)=>{
+    const v=str(x,80).toLowerCase().replace(/[\s-]+/g,'_');
+    return allowed.includes(v)?v:'';
+  };
   return {
     name: str(raw&&raw.name, 300),
+    site_name: str(raw&&raw.site_name, 300),
     city: str(raw&&raw.city, 300),
     y_tunnus: str(raw&&raw.y_tunnus, 300),
+    segment: str(raw&&raw.segment, 300),
+    domain: str(raw&&raw.domain, 300).toLowerCase().replace(/^https?:\/\//,'').replace(/\/.*$/,''),
+    domain_status: status(raw&&raw.domain_status,['verified','probable','unverified']),
     signaali: str(raw&&raw.signaali, 2000),
     perustelu: str(raw&&raw.perustelu, 2000),
     opening_paragraph: str(raw&&raw.opening_paragraph, 2000),
     contact_name: str(raw&&raw.contact_name, 300),
-    contact_title: str(raw&&raw.contact_title, 300)
+    contact_title: str(raw&&raw.contact_title, 300),
+    contact_email: str(raw&&raw.contact_email, 500).toLowerCase(),
+    contact_phone: str(raw&&raw.contact_phone, 200),
+    contact_linkedin: str(raw&&raw.contact_linkedin, 1000),
+    contact_status: status(raw&&raw.contact_status,['verified','probable','unverified','former','unknown']),
+    email_status: status(raw&&raw.email_status,['verified','probable','unverified','group','missing']),
+    verified_at: str(raw&&raw.verified_at, 80),
+    confidence: status(raw&&raw.confidence,['high','medium','low']),
+    company_sources: arr(raw&&raw.company_sources),
+    contact_sources: arr(raw&&raw.contact_sources),
+    email_sources: arr(raw&&raw.email_sources)
   };
 }
 
@@ -7145,7 +7230,7 @@ function parseAndNormalizeImportText(text) {
 function openChatGptImportModal() {
   populateProjektiSelects();
   document.getElementById('cgpt-paste').value='';
-  document.getElementById('cgpt-want-contact').checked=false;
+  document.getElementById('cgpt-want-contact').checked=true;
   document.getElementById('cgpt-want-signal').checked=true;
   document.getElementById('cgpt-want-deal').checked=false;
   document.getElementById('cgpt-want-draft').checked=false;
@@ -7426,10 +7511,9 @@ function openExistingInsteadOfAddTili(sid) {
 // täytetty, paina lopuksi Tallenna"). candidate.name on VAIN YTJ-haun
 // siemen — samaan tapaan kuin Älykäs Prospektoinnin AI-kandidaatit — ei
 // koskaan kirjoiteta tiliksi ilman että joko automaattinen tai ihmisen oma
-// YTJ-haku sitä ensin vahvistaa. Sähköpostia ei aseteta lainkaan: skeemassa
-// (ks. dokumentoitu JSON ChatGPT:lle) ei ole kenttää sille — sama sääntö
-// kuin createProspectAccountsBatch:n AI-ehdotetulle kontaktille, pakotettu
-// rakenteellisesti eikä vain sopimuksella.
+// YTJ-haku sitä ensin vahvistaa. Vanhan, suppean JSONin yhden kandidaatin
+// tapaus jää tähän ihmisen tarkistettavaksi; rikastettu JSON reititetään
+// automaattisen YTJ-varmennuksen kautta eräputkeen myös yhdellä kandidaatilla.
 function openAddTiliWithImportPrefill(candidate, kampanja) {
   openAddTili();
   if (kampanja) { const sel=document.getElementById('tf_kampanja'); if (sel) sel.value=kampanja; }
