@@ -1297,7 +1297,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-18.5';
+const BUILD_ID = '2026-09-22.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3820,12 +3820,14 @@ const VAIHEET=['Tietojenkeruu','Kontaktoi','Sovi tapaaminen','Tarjous työn alla
 // koskaan kirjoiteta takaisin Sheetsiin, joten historialliset rivit voivat
 // yhä sisältää minkä tahansa aiemman kaavan arvon. Jokainen avain osoittaa
 // aina SUORAAN nykyiseen nimeen (ei ketjutettuja välivaiheita) — siksi
-// 'Liidi'/'Mahdollisuus' osoittavat nyt 'Tietojenkeruu'/'Kontaktoi':iin,
-// eivät enää välissä olleisiin 'Kontaktoi'/'Selvitä tarve' -nimiin, jotka
-// itsekin nyt tarkoittavat eri asiaa. normalizeKauppaVaihe tekee vain YHDEN
-// haun, ei ketjua — jos joskus nimetään uudelleen taas, päivitä KAIKKI
-// tätä samaa nykyistä nimeä osoittavat avaimet suoraan uuteen nimeen.
-const VAIHE_LEGACY={'Liidi':'Tietojenkeruu','Mahdollisuus':'Kontaktoi','Tapaaminen':'Sovi tapaaminen','Tarjous':'Tarjous työn alla','Päätös odottaa':'Tarjous työn alla','Sopimus':'Sopimus syntynyt','Voitettu':'Sopimus syntynyt','Hävitty':'Ei juuri nyt','Kontaktoi':'Tietojenkeruu','Selvitä tarve':'Kontaktoi'};
+// 'Liidi'/'Mahdollisuus' osoittavat nyt 'Tietojenkeruu'/'Kontaktoi':iin.
+// Nykyistä 'Kontaktoi'-arvoa ei voi käyttää samalla vanhan ensimmäisen
+// vaiheen tunnisteena: muuten myös uudet Kontaktoi-kaupat palautuisivat
+// aina Tietojenkeruuseen. Vanhat Kontaktoi-arvot jäävät siksi nykyiseen
+// Kontaktoi-vaiheeseen. normalizeKauppaVaihe tekee vain YHDEN haun, ei
+// ketjua — jos joskus nimetään uudelleen taas, päivitä KAIKKI tätä samaa
+// nykyistä nimeä osoittavat avaimet suoraan uuteen nimeen.
+const VAIHE_LEGACY={'Liidi':'Tietojenkeruu','Mahdollisuus':'Kontaktoi','Tapaaminen':'Sovi tapaaminen','Tarjous':'Tarjous työn alla','Päätös odottaa':'Tarjous työn alla','Sopimus':'Sopimus syntynyt','Voitettu':'Sopimus syntynyt','Hävitty':'Ei juuri nyt','Selvitä tarve':'Kontaktoi'};
 const V_COLORS={'Tietojenkeruu':'var(--blue)','Kontaktoi':'var(--orange)','Sovi tapaaminen':'var(--purple)','Tarjous työn alla':'var(--yellow)','Sopimus syntynyt':'var(--green)','Ei juuri nyt':'var(--red)'};
 // Spara-teemalla EI ole omaa väripalettia vaiheittain (V_COLORS_SPARA
 // poistettu tässä korjauksessa) — pylväiden/suppilon värit eivät enää
