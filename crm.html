@@ -1317,7 +1317,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-23.1';
+const BUILD_ID = '2026-09-23.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1392,7 +1392,7 @@ const USERS_COLS = ['email','nimi','puhelin','sahkoposti','updated_at','allekirj
 const TEMPLATES_TAB = 'Sähköpostimallit';
 const TEMPLATES_COLS = ['id','nimi','aihe','sisalto','created_at'];
 const BULK_RULES_TAB = 'Massalähetysasetukset';
-const BULK_RULES_COLS = ['id','projekti','segmentti','template_id','updated_at'];
+const BULK_RULES_COLS = ['id','projekti','segmentti','template_id','updated_at','reminder1_template_id','reminder2_template_id'];
 const PROJEKTIT_TAB = 'Projektit';
 const PROJEKTIT_COLS = ['id','nimi','created_at'];
 const BASE_PROJEKTIT = Object.freeze([
@@ -2013,9 +2013,10 @@ function bulkRuleFor(projekti, segmentti) {
 }
 
 async function reloadBulkEmailRules() {
-  const rows=await sheetGet(`${BULK_RULES_TAB}!A:E`);
+  const rows=await sheetGet(`${BULK_RULES_TAB}!A:G`);
   bulkEmailRules=rows.slice(1).map((r,i)=>({
-    id:r[0]||'',projekti:r[1]||'',segmentti:r[2]||'',template_id:r[3]||'',updated_at:r[4]||'',_rowIndex:i+2
+    id:r[0]||'',projekti:r[1]||'',segmentti:r[2]||'',template_id:r[3]||'',updated_at:r[4]||'',
+    reminder1_template_id:r[5]||'',reminder2_template_id:r[6]||'',_rowIndex:i+2
   })).filter(x=>x.id&&x.projekti&&x.segmentti);
 }
 
@@ -2023,15 +2024,21 @@ async function saveBulkEmailRule() {
   const projekti=document.getElementById('bulk-projekti')?.value||'';
   const segmentti=document.getElementById('bulk-segmentti')?.value||'';
   const templateId=document.getElementById('bulk-template')?.value||'';
+  const remindersEnabled=!!document.getElementById('bulk-reminders-enabled')?.checked;
+  const reminder1TemplateId=remindersEnabled?(document.getElementById('bulk-reminder1-template')?.value||''):'';
+  const reminder2TemplateId=remindersEnabled?(document.getElementById('bulk-reminder2-template')?.value||''):'';
   if (!projekti||!segmentti||!templateId) return;
   const now=new Date().toISOString();
   const existing=bulkRuleFor(projekti,segmentti);
   try {
     if (existing?._rowIndex) {
-      await sheetPut(`${BULK_RULES_TAB}!B${existing._rowIndex}:E${existing._rowIndex}`,[[projekti,segmentti,templateId,now]]);
-      Object.assign(existing,{template_id:templateId,updated_at:now});
+      await sheetPut(`${BULK_RULES_TAB}!B${existing._rowIndex}:G${existing._rowIndex}`,[[
+        projekti,segmentti,templateId,now,reminder1TemplateId,reminder2TemplateId
+      ]]);
+      Object.assign(existing,{template_id:templateId,updated_at:now,
+        reminder1_template_id:reminder1TemplateId,reminder2_template_id:reminder2TemplateId});
     } else {
-      await sheetAppend(`${BULK_RULES_TAB}!A:E`,[['BER'+Date.now(),projekti,segmentti,templateId,now]]);
+      await sheetAppend(`${BULK_RULES_TAB}!A:G`,[['BER'+Date.now(),projekti,segmentti,templateId,now,reminder1TemplateId,reminder2TemplateId]]);
       await reloadBulkEmailRules();
     }
   } catch(e) {
@@ -8822,6 +8829,24 @@ async function saveGlobalTask() {
             <select class="form-control" id="bulk-template" onchange="bulkEmailTemplateChanged()"></select>
             <div style="font-size:10px;color:var(--text2);margin-top:4px">Mallivalinta muistetaan tälle projekti + segmentti -yhdistelmälle yhteisesti.</div>
           </div>
+          <div class="form-group full" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="bulk-reminders-enabled" checked onchange="bulkReminderToggleChanged()">
+              Automaattiset muistutukset
+            </label>
+            <div style="font-size:10px;color:var(--text2);margin-top:4px">
+              Muistutus 1 lähtee +3 päivää ja muistutus 2 +10 päivää alkuperäisestä viestistä.
+              Muistutukset perutaan, jos asiakas vastaa tai kaupan vaihe muuttuu.
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Muistutus 1 (+3 päivää)</label>
+            <select class="form-control" id="bulk-reminder1-template" onchange="bulkEmailTemplateChanged()"></select>
+          </div>
+          <div class="form-group">
+            <label>Muistutus 2 (+10 päivää)</label>
+            <select class="form-control" id="bulk-reminder2-template" onchange="bulkEmailTemplateChanged()"></select>
+          </div>
           <div class="form-group">
             <label>Laajuus</label>
             <select class="form-control" id="bulk-scope" onchange="updateBulkEmailPreview()">
@@ -8837,7 +8862,9 @@ async function saveGlobalTask() {
         <div id="bulk-preview" style="margin-top:14px"></div>
         <div style="font-size:11px;color:var(--text2);margin-top:10px;line-height:1.5">
           Lähetysväli on noin 3 sekuntia. Pidä Suppilo auki lähetyksen ajan. Sama vastaanottaja ohitetaan, jos hänelle on jo
-          lähetetty sama projekti + segmentti + sähköpostimalli -kampanja.
+          lähetetty sama projekti + segmentti + sähköpostimalli -kampanja. Erääntyneet muistutukset tarkistetaan Suppilon
+          ollessa avoinna ja vastaamattomuus varmistetaan Outlookista juuri ennen lähetystä.
+          <div style="margin-top:8px"><button type="button" class="btn btn-ghost btn-sm" onclick="processDueBulkReminders({silent:false})">🔄 Tarkista muistutukset nyt</button></div>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
           <button class="btn btn-ghost" onclick="closeBulkEmailModal()">Peruuta</button>
