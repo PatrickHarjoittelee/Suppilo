@@ -2050,6 +2050,14 @@ function bulkEmailTemplateChanged() {
   saveBulkEmailRule();
   updateBulkEmailPreview();
 }
+function bulkReminderToggleChanged() {
+  const enabled=!!document.getElementById('bulk-reminders-enabled')?.checked;
+  ['bulk-reminder1-template','bulk-reminder2-template'].forEach(id=>{
+    const el=document.getElementById(id); if (el) el.disabled=!enabled;
+  });
+  saveBulkEmailRule();
+  updateBulkEmailPreview();
+}
 
 function openBulkEmailModal() {
   if (bulkEmailRun.running) {
@@ -2062,9 +2070,12 @@ function openBulkEmailModal() {
   const etj=baseProjektiNimi('BASE_ETJ_PLUS');
   projectSel.value=names.includes(etj)?etj:(names[0]||'');
 
-  const tpl=document.getElementById('bulk-template');
-  tpl.innerHTML='<option value="">— valitse sähköpostimalli —</option>'+
+  const templateOptions='<option value="">— valitse sähköpostimalli —</option>'+
     emailTemplates.map(t=>`<option value="${esc(t.id)}">${esc(t.nimi)}</option>`).join('');
+  ['bulk-template','bulk-reminder1-template','bulk-reminder2-template'].forEach(id=>{
+    const el=document.getElementById(id); if (el) el.innerHTML=templateOptions;
+  });
+  document.getElementById('bulk-reminders-enabled').checked=true;
 
   document.getElementById('bulk-scope').value='count';
   document.getElementById('bulk-count').value='10';
@@ -2101,8 +2112,17 @@ function bulkEmailSegmentChanged() {
   const segmentti=document.getElementById('bulk-segmentti')?.value||'';
   const rule=bulkRuleFor(projekti,segmentti);
   const tpl=document.getElementById('bulk-template');
+  const r1=document.getElementById('bulk-reminder1-template');
+  const r2=document.getElementById('bulk-reminder2-template');
   if (rule && emailTemplates.some(t=>t.id===rule.template_id)) tpl.value=rule.template_id;
   else tpl.value='';
+  if (rule && emailTemplates.some(t=>t.id===rule.reminder1_template_id)) r1.value=rule.reminder1_template_id;
+  else r1.value='';
+  if (rule && emailTemplates.some(t=>t.id===rule.reminder2_template_id)) r2.value=rule.reminder2_template_id;
+  else r2.value='';
+  const enabled=rule?!!(r1.value||r2.value):true;
+  document.getElementById('bulk-reminders-enabled').checked=enabled;
+  r1.disabled=!enabled; r2.disabled=!enabled;
   updateBulkEmailPreview();
 }
 
@@ -2136,6 +2156,9 @@ function bulkEmailCandidateSet() {
   const projekti=document.getElementById('bulk-projekti')?.value||'';
   const segmentti=document.getElementById('bulk-segmentti')?.value||'';
   const templateId=document.getElementById('bulk-template')?.value||'';
+  const remindersEnabled=!!document.getElementById('bulk-reminders-enabled')?.checked;
+  const reminder1TemplateId=remindersEnabled?(document.getElementById('bulk-reminder1-template')?.value||''):'';
+  const reminder2TemplateId=remindersEnabled?(document.getElementById('bulk-reminder2-template')?.value||''):'';
   const accounts=allProspects.filter(p=>p.kampanja===projekti && (p.segmentti||'').trim()===segmentti);
   const key=bulkCampaignKey(projekti,segmentti,templateId);
   const eligible=[], seenEmails=new Set();
@@ -2154,7 +2177,8 @@ function bulkEmailCandidateSet() {
   const scope=document.getElementById('bulk-scope')?.value||'count';
   const requested=Math.max(1,parseInt(document.getElementById('bulk-count')?.value||'10',10)||10);
   const selected=scope==='all'?eligible:eligible.slice(0,requested);
-  return {projekti,segmentti,templateId,key,accounts,eligible,selected,accountsWithoutDirect,alreadySent,duplicateEmails};
+  return {projekti,segmentti,templateId,remindersEnabled,reminder1TemplateId,reminder2TemplateId,
+    key,accounts,eligible,selected,accountsWithoutDirect,alreadySent,duplicateEmails};
 }
 
 function updateBulkEmailPreview() {
@@ -2164,6 +2188,8 @@ function updateBulkEmailPreview() {
   if (countInput) countInput.disabled=allMode;
   const x=bulkEmailCandidateSet();
   const template=emailTemplates.find(t=>t.id===x.templateId);
+  const reminder1=emailTemplates.find(t=>t.id===x.reminder1TemplateId);
+  const reminder2=emailTemplates.find(t=>t.id===x.reminder2TemplateId);
   if (!x.projekti||!x.segmentti) {
     preview.innerHTML='<div class="empty" style="padding:16px">Valitse projekti ja segmentti.</div>'; return;
   }
@@ -2179,6 +2205,9 @@ function updateBulkEmailPreview() {
         · sama kampanja jo lähetetty ${x.alreadySent} vastaanottajalle${x.duplicateEmails?' · päällekkäisiä osoitteita ohitettu '+x.duplicateEmails:''}.
       </div>
       <div style="font-size:11px;margin-top:5px">Malli: <strong>${template?esc(template.nimi):'ei valittu'}</strong></div>
+      <div style="font-size:11px;margin-top:4px;color:var(--text2)">${x.remindersEnabled
+        ? 'Muistutukset: +3 pv <strong>'+(reminder1?esc(reminder1.nimi):'ei valittu')+'</strong> · +10 pv <strong>'+(reminder2?esc(reminder2.nimi):'ei valittu')+'</strong>'
+        : 'Muistutukset: ei käytössä'}</div>
       ${rows?'<div style="margin-top:9px;max-height:210px;overflow:auto">'+rows+(x.selected.length>20?'<div style="padding-top:6px;color:var(--text2)">… ja '+(x.selected.length-20)+' muuta</div>':'')+'</div>':''}
     </div>`;
 }
