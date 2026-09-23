@@ -3570,6 +3570,10 @@ async function loadData() {
     if (!tabNames.includes(PROJEKTIT_TAB)) await addSheet(PROJEKTIT_TAB, PROJEKTIT_COLS);
     if (!tabNames.includes(TEMPLATES_TAB)) await addSheet(TEMPLATES_TAB, TEMPLATES_COLS);
     if (!tabNames.includes(BULK_RULES_TAB)) await addSheet(BULK_RULES_TAB, BULK_RULES_COLS);
+    else {
+      try { await sheetPut(`${BULK_RULES_TAB}!F1:G1`,[['reminder1_template_id','reminder2_template_id']]); }
+      catch(e) { console.warn('Massalähetyksen muistutusotsikoiden päivitys epäonnistui:',e.message); }
+    }
     const PROSP = 'Prospektirekisteri';
     if (tabNames.includes(PROSP)) {
       if (tabNames.includes(MAIN_TAB)) {
@@ -3735,15 +3739,17 @@ async function loadData() {
     // ylempänä) — emailTemplates-poisto (deleteEmailTemplate, tyhjentää
     // rivin) kärsi täsmälleen samasta _rowIndex-korruptiosta.
     emailTemplates = tplRows.slice(1).map((r,i)=>({id:r[0],nimi:r[1]||'',aihe:r[2]||'',sisalto:r[3]||'',created_at:r[4]||'',_rowIndex:i+2})).filter(t=>t.id);
-    const bulkRuleRows = await sheetGet(`${BULK_RULES_TAB}!A:E`);
+    const bulkRuleRows = await sheetGet(`${BULK_RULES_TAB}!A:G`);
     bulkEmailRules = bulkRuleRows.slice(1).map((r,i)=>({
-      id:r[0]||'', projekti:r[1]||'', segmentti:r[2]||'', template_id:r[3]||'', updated_at:r[4]||'', _rowIndex:i+2
+      id:r[0]||'', projekti:r[1]||'', segmentti:r[2]||'', template_id:r[3]||'', updated_at:r[4]||'',
+      reminder1_template_id:r[5]||'', reminder2_template_id:r[6]||'', _rowIndex:i+2
     })).filter(x=>x.id && x.projekti && x.segmentti);
   } catch(e) {
     showToast('Virhe: '+e.message,'error'); console.error(e); return;
   }
   await initVirtualKaupat();
   buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard(); applyYhFilters(); populateProjektiSelects();
+  setTimeout(()=>processDueBulkReminders({silent:true}),15000);
 }
 
 async function initVirtualKaupat() {
@@ -5154,6 +5160,12 @@ function timelineCardHtml(item,index) {
   // elää a.thread-taulukossa (ks. sendOutlookEmail/syncContactEmails), jota
   // ei aiemmin renderöity minnekään lainkaan — kortin avaaminen näytti siis
   // aina vain saman otsikon uudestaan, ei mitään uutta.
+  if(a.tyyppi==='sahkoposti'&&Array.isArray(a.bulkReminders)&&a.bulkReminders.length) {
+    const reminderLabel=r=>r.status==='sent'?'lähetetty '+fmtDT(r.sentAt):r.status==='cancelled'
+      ? 'peruttu ('+(r.cancelReason==='customer_replied'?'asiakas vastasi':r.cancelReason==='deal_stage_changed'?'kaupan vaihe muuttui':r.cancelReason||'')+')'
+      : r.status==='blocked'?'estetty':'odottaa '+fmtDT(r.dueAt);
+    details.push(`<div class="timeline-detail-row"><span>Muistutukset</span><strong>${a.bulkReminders.map(r=>'+'+r.daysAfterOriginal+' pv '+reminderLabel(r)).join(' · ')}</strong></div>`);
+  }
   if(a.tyyppi==='sahkoposti'&&Array.isArray(a.thread)&&a.thread.length) {
     details.push(`<div class="timeline-thread">${a.thread.map(t=>`
       <div class="timeline-thread-item">
