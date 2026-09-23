@@ -1317,7 +1317,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-23.2';
+const BUILD_ID = '2026-09-23.3';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1393,6 +1393,15 @@ const TEMPLATES_TAB = 'Sähköpostimallit';
 const TEMPLATES_COLS = ['id','nimi','aihe','sisalto','created_at'];
 const BULK_RULES_TAB = 'Massalähetysasetukset';
 const BULK_RULES_COLS = ['id','projekti','segmentti','template_id','updated_at','reminder1_template_id','reminder2_template_id'];
+const REMINDER_QUEUE_TAB = 'Muistutusjono';
+const REMINDER_QUEUE_COLS = ['id','tili_id','ticket_id','contact_id','sender_email','recipient_email','due_at','order','template_id','status','created_at','claimed_at','processed_at','cancel_reason','conversation_id','ticket_code','original_sent_at','baseline_stage','last_error'];
+// Muistutusjono on ulkoisen tausta-ajon sopimus. Prosessori saa käsitellä vain
+// oman Outlook-yhteytensä sender_email-rivejä. Ennen lähetystä pending -> processing
+// kirjataan Sheetsiin; processing-riviä EI lähetetä automaattisesti uudelleen.
+// Tämä tekee epävarmasta "lähetys onnistui mutta kuittaus epäonnistui" -tilanteesta
+// at-most-once-turvallisen. Vastaus hyväksytään vain conversation_id:n tai ticket_code:n
+// perusteella. Kaupan eteneminen tarkoittaa mitä tahansa vaihe_muutos-aktiviteettia
+// original_sent_at-ajan jälkeen, vaikka kauppa myöhemmin palaisi samaan vaiheeseen.
 const PROJEKTIT_TAB = 'Projektit';
 const PROJEKTIT_COLS = ['id','nimi','created_at'];
 const BASE_PROJEKTIT = Object.freeze([
@@ -1420,6 +1429,7 @@ let baseProjektit = BASE_PROJEKTIT.map(p=>({...p,defaultNimi:p.nimi,created_at:'
 let customProjektit = [];
 let emailTemplates = [];
 let bulkEmailRules = [];
+let reminderQueue = [];
 let bulkEmailRun = {running:false,cancel:false};
 const BULK_EMAIL_DELAY_MS = 3000;
 let msalInstance = null, microsoftAccount = null, emailDraftContext = null, msalInstanceKey = null;
@@ -2220,7 +2230,9 @@ function renderBulkTemplate(template,p,c) {
 }
 function bulkDelay(ms) { return new Promise(resolve=>setTimeout(resolve,ms)); }
 
-function bulkAddDaysIso(iso,days) { const d=new Date(iso); d.setDate(d.getDate()+days); return d.toISOString(); }
+function bulkAddDaysIso(iso,days) {
+  const d=new Date(iso); d.setDate(d.getDate()+days); return d.toISOString();
+}
 function bulkCurrentDealStage(p,actsOverride) {
   const acts=actsOverride||parseActs(p);
   const deals=acts.filter(a=>a.tyyppi==='kauppa').map(normalizeTask);
@@ -2228,82 +2240,9 @@ function bulkCurrentDealStage(p,actsOverride) {
   const chosen=active.length?active[active.length-1]:(deals.length?deals[deals.length-1]:null);
   return normalizeKauppaVaihe(p.vaihe||chosen?.tila||'Tietojenkeruu');
 }
-function bulkCancelPendingReminders(ticket,reason,nowIso) {
-  (ticket.bulkReminders||[]).forEach(r=>{
-    if(r.status==='pending'){r.status='cancelled';r.cancelReason=reason;r.cancelledAt=nowIso;}
-  });
+function reminderRowsForTicket(ticketId) {
+  return reminderQueue.filter(r=>r.ticket_id===ticketId).sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0));
 }
-async function bulkTicketHasIncomingSince(ticket,contact,token) {
-  const originalTs=Date.parse(ticket.created_at||'')||0;
-  if ((ticket.thread||[]).some(x=>x.dir==='in'&&(Date.parse(x.ts||'')||0)>originalTs)) return true;
-  const incoming=await fetchIncomingEmails((contact.sahkoposti||'').trim(),token);
-  return incoming.some(m=>(Date.parse(m.receivedDateTime||'')||0)>originalTs);
-}
-let bulkReminderProcessorRunning=false;
-async function processDueBulkReminders({silent=true}={}) {
-  if (bulkReminderProcessorRunning||!microsoftAccount||!allProspects.length) return;
-  const now=Date.now(),due=[];
-  allProspects.forEach(p=>{
-    const acts=parseActs(p);
-    acts.forEach(ticket=>{
-      if(ticket.tyyppi!=='sahkoposti'||!Array.isArray(ticket.bulkReminders)) return;
-      const reminder=ticket.bulkReminders.filter(r=>r.status==='pending'&&Date.parse(r.dueAt||'')<=now&&
-        (!r.lastAttemptAt||now-Date.parse(r.lastAttemptAt)>3600000)).sort((a,b)=>Date.parse(a.dueAt)-Date.parse(b.dueAt))[0];
-      if(reminder) due.push({p,acts,ticket,reminder});
-    });
-  });
-  if(!due.length){if(!silent)showToast('Ei erääntyneitä muistutuksia','success');return;}
-  bulkReminderProcessorRunning=true;
-  let token;
-  try{token=await microsoftAccessToken();}
-  catch(e){bulkReminderProcessorRunning=false;if(!silent)showToast('Muistutusten Outlook-yhteys epäonnistui: '+e.message,'error');return;}
-  let sent=0,cancelled=0,failed=0;
-  try{
-    for(const {p,acts,ticket,reminder} of due){
-      reminder.lastAttemptAt=new Date().toISOString();
-      const c=allContacts.find(x=>x.id===ticket.contactId);
-      if(!c||!c.sahkoposti){
-        bulkCancelPendingReminders(ticket,'contact_missing',new Date().toISOString());
-        p.aktiviteetit=JSON.stringify(acts);await saveCrmState(p);cancelled++;continue;
-      }
-      if(ticket.bulkReminderBaselineStage&&bulkCurrentDealStage(p,acts)!==ticket.bulkReminderBaselineStage){
-        bulkCancelPendingReminders(ticket,'deal_stage_changed',new Date().toISOString());
-        p.aktiviteetit=JSON.stringify(acts);await saveCrmState(p);cancelled++;continue;
-      }
-      let replied=false;
-      try{replied=await bulkTicketHasIncomingSince(ticket,c,token);}
-      catch(e){reminder.lastError='Vastaustarkistus epäonnistui: '+e.message;p.aktiviteetit=JSON.stringify(acts);await saveCrmState(p);failed++;continue;}
-      if(replied){
-        bulkCancelPendingReminders(ticket,'customer_replied',new Date().toISOString());
-        p.aktiviteetit=JSON.stringify(acts);await saveCrmState(p);cancelled++;continue;
-      }
-      const template=emailTemplates.find(t=>t.id===reminder.templateId);
-      if(!template||!template.aihe?.trim()||!template.sisalto?.trim()){
-        reminder.status='blocked';reminder.lastError='Muistutuksen viestipohja puuttuu tai on tyhjä';
-        p.aktiviteetit=JSON.stringify(acts);await saveCrmState(p);failed++;continue;
-      }
-      try{
-        const rendered=renderBulkTemplate(template,p,c);
-        const code=ticket.ticketCode||newTicketCode();ticket.ticketCode=code;
-        const created=await createAndSendGraphMessage(token,{
-          subject:rendered.subject,body:{contentType:'HTML',content:rendered.bodyHtml+ticketTagHtml(code)},
-          toRecipients:[{emailAddress:{address:c.sahkoposti.trim()}}]
-        });
-        const sentAt=new Date().toISOString();
-        ticket.thread=ticket.thread||[];
-        ticket.thread.push({dir:'out',graphId:created.id,ts:sentAt,subject:rendered.subject,
-          preview:truncateEmailBody(htmlToPlainText(rendered.bodyHtml)),reminderOrder:reminder.order});
-        reminder.status='sent';reminder.sentAt=sentAt;reminder.lastError=null;ticket.updated_at=sentAt;
-        p.aktiviteetit=JSON.stringify(acts);await saveCrmState(p);sent++;
-      }catch(e){reminder.lastError=e.message||String(e);p.aktiviteetit=JSON.stringify(acts);await saveCrmState(p);failed++;}
-      await bulkDelay(BULK_EMAIL_DELAY_MS);
-    }
-  }finally{
-    bulkReminderProcessorRunning=false;
-    if(!silent)showToast(`Muistutukset: ${sent} lähetetty · ${cancelled} peruttu · ${failed} virhettä`,failed?'error':'success');
-  }
-}
-setInterval(()=>processDueBulkReminders({silent:true}),5*60*1000);
 
 function renderBulkProgress(sent,failed,total,currentText,finished) {
   const div=document.getElementById('bulk-progress'); if (!div) return;
@@ -2374,26 +2313,39 @@ async function startBulkEmailSend() {
       const threadEntry={dir:'out',graphId:created.id,ts:now,subject:rendered.subject,
         preview:truncateEmailBody(htmlToPlainText(rendered.bodyHtml))};
       const storableBodyHtml=emailDraftBodyTooLarge(rendered.bodyHtml)?null:rendered.bodyHtml;
-      const reminderPlan=x.remindersEnabled?[
-        {order:1,daysAfterOriginal:3,dueAt:bulkAddDaysIso(now,3),templateId:x.reminder1TemplateId,status:'pending'},
-        {order:2,daysAfterOriginal:10,dueAt:bulkAddDaysIso(now,10),templateId:x.reminder2TemplateId,status:'pending'}
-      ]:[];
+      const ticketId='TK'+Date.now()+'_'+i;
+      const senderEmail=(microsoftAccount?.username||currentUserEmail||'').trim().toLowerCase();
+      const baselineStage=bulkCurrentDealStage(p,acts);
       acts.push({
-        id:'TK'+Date.now()+'_'+i,tyyppi:'sahkoposti',tila:'Toimitettu',done:true,
+        id:ticketId,tyyppi:'sahkoposti',tila:'Toimitettu',done:true,
         aihe:rendered.subject,teksti:`Massalähetys: ${rendered.subject} → ${c.sahkoposti}`,
         tekija:currentUser.nimi||currentUserEmail||null,muistiinpanot:null,bodyHtml:storableBodyHtml,
         created_at:now,completed_at:now,due_date:null,contactId:c.id,
         conversationId:created.conversationId||null,ticketCode,thread:[threadEntry],
         bulkCampaignKey:x.key,bulkRunId:runId,bulkTemplateId:template.id,
         bulkSegment:x.segmentti,bulkProject:x.projekti,bulkRecipientEmail:c.sahkoposti.trim().toLowerCase(),
-        bulkReminderBaselineStage:bulkCurrentDealStage(p,acts),bulkReminders:reminderPlan
+        bulkReminderSenderEmail:senderEmail,bulkReminderBaselineStage:baselineStage
       });
       p.aktiviteetit=JSON.stringify(acts);
       try {
         await saveCrmState(p);
+        if (x.remindersEnabled) {
+          const recipient=(c.sahkoposti||'').trim().toLowerCase();
+          const queueRows=[
+            [ticketId+':R1',p.spara_id,ticketId,c.id,senderEmail,recipient,bulkAddDaysIso(now,3),'1',x.reminder1TemplateId,'pending',now,'','','',created.conversationId||'',ticketCode,now,baselineStage,''],
+            [ticketId+':R2',p.spara_id,ticketId,c.id,senderEmail,recipient,bulkAddDaysIso(now,10),'2',x.reminder2TemplateId,'pending',now,'','','',created.conversationId||'',ticketCode,now,baselineStage,'']
+          ];
+          await sheetAppend(`${REMINDER_QUEUE_TAB}!A:S`,queueRows);
+          queueRows.forEach((r,idx)=>reminderQueue.push({
+            id:r[0],tili_id:r[1],ticket_id:r[2],contact_id:r[3],sender_email:r[4],recipient_email:r[5],
+            due_at:r[6],order:r[7],template_id:r[8],status:r[9],created_at:r[10],claimed_at:r[11],
+            processed_at:r[12],cancel_reason:r[13],conversation_id:r[14],ticket_code:r[15],
+            original_sent_at:r[16],baseline_stage:r[17],last_error:r[18],_rowIndex:null
+          }));
+        }
       } catch(logError) {
-        console.error('Massalähetys onnistui mutta CRM-kirjaus epäonnistui',p.spara_id,c.sahkoposti,logError);
-        showToast(`Viesti lähti ${c.sahkoposti}, mutta CRM-kirjaus epäonnistui`,'error');
+        console.error('Massalähetys onnistui mutta CRM-/muistutusjonon kirjaus epäonnistui',p.spara_id,c.sahkoposti,logError);
+        showToast(`Viesti lähti ${c.sahkoposti}, mutta CRM-/muistutusjonon kirjaus epäonnistui`,'error');
       }
       sent++;
     } catch(e) {
@@ -3574,6 +3526,7 @@ async function loadData() {
       try { await sheetPut(`${BULK_RULES_TAB}!F1:G1`,[['reminder1_template_id','reminder2_template_id']]); }
       catch(e) { console.warn('Massalähetyksen muistutusotsikoiden päivitys epäonnistui:',e.message); }
     }
+    if (!tabNames.includes(REMINDER_QUEUE_TAB)) await addSheet(REMINDER_QUEUE_TAB, REMINDER_QUEUE_COLS);
     const PROSP = 'Prospektirekisteri';
     if (tabNames.includes(PROSP)) {
       if (tabNames.includes(MAIN_TAB)) {
@@ -3744,12 +3697,19 @@ async function loadData() {
       id:r[0]||'', projekti:r[1]||'', segmentti:r[2]||'', template_id:r[3]||'', updated_at:r[4]||'',
       reminder1_template_id:r[5]||'', reminder2_template_id:r[6]||'', _rowIndex:i+2
     })).filter(x=>x.id && x.projekti && x.segmentti);
+    const reminderRows = await sheetGet(`${REMINDER_QUEUE_TAB}!A:S`);
+    reminderQueue = reminderRows.slice(1).map((r,i)=>({
+      id:r[0]||'', tili_id:r[1]||'', ticket_id:r[2]||'', contact_id:r[3]||'', sender_email:r[4]||'',
+      recipient_email:r[5]||'', due_at:r[6]||'', order:r[7]||'', template_id:r[8]||'', status:r[9]||'',
+      created_at:r[10]||'', claimed_at:r[11]||'', processed_at:r[12]||'', cancel_reason:r[13]||'',
+      conversation_id:r[14]||'', ticket_code:r[15]||'', original_sent_at:r[16]||'', baseline_stage:r[17]||'',
+      last_error:r[18]||'', _rowIndex:i+2
+    })).filter(x=>x.id);
   } catch(e) {
     showToast('Virhe: '+e.message,'error'); console.error(e); return;
   }
   await initVirtualKaupat();
   buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard(); applyYhFilters(); populateProjektiSelects();
-  setTimeout(()=>processDueBulkReminders({silent:true}),15000);
 }
 
 async function initVirtualKaupat() {
@@ -5160,11 +5120,14 @@ function timelineCardHtml(item,index) {
   // elää a.thread-taulukossa (ks. sendOutlookEmail/syncContactEmails), jota
   // ei aiemmin renderöity minnekään lainkaan — kortin avaaminen näytti siis
   // aina vain saman otsikon uudestaan, ei mitään uutta.
-  if(a.tyyppi==='sahkoposti'&&Array.isArray(a.bulkReminders)&&a.bulkReminders.length) {
-    const reminderLabel=r=>r.status==='sent'?'lähetetty '+fmtDT(r.sentAt):r.status==='cancelled'
-      ? 'peruttu ('+(r.cancelReason==='customer_replied'?'asiakas vastasi':r.cancelReason==='deal_stage_changed'?'kaupan vaihe muuttui':r.cancelReason||'')+')'
-      : r.status==='blocked'?'estetty':'odottaa '+fmtDT(r.dueAt);
-    details.push(`<div class="timeline-detail-row"><span>Muistutukset</span><strong>${a.bulkReminders.map(r=>'+'+r.daysAfterOriginal+' pv '+reminderLabel(r)).join(' · ')}</strong></div>`);
+  if(a.tyyppi==='sahkoposti'&&a.id) {
+    const q=reminderRowsForTicket(a.id);
+    if(q.length) {
+      const reminderLabel=r=>r.status==='sent'?'lähetetty '+fmtDT(r.processed_at):r.status==='cancelled'
+        ? 'peruttu ('+(r.cancel_reason==='customer_replied'?'asiakas vastasi':r.cancel_reason==='deal_stage_changed'?'kaupan vaihe muuttui':r.cancel_reason||'')+')'
+        : r.status==='processing'?'käsittelyssä':r.status==='failed'?'virhe':r.status==='blocked'?'estetty':'odottaa '+fmtDT(r.due_at);
+      details.push(`<div class="timeline-detail-row"><span>Muistutukset</span><strong>${q.map(r=>'+'+(r.order==='1'?'3':'10')+' pv '+reminderLabel(r)).join(' · ')}</strong></div>`);
+    }
   }
   if(a.tyyppi==='sahkoposti'&&Array.isArray(a.thread)&&a.thread.length) {
     details.push(`<div class="timeline-thread">${a.thread.map(t=>`
@@ -8997,10 +8960,9 @@ async function saveGlobalTask() {
         </div>
         <div id="bulk-preview" style="margin-top:14px"></div>
         <div style="font-size:11px;color:var(--text2);margin-top:10px;line-height:1.5">
-          Lähetysväli on noin 3 sekuntia. Pidä Suppilo auki lähetyksen ajan. Sama vastaanottaja ohitetaan, jos hänelle on jo
-          lähetetty sama projekti + segmentti + sähköpostimalli -kampanja. Erääntyneet muistutukset tarkistetaan Suppilon
-          ollessa avoinna ja vastaamattomuus varmistetaan Outlookista juuri ennen lähetystä.
-          <div style="margin-top:8px"><button type="button" class="btn btn-ghost btn-sm" onclick="processDueBulkReminders({silent:false})">🔄 Tarkista muistutukset nyt</button></div>
+          Lähetysväli on noin 3 sekuntia. Pidä Suppilo auki alkuperäisen massalähetyksen ajan. Sama vastaanottaja ohitetaan, jos hänelle on jo
+          lähetetty sama projekti + segmentti + sähköpostimalli -kampanja. Muistutukset tallennetaan Muistutusjono-välilehdelle
+          ulkoista tausta-ajoa varten. Tausta-ajo tarkistaa ennen lähetystä oikean keskustelun vastauksen ja kaikki kaupan vaiheenvaihdot.
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
           <button class="btn btn-ghost" onclick="closeBulkEmailModal()">Peruuta</button>
