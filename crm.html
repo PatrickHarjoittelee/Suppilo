@@ -1321,7 +1321,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-25.3';
+const BUILD_ID = '2026-09-25.4';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3493,19 +3493,20 @@ async function sheetGet(range) {
   return j.values || [];
 }
 async function sheetPut(range, values) {
-  const r = await fetchWithTokenRetry(`${SB}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, () => ({
+  // CRM:n kentät ovat dataa: +358-alkuisia puhelimia ei saa tulkita Sheets-kaavoiksi.
+  const r = await fetchWithTokenRetry(`${SB}/values/${encodeURIComponent(range)}?valueInputOption=RAW`, () => ({
     method:'PUT', headers:{...auth(),'Content-Type':'application/json'}, body:JSON.stringify({values})
   }));
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
 }
 async function sheetAppend(range, values) {
-  const r = await fetchWithTokenRetry(`${SB}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, () => ({
+  const r = await fetchWithTokenRetry(`${SB}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, () => ({
     method:'POST', headers:{...auth(),'Content-Type':'application/json'}, body:JSON.stringify({values})
   }));
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
 }
 async function sheetBatchUpdate(data) {
-  await apiPost('/values:batchUpdate', { valueInputOption:'USER_ENTERED', data });
+  await apiPost('/values:batchUpdate', { valueInputOption:'RAW', data });
 }
 
 // ── Load ──────────────────────────────────────────────────────────────────────
