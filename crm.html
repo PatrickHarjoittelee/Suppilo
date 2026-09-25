@@ -401,9 +401,6 @@
     [data-dash-theme="spara"] #modal-overlay .timeline-card-meta,
     [data-dash-theme="spara"] #modal-overlay .timeline-card-stamp{color:var(--spara-ink-faint);}
     [data-dash-theme="spara"] #modal-overlay .timeline-card-body{border-top-color:var(--spara-hairline);}
-    [data-dash-theme="spara"] #modal-overlay .timeline-thread-item{background:var(--spara-paper);border-color:var(--spara-hairline);}
-    [data-dash-theme="spara"] #modal-overlay .timeline-thread-meta,
-    [data-dash-theme="spara"] #modal-overlay .timeline-thread-preview{color:var(--spara-ink-faint);}
     [data-dash-theme="spara"] #modal-overlay .timeline-avatar{background:var(--spara-lavender-wash);border-color:var(--spara-hairline);color:var(--spara-lavender-deep);}
     [data-dash-theme="spara"] #modal-overlay .timeline-group{background:var(--spara-paper);color:var(--spara-ink-faint);}
     [data-dash-theme="spara"] #tili-status-bar{background:var(--spara-cream);border-bottom-color:var(--spara-hairline);}
@@ -581,11 +578,6 @@
     .timeline-card.open .timeline-card-body{display:block;}
     .timeline-detail-row{display:flex;gap:8px;margin-top:6px;color:var(--text2);font-size:11px;}
     .timeline-detail-row strong{color:var(--text);font-weight:600;}
-    .timeline-thread{display:flex;flex-direction:column;gap:6px;margin-top:6px;}
-    .timeline-thread-item{background:var(--bg2);border:1px solid var(--border);border-left:2px solid var(--timeline-color);border-radius:6px;padding:7px 9px;}
-    .timeline-thread-meta{font-size:10px;color:var(--text2);margin-bottom:2px;}
-    .timeline-thread-subject{font-size:11px;font-weight:600;}
-    .timeline-thread-preview{font-size:11px;color:var(--text2);margin-top:2px;white-space:pre-wrap;}
     .timeline-thread-link{display:inline-block;font-size:10px;margin-top:4px;}
     .timeline-badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:10px;background:color-mix(in srgb,var(--timeline-color) 18%,transparent);color:var(--timeline-color);font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.35px;}
     .timeline-upcoming .timeline-card{box-shadow:0 5px 18px rgba(76,175,80,.12);}
@@ -1329,7 +1321,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-25.1';
+const BUILD_ID = '2026-09-25.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -5105,14 +5097,33 @@ function timelineTimestamp(value) {
   return Number.isFinite(stamp)?stamp:0;
 }
 function timelineItems(p) {
-  return parseActs(p).map((raw,sourceIndex)=>{
+  const out=[];
+  parseActs(p).forEach((raw,sourceIndex)=>{
     const isTask=isTimelineTask(raw);
     const task=isTask?normalizeTask(raw):null;
     const upcoming=!!(task&&!taskIsDone(task));
     const dueStamp=timelineTimestamp(raw.due_date);
-    const historyStamp=timelineTimestamp(raw.completed_at||raw.updated_at||raw.created_at||raw.due_date);
-    return {raw,task,isTask,upcoming,dueStamp,historyStamp,sourceIndex};
-  }).sort((a,b)=>{
+    const thread=raw.tyyppi==='sahkoposti'&&Array.isArray(raw.thread)?raw.thread:null;
+    if (thread&&thread.length) {
+      // Käyttäjä pyysi jokaisen sähköpostin NÄKYVÄN ERIKSEEN aikajanalla
+      // (helpompi nähdä onko viestiin tullut vastaus) — sen sijaan että koko
+      // ketju piiloutuisi yhden, tiketin viimeisintä tilaa edustavan kortin
+      // sisään. Vain ketjun VIIMEISIN viesti kantaa edelleen tiketin
+      // tehtäväpuolen (tila/muistutukset/"Avaa tehtävä", Tulevat tehtävät
+      // -ryhmä) — thread on aina lisätty aikajärjestyksessä (push), joten
+      // viimeinen alkio on aina tuorein viesti.
+      thread.forEach((t,threadIndex)=>{
+        const isLatestThreadEntry=threadIndex===thread.length-1;
+        out.push({raw,task,isTask,threadEntry:t,isLatestThreadEntry,
+          upcoming:isLatestThreadEntry&&upcoming,dueStamp,
+          historyStamp:timelineTimestamp(t.ts),sourceIndex});
+      });
+    } else {
+      const historyStamp=timelineTimestamp(raw.completed_at||raw.updated_at||raw.created_at||raw.due_date);
+      out.push({raw,task,isTask,threadEntry:null,isLatestThreadEntry:false,upcoming,dueStamp,historyStamp,sourceIndex});
+    }
+  });
+  return out.sort((a,b)=>{
     if(a.upcoming!==b.upcoming) return a.upcoming?-1:1;
     if(a.upcoming) {
       if(a.dueStamp!==b.dueStamp) return (a.dueStamp||Number.MAX_SAFE_INTEGER)-(b.dueStamp||Number.MAX_SAFE_INTEGER);
@@ -5141,6 +5152,7 @@ function timelineAvatarHtml(actor) {
   return `<span class="timeline-avatar" title="${esc(label)}">${src?`<img src="${esc(src)}" alt="${esc(label)}">`:esc(timelineInitials(label))}</span>`;
 }
 function timelineTypeLabel(item) {
+  if(item.threadEntry) return item.threadEntry.dir==='in'?'Saapunut':'Lähetetty';
   if(item.isTask) return TASK_LABEL[item.task.tyyppi]||'Tehtävä';
   return ({kommentti:'Kommentti',puhelu:'Puhelu',sahkoposti:'Sähköposti',tapaaminen:'Tapaaminen',tarjous:'Tarjous',vaihe_muutos:'Vaiheen muutos',signaali_paivitys:'Signaalipäivitys'}[item.raw.tyyppi]||item.raw.tyyppi||'Merkintä');
 }
@@ -5155,25 +5167,46 @@ function timelineColor(item) {
   return ({kommentti:'var(--blue)',puhelu:'var(--green)',sahkoposti:'var(--orange)',tapaaminen:'var(--purple)',tarjous:'var(--yellow)',vaihe_muutos:'var(--accent)',signaali_paivitys:'var(--blue)'}[item.raw.tyyppi]||'var(--accent)');
 }
 function timelineDateText(item) {
-  if(item.upcoming) return item.raw.due_date?'Eräpäivä '+new Date(item.raw.due_date+'T12:00:00').toLocaleDateString('fi-FI'):'Ei eräpäivää';
+  // Ketjun yksittäiselle viestille näytetään aina SEN OMA lähetys-/
+  // saapumishetki (item.threadEntry.ts) — myös silloin kun viesti sattuu
+  // olemaan ketjun viimeisin ja tiketti on avoinna (upcoming), koska
+  // sähköpostitiketeillä due_date on lähes aina tyhjä (vain aidosti
+  // AJASTETULLA lähetyksellä on oikea eräpäivä) — pelkkä "Ei eräpäivää"
+  // olisi vähemmän hyödyllinen kuin viestin todellinen ajankohta.
+  if(item.upcoming&&item.raw.due_date) return 'Eräpäivä '+new Date(item.raw.due_date+'T12:00:00').toLocaleDateString('fi-FI');
+  if(item.threadEntry) return fmtDT(item.threadEntry.ts);
+  if(item.upcoming) return 'Ei eräpäivää';
   const value=item.raw.completed_at||item.raw.updated_at||item.raw.created_at||item.raw.due_date;
   return fmtDT(value);
 }
+// Ketjun saapuneen viestin (dir:'in') lähettäjä ei ole a.tekija (se on aina
+// Sparan puolen käsittelijä/lähettäjä) vaan tiketin yhteyshenkilö.
+function emailThreadCounterpartName(a) {
+  const c=a.contactId?allContacts.find(x=>x.id===a.contactId):null;
+  return c?.nimi||null;
+}
 function timelineCardHtml(item,index) {
-  const a=item.raw, task=item.task;
-  const actor=a.tekija||'Ei käsittelijää';
-  const title=item.isTask?(task.aihe||timelineTypeLabel(item)):(a.teksti||timelineTypeLabel(item));
-  const text=a.teksti||task?.muistiinpanot||'';
-  const status=item.isTask?(item.upcoming?(task.tila||'Avoin'):(task.tila||'Valmis')):timelineTypeLabel(item);
+  const a=item.raw, task=item.task, t=item.threadEntry;
+  // isTicketStateEntry: tämä merkintä edustaa tiketin NYKYISTÄ tilaa (tila/
+  // muistutukset/muistiinpanot/"Avaa tehtävä") — aina true ei-sähköposti-
+  // merkinnöille, sähköpostiketjussa vain sen viimeisimmälle viestille.
+  // Aiemmat ketjun viestit ovat pelkkää historiaa samasta tiketistä, eivät
+  // toista tiketin tason tietoja jotka eivät koskeneet juuri niitä.
+  const isTicketStateEntry=!t||item.isLatestThreadEntry;
+  const actor=t
+    ? (t.dir==='in'?(emailThreadCounterpartName(a)||'Asiakas'):(a.tekija||'Spara'))
+    : (a.tekija||'Ei käsittelijää');
+  const title=t
+    ? (t.subject||a.aihe||timelineTypeLabel(item))
+    : (item.isTask?(task.aihe||timelineTypeLabel(item)):(a.teksti||timelineTypeLabel(item)));
+  const text=t?(t.preview||''):(a.teksti||task?.muistiinpanot||'');
+  const status=isTicketStateEntry&&item.isTask
+    ? (item.upcoming?(task.tila||'Avoin'):(task.tila||'Valmis'))
+    : timelineTypeLabel(item);
   const details=[];
   if(text) details.push(`<div>${esc(text)}</div>`);
-  // a.teksti on aina vain automaattisesti generoitu yhden rivin otsikkokaiku
-  // ("Lähetetty: aihe → vastaanottaja" tms.) — koskaan ei oikea viestisisältö.
-  // Todellinen sisältö (suunta, aika, aihe, esikatselu, linkki Outlookiin)
-  // elää a.thread-taulukossa (ks. sendOutlookEmail/syncContactEmails), jota
-  // ei aiemmin renderöity minnekään lainkaan — kortin avaaminen näytti siis
-  // aina vain saman otsikon uudestaan, ei mitään uutta.
-  if(a.tyyppi==='sahkoposti'&&a.id) {
+  if(t?.webLink) details.push(`<a href="${esc(t.webLink)}" target="_blank" rel="noopener" class="timeline-thread-link">Avaa Outlookissa ↗</a>`);
+  if(isTicketStateEntry&&a.tyyppi==='sahkoposti'&&a.id) {
     const q=reminderRowsForTicket(a.id);
     if(q.length) {
       const reminderLabel=r=>r.status==='sent'?'lähetetty '+fmtDT(r.processed_at):r.status==='cancelled'
@@ -5181,15 +5214,6 @@ function timelineCardHtml(item,index) {
         : r.status==='processing'?'käsittelyssä':r.status==='failed'?'virhe':r.status==='blocked'?'estetty':'odottaa '+fmtDT(r.due_at);
       details.push(`<div class="timeline-detail-row"><span>Muistutukset</span><strong>${q.map(r=>'+'+(r.order==='1'?'3':'10')+' pv '+reminderLabel(r)).join(' · ')}</strong></div>`);
     }
-  }
-  if(a.tyyppi==='sahkoposti'&&Array.isArray(a.thread)&&a.thread.length) {
-    details.push(`<div class="timeline-thread">${a.thread.map(t=>`
-      <div class="timeline-thread-item">
-        <div class="timeline-thread-meta">${t.dir==='in'?'↩️ Saapui':'📤 Lähetetty'} · ${esc(fmtDT(t.ts))}</div>
-        ${t.subject?`<div class="timeline-thread-subject">${esc(t.subject)}</div>`:''}
-        ${t.preview?`<div class="timeline-thread-preview">${esc(t.preview)}</div>`:''}
-        ${t.webLink?`<a href="${esc(t.webLink)}" target="_blank" rel="noopener" class="timeline-thread-link">Avaa Outlookissa ↗</a>`:''}
-      </div>`).join('')}</div>`);
   }
   // signaaliTila (ks. setSignalTila, Hero-signaalilistan kuittaus/ohitus) —
   // näkyy myös tilin omalla aikajanalla, ei vain Hero-modaalissa, jotta tila
@@ -5199,18 +5223,22 @@ function timelineCardHtml(item,index) {
     const tilaLabel=a.signaaliTila==='ei_relevantti'?'✕ Ei relevantti':'✓ Luettu';
     details.push(`<div class="timeline-detail-row"><span>Käsitelty</span><strong>${tilaLabel}${a.signaaliKasitelty_at?' · '+esc(fmtDT(a.signaaliKasitelty_at)):''}</strong></div>`);
   }
-  if(item.isTask&&task.muistiinpanot&&task.muistiinpanot!==text) details.push(`<div class="timeline-detail-row"><span>Muistiinpanot</span><strong>${esc(task.muistiinpanot)}</strong></div>`);
-  if(item.isTask&&task.due_date) details.push(`<div class="timeline-detail-row"><span>Eräpäivä</span><strong>${esc(new Date(task.due_date+'T12:00:00').toLocaleDateString('fi-FI'))}</strong></div>`);
-  if(item.isTask&&task.arvo) details.push(`<div class="timeline-detail-row"><span>Arvo</span><strong>${Number(task.arvo).toLocaleString('fi-FI')} €</strong></div>`);
-  details.push(`<div class="timeline-detail-row"><span>Käsittelijä</span><strong>${esc(actor)}</strong></div>`);
-  if(item.isTask&&task.id) details.push(`<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="openTimelineTask(${index})">✏️ Avaa tehtävä</button>`);
-  const side=index%2?'timeline-right':'timeline-left';
+  if(isTicketStateEntry&&item.isTask&&task.muistiinpanot&&task.muistiinpanot!==text) details.push(`<div class="timeline-detail-row"><span>Muistiinpanot</span><strong>${esc(task.muistiinpanot)}</strong></div>`);
+  if(isTicketStateEntry&&item.isTask&&task.due_date) details.push(`<div class="timeline-detail-row"><span>Eräpäivä</span><strong>${esc(new Date(task.due_date+'T12:00:00').toLocaleDateString('fi-FI'))}</strong></div>`);
+  if(isTicketStateEntry&&item.isTask&&task.arvo) details.push(`<div class="timeline-detail-row"><span>Arvo</span><strong>${Number(task.arvo).toLocaleString('fi-FI')} €</strong></div>`);
+  details.push(`<div class="timeline-detail-row"><span>${t?'Lähettäjä':'Käsittelijä'}</span><strong>${esc(actor)}</strong></div>`);
+  if(isTicketStateEntry&&item.isTask&&task.id) details.push(`<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="openTimelineTask(${index})">✏️ Avaa tehtävä</button>`);
+  // Sparan viestit ja kaikki muu ei-sähköposti-aktiviteetti aina samalla
+  // puolella (vasen) — asiakkaan vastaukset (ketjun dir:'in') aina
+  // vastakkaisella (oikea). Ei enää pelkkää index%2-vuorottelua, joka ei
+  // kertonut mitään siitä kuka viestin oikeasti kirjoitti.
+  const side=t?(t.dir==='in'?'timeline-right':'timeline-left'):'timeline-left';
   return `<div class="timeline-item ${side}${item.upcoming?' timeline-upcoming':''}" style="--timeline-color:${timelineColor(item)}">
     <span class="timeline-node" aria-hidden="true"></span>
     <article class="timeline-card" id="timeline-card-${index}">
       <div class="timeline-card-stamp">${esc(timelineDateText(item))}</div>
       <button type="button" class="timeline-card-head" onclick="toggleTimelineCard(${index},this)" aria-expanded="false">
-        ${timelineAvatarHtml(a.tekija)}
+        ${timelineAvatarHtml(actor)}
         <span class="timeline-card-main">
           <span class="timeline-card-title">${esc(title)}</span>
           <span class="timeline-card-meta">${actIcon(a.tyyppi)} ${esc(timelineTypeLabel(item))}</span>
