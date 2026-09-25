@@ -1321,7 +1321,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-25.2';
+const BUILD_ID = '2026-09-25.3';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1417,7 +1417,11 @@ const BASE_PROJEKTIT = Object.freeze([
 // Mail.ReadWrite tarvitaan luonnoksen luontiin (POST /me/messages), jotta
 // conversationId saadaan talteen yhdellä kutsulla ennen lähetystä — ilman
 // sitä ticket-vastauslinkitys jäisi arvailemaan Lähetetyt-kansiosta.
-const MS_GRAPH_SCOPES = ['Mail.Send','Mail.Read','Mail.ReadWrite'];
+// Calendars.ReadWrite: tehtävän kalenterimuistutus (addTaskCalendarReminder,
+// POST /me/events) — uusi oikeus vaatii kertaalleen uuden admin-suostumuksen
+// Entrassa JA käyttäjän Outlook-kirjautumisen uusimisen (ks. Asetukset-
+// modaalin Microsoft-lohko), aivan kuten Mail-oikeuksillakin aikanaan.
+const MS_GRAPH_SCOPES = ['Mail.Send','Mail.Read','Mail.ReadWrite','Calendars.ReadWrite'];
 
 let accessToken = null, tokenClient = null;
 let allProspects = [], filteredRows = [], currentId = null;
@@ -1861,7 +1865,7 @@ async function connectMicrosoft() {
     } else if (/AADSTS50011/.test(e.message||'')) {
       msg='✕ Redirect URI ei täsmää Entra-rekisteröintiin. Vertaa yllä näkyvää Redirect URI:a Entran sovelluksen Authentication-asetuksiin.';
     } else if (/AADSTS65001/.test(e.message||'')) {
-      msg='✕ Oikeuksia (Mail.Send/Mail.Read) ei ole hyväksytty. Käy Entran sovelluksen API-oikeuksissa ja myönnä admin-suostumus.';
+      msg='✕ Oikeuksia (Mail.Send/Mail.Read/Calendars.ReadWrite) ei ole hyväksytty. Käy Entran sovelluksen API-oikeuksissa ja myönnä admin-suostumus.';
     } else if (/AADSTS90561|AADSTS9002326/.test(e.message||'')) {
       msg='✕ Sovellus ei ole rekisteröity Single-page application (SPA) -tyyppisenä Entrassa — tarkista Authentication-välilehden alusta.';
     } else {
@@ -2779,6 +2783,16 @@ async function createAndSendGraphMessage(token, message) {
   });
   if (!sendRes.ok) throw new Error(`${sendRes.status} ${await sendRes.text()}`);
   return created;
+}
+
+async function createGraphCalendarEvent(token, event) {
+  const res=await fetch('https://graph.microsoft.com/v1.0/me/events',{
+    method:'POST',
+    headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+    body:JSON.stringify(event)
+  });
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  return res.json();
 }
 
 async function sendOutlookEmail() {
@@ -4869,6 +4883,54 @@ async function saveTaskForm() {
   if (editId) await updateTaskEdit(editId); else await addTask();
 }
 
+// Kertaluonteinen "tallenna muistutus kalenteriin" tehtävän eräpäivälle
+// (Tehtävät-lista, task-card-actions) — POST /me/events (vaatii
+// Calendars.ReadWrite, ks. MS_GRAPH_SCOPES). Kellonaika on kiinteä 09:00
+// (browserin paikallinen aika, sama ECMA-262-tulkinta kuin scheduleOutlookEmail-
+// ajastuksella) koska due_date tallentaa VAIN päivämäärän, ei kellonaikaa.
+// Kertaluontoinen: tallentaa luodun tapahtuman id:n/webLinkin tehtävään eikä
+// tarjoa myöhempää päivitystä — jos eräpäivä muuttuu, aiempi kalenteri-
+// tapahtuma pitää siirtää/poistaa itse Outlookissa (webLink vie sinne).
+async function addTaskCalendarReminder(taskId) {
+  if (!currentId) return;
+  if (!microsoftAccount) { showToast('Yhdistä Outlook-tili Asetuksista ensin','error'); return; }
+  const p=allProspects.find(x=>x.spara_id===currentId); if (!p) return;
+  const acts=parseActs(p);
+  const t=acts.find(a=>a.id===taskId);
+  if (!t||!t.due_date) return;
+  const btn=document.querySelector(`[data-cal-btn="${taskId}"]`);
+  if (btn) { btn.disabled=true; btn.textContent='Lisätään…'; }
+  try {
+    const token=await microsoftAccessToken();
+    const start=new Date(t.due_date+'T09:00:00'); // paikallinen aika, ei UTC-merkintää
+    const end=new Date(start.getTime()+30*60000);
+    const toGraphIso=d=>d.toISOString().slice(0,19);
+    const bodyLines=[];
+    if (t.muistiinpanot) bodyLines.push(t.muistiinpanot);
+    if (t.tyyppi==='soitto'&&t.contactId) {
+      const c=allContacts.find(x=>x.id===t.contactId);
+      if (c) bodyLines.push(`Soitettava: ${c.nimi}${c.puhelin?' · '+c.puhelin:''}`);
+    }
+    bodyLines.push(`Tili: ${p.yritys_nimi}`);
+    const event={
+      subject:`${TASK_ICON[t.tyyppi]||'📝'} ${t.aihe||TASK_LABEL[t.tyyppi]||'Tehtävä'} — ${p.yritys_nimi}`,
+      body:{contentType:'Text',content:bodyLines.join('\n')},
+      start:{dateTime:toGraphIso(start),timeZone:'UTC'},
+      end:{dateTime:toGraphIso(end),timeZone:'UTC'},
+      isReminderOn:true, reminderMinutesBeforeStart:30
+    };
+    const created=await createGraphCalendarEvent(token,event);
+    t.calendarEventId=created.id; t.calendarEventWebLink=created.webLink||null;
+    p.aktiviteetit=JSON.stringify(acts);
+    await saveCrmState(p);
+    if (currentId===p.spara_id) renderTaskList(p);
+    showToast('Muistutus lisätty kalenteriin ✓','success');
+  } catch(e) {
+    showToast('Kalenterilisäys epäonnistui: '+e.message,'error');
+    if (btn) { btn.disabled=false; btn.textContent='📅 Kalenteriin'; }
+  }
+}
+
 // overrides (valinnainen) ylikirjoittaa lomakkeen luetun arvon per kenttä —
 // käytössä soitaNyt():ssä joka tallentaa suoraan lomaketta täyttämättä.
 // Palauttaa muokatun tehtävän id:n onnistuessa, muuten null.
@@ -4999,6 +5061,10 @@ function renderTaskList(p) {
       ${(t.tekija||t.muistiinpanot)?`<div style="font-size:11px;color:var(--text2);margin-top:5px;line-height:1.4">${t.tekija?`👤 ${esc(t.tekija)} `:''} ${t.muistiinpanot?`<em>${esc(t.muistiinpanot)}</em>`:''}</div>`:''}
       <div class="task-card-actions">
         <button class="btn btn-ghost btn-sm" onclick="editTask('${t.id}')" style="flex:1;justify-content:center">✏️ Muokkaa</button>
+        ${!done&&t.due_date?(t.calendarEventWebLink
+          ?`<a class="btn btn-ghost btn-sm" href="${esc(t.calendarEventWebLink)}" target="_blank" rel="noopener" title="Avaa Outlook-kalenterissa">📅 ↗</a>`
+          :`<button class="btn btn-ghost btn-sm" data-cal-btn="${t.id}" onclick="addTaskCalendarReminder('${t.id}')" title="Lisää muistutus kalenteriin">📅 Kalenteriin</button>`
+        ):''}
         <button class="btn btn-ghost btn-sm" onclick="deleteTask('${t.id}')" style="color:var(--red)" title="Poista">✕</button>
       </div>
     </div>`;
@@ -8831,7 +8897,7 @@ async function saveGlobalTask() {
         <ol style="font-size:12px;line-height:1.7;margin:0 0 10px 18px;padding:0">
           <li>Avaa Microsoft Entra ja luo <strong>uusi sovellusrekisteröinti</strong> (alustaksi <em>Single-page application</em>, tilityyppi <em>vain tämä organisaatio</em>).</li>
           <li>Liitä alla näkyvä <strong>Redirect URI</strong> sovellukseen täsmälleen sellaisenaan.</li>
-          <li>Lisää API-oikeudet: Microsoft Graph → Delegated → <code>Mail.Send</code> + <code>Mail.Read</code> + <code>Mail.ReadWrite</code>, ja myönnä admin-suostumus koko organisaatiolle.</li>
+          <li>Lisää API-oikeudet: Microsoft Graph → Delegated → <code>Mail.Send</code> + <code>Mail.Read</code> + <code>Mail.ReadWrite</code> + <code>Calendars.ReadWrite</code>, ja myönnä admin-suostumus koko organisaatiolle.</li>
           <li>Kopioi sovelluksen <strong>Application (client) ID</strong> Overview-sivulta ja tarkista <strong>organisaation verkkotunnus</strong> alla oleviin kenttiin.</li>
         </ol>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
@@ -8874,14 +8940,19 @@ async function saveGlobalTask() {
         Suppilo pyytää lähetysoikeuden (Mail.Send), lukuoikeuden (Mail.Read)
         ja luonnosten luontioikeuden (Mail.ReadWrite — tarvitaan, jotta
         viestin conversationId saadaan talteen ennen lähetystä ja vastaukset
-        voidaan linkittää oikeaan tikettiin). Microsoft myöntää Mail.Read/
-        ReadWrite-oikeuden koko postilaatikkoosi, mutta Suppilon koodi
+        voidaan linkittää oikeaan tikettiin), sekä kalenterioikeuden
+        (Calendars.ReadWrite — Tehtävät-välilehden "📅 Kalenteriin"-nappi,
+        luo muistutuksen tehtävän eräpäivälle suoraan Outlook-kalenteriisi).
+        Microsoft myöntää Mail.Read/ReadWrite- ja Calendars.ReadWrite-
+        oikeuden koko postilaatikkoosi/kalenteriisi, mutta Suppilon koodi
         käyttää niitä ainoastaan CRM:ssä tunnistettujen yhteyshenkilöiden
-        kanssa käytyihin viesteihin — ei muuta postia selaa, muokkaa tai
-        tallenna. Client ID ei ole salasana. Salasanaasi ei koskaan syötetä
-        Suppiloon — kirjautuminen tapahtuu Microsoftin omassa ikkunassa.
-        Jos tili on jo yhdistetty aiemmin: seuraava lähetys pyytää
-        automaattisesti uuden hyväksynnän laajennetulle oikeudelle.
+        kanssa käytyihin viesteihin ja CRM:stä itse luotuihin
+        kalenterimuistutuksiin — ei muuta postia tai kalenteria selaa,
+        muokkaa tai poista. Client ID ei ole salasana. Salasanaasi ei
+        koskaan syötetä Suppiloon — kirjautuminen tapahtuu Microsoftin
+        omassa ikkunassa. Jos tili on jo yhdistetty aiemmin: seuraava
+        lähetys pyytää automaattisesti uuden hyväksynnän laajennetulle
+        oikeudelle.
       </div>
       <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border)">
         <div style="font-size:11px;color:var(--text2);margin-bottom:6px">
