@@ -73,6 +73,14 @@
     .kb-pf-panel.hidden { display:none; }
     .kb-pf-item { display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap; }
     .kb-pf-item:hover { background:var(--bg3); }
+    /* Kanbanin monivalintainen segmenttisuodatin — sama pudotuspaneeli-
+       kaava kuin projektisuodattimella (kb-pf-*), mutta oma pieni
+       luokkajoukko ettei kahta erillistä suodatinta kytketä samaan
+       CSS-luokkaan (ks. email-to-picker-panel-kommentti alla). */
+    .kb-sf-panel { position:absolute;left:0;top:calc(100% + 6px);background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.55);z-index:901;min-width:220px;max-height:320px;overflow-y:auto;padding:4px 0; }
+    .kb-sf-panel.hidden { display:none; }
+    .kb-sf-item { display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap; }
+    .kb-sf-item:hover { background:var(--bg3); }
     /* Sähköpostin monivalintainen vastaanottajapoiminta — sama
        pudotuspaneeli-kaava kuin Kanbanin projektisuodattimella
        (kb-pf-*), oma pieni luokkajoukko ettei kahta erillistä
@@ -925,6 +933,10 @@
         <button type="button" class="btn btn-ghost btn-sm" id="kb-pf-btn" onclick="toggleKanbanProjektiFilter(event)">Projektit: Kaikki ▾</button>
         <div class="kb-pf-panel hidden" id="kb-pf-panel" onclick="event.stopPropagation()"></div>
       </div>
+      <div class="kb-sf-wrap" style="position:relative">
+        <button type="button" class="btn btn-ghost btn-sm" id="kb-sf-btn" onclick="toggleKanbanSegmenttiFilter(event)">Segmentit: Kaikki ▾</button>
+        <div class="kb-sf-panel hidden" id="kb-sf-panel" onclick="event.stopPropagation()"></div>
+      </div>
     </div>
     <div class="kanban" id="kanban-board"></div>
   </div>
@@ -1317,7 +1329,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-23.3';
+const BUILD_ID = '2026-09-25.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2433,7 +2445,7 @@ function toggleEmailToPicker(e) {
   e.stopPropagation();
   const panel=document.getElementById('email-to-picker-panel'); if (!panel) return;
   const opening=panel.classList.contains('hidden');
-  closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter();
+  closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter();
   if (opening) { renderEmailToPicker(); panel.classList.remove('hidden'); }
   else panel.classList.add('hidden');
 }
@@ -4384,7 +4396,7 @@ function toggleKanbanProjektiFilter(e) {
   e.stopPropagation();
   const panel=document.getElementById('kb-pf-panel'); if (!panel) return;
   const opening=panel.classList.contains('hidden');
-  closeQuickAdd(); closeUserMenu();
+  closeQuickAdd(); closeUserMenu(); closeKanbanSegmenttiFilter();
   if (opening) { renderKanbanProjektiFilterPanel(); panel.classList.remove('hidden'); }
   else panel.classList.add('hidden');
 }
@@ -4410,6 +4422,45 @@ function updateKanbanProjektiFilterBtn() {
   const n=kanbanProjektiFilter.size;
   const label = n===0 ? 'Kaikki' : n===1 ? [...kanbanProjektiFilter][0] : n+' valittu';
   btn.textContent = 'Projektit: '+label+' ▾';
+}
+
+// ── Kanban: monivalintainen segmenttisuodatin ───────────────────────────────
+// Sama kaava ja sama Set-pohjainen monivalintasemantiikka kuin projekti-
+// suodattimella yllä, mutta segmenteillä ei ole hallittua nimilistaa (ks.
+// distinctSegments() Tilit-välilehden f-segmentti-suodatinta varten) —
+// vaihtoehdot johdetaan siis samasta funktiosta, ei erillisestä listasta.
+let kanbanSegmenttiFilter = new Set();
+
+function toggleKanbanSegmenttiFilter(e) {
+  e.stopPropagation();
+  const panel=document.getElementById('kb-sf-panel'); if (!panel) return;
+  const opening=panel.classList.contains('hidden');
+  closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter();
+  if (opening) { renderKanbanSegmenttiFilterPanel(); panel.classList.remove('hidden'); }
+  else panel.classList.add('hidden');
+}
+function closeKanbanSegmenttiFilter() {
+  document.getElementById('kb-sf-panel')?.classList.add('hidden');
+}
+function renderKanbanSegmenttiFilterPanel() {
+  const panel=document.getElementById('kb-sf-panel'); if (!panel) return;
+  const segs=distinctSegments();
+  panel.innerHTML = segs.length ? segs.map(s=>`<label class="kb-sf-item">
+      <input type="checkbox" ${kanbanSegmenttiFilter.has(s)?'checked':''} onchange="toggleKanbanSegmenttiOption(${esc(JSON.stringify(s))})">
+      ${esc(s)}
+    </label>`).join('') : '<div style="padding:10px 14px;font-size:12px;color:var(--text2)">Ei segmenttejä</div>';
+}
+function toggleKanbanSegmenttiOption(seg) {
+  if (kanbanSegmenttiFilter.has(seg)) kanbanSegmenttiFilter.delete(seg);
+  else kanbanSegmenttiFilter.add(seg);
+  updateKanbanSegmenttiFilterBtn();
+  renderKanban();
+}
+function updateKanbanSegmenttiFilterBtn() {
+  const btn=document.getElementById('kb-sf-btn'); if (!btn) return;
+  const n=kanbanSegmenttiFilter.size;
+  const label = n===0 ? 'Kaikki' : n===1 ? [...kanbanSegmenttiFilter][0] : n+' valittu';
+  btn.textContent = 'Segmentit: '+label+' ▾';
 }
 
 // filterSet: Set<string> valittuja projektinimiä. Tyhjä (tai puuttuva) Set
@@ -4459,13 +4510,15 @@ function kanbanColSparaHtml(v, cards, colSum) {
 
 function renderKanban() {
   applyDashboardThemeAttr();
-  // Hakukenttä jatkosuodattaa Projektit-valinnan JÄLKEEN — getAllKaupat
-  // palauttaa jo projektien mukaan rajatun listan, tämä vain karsii siitä
-  // lisää. Samat kentät joita kortti itsekin näyttää (kanbanCardHtml):
-  // yrityksen nimi, yhteyshenkilö, kaupan aihe — löytää siis saman
-  // yrityksen eri kauppa-vaiheista tai tietyn yhteyshenkilön.
+  // Segmentti- ja hakusuodatus jatkosuodattavat Projektit-valinnan JÄLKEEN
+  // — getAllKaupat palauttaa jo projektien mukaan rajatun listan, nämä vain
+  // karsivat siitä lisää. Hakukenttä käyttää samoja kenttiä joita kortti
+  // itsekin näyttää (kanbanCardHtml): yrityksen nimi, yhteyshenkilö, kaupan
+  // aihe — löytää siis saman yrityksen eri kauppa-vaiheista tai tietyn
+  // yhteyshenkilön.
   const haku=(document.getElementById('k-haku')?.value||'').trim().toLowerCase();
   let kaupat=getAllKaupat(kanbanProjektiFilter);
+  if (kanbanSegmenttiFilter.size) kaupat=kaupat.filter(({p})=>kanbanSegmenttiFilter.has(p.segmentti));
   if (haku) kaupat=kaupat.filter(({p,task})=>
     (p.yritys_nimi||'').toLowerCase().includes(haku) ||
     (p['yhteyshenkilö']||'').toLowerCase().includes(haku) ||
@@ -8481,6 +8534,12 @@ function buildSegmentFilter() {
   const segs=distinctSegments();
   const sel=document.getElementById('f-segmentti'), prev=sel.value;
   sel.innerHTML='<option value="">Kaikki segmentit</option>'+segs.map(s=>`<option${s===prev?' selected':''}>${esc(s)}</option>`).join('');
+  // Kanbanin segmenttisuodatin on oma Set (monivalinta) — pudotetaan
+  // valinnasta segmentit jotka eivät enää esiinny datassa, sama periaate
+  // kuin projektisuodattimella (ks. populateProjektiSelects).
+  [...kanbanSegmenttiFilter].forEach(s=>{ if(!segs.includes(s)) kanbanSegmenttiFilter.delete(s); });
+  updateKanbanSegmenttiFilterBtn();
+  if (!document.getElementById('kb-sf-panel')?.classList.contains('hidden')) renderKanbanSegmenttiFilterPanel();
 }
 function kampBadge(k) {
   if (!k) return '–';
@@ -8517,7 +8576,7 @@ function toggleQuickAdd(e) {
   m.style.display=m.style.display==='none'?'':'none';
 }
 function closeQuickAdd() { const m=document.getElementById('quick-add-menu'); if(m) m.style.display='none'; }
-document.addEventListener('click', ()=>{ closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeEmailToPicker(); });
+document.addEventListener('click', ()=>{ closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter(); closeEmailToPicker(); });
 
 // ── Global Add Contact ────────────────────────────────────────────────────────
 function openGlobalContact() {
