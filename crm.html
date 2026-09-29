@@ -1329,7 +1329,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-29.1';
+const BUILD_ID = '2026-09-29.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2157,12 +2157,20 @@ function closeBulkSegmenttiFilter() {
 }
 function renderBulkSegmenttiFilterPanel() {
   const panel=document.getElementById('bulk-sf-panel'); if (!panel) return;
-  const projekti=document.getElementById('bulk-projekti')?.value||'';
-  const segs=distinctSegments(p=>p.kampanja===projekti);
+  // EI projektirajausta — täsmälleen sama, koko datan segmenttilista kuin
+  // Kanbanin (renderKanbanSegmenttiFilterPanel) ja Tilien (buildSegmentFilter)
+  // segmenttisuodattimilla. Aiempi projektikohtainen rajaus (vain segmentit
+  // jotka esiintyvät VALITUSSA projektissa) oli juuri se epäsynkka jota
+  // käyttäjä raportoi: segmentti joka on olemassa vain toisessa projektissa
+  // (esim. "Teollisuus") ei näkynyt listassa lainkaan, vaikka Kanban/Tilit
+  // näyttivät sen. Jos valittu segmentti ei osu yhteenkään valitun projektin
+  // tiliin, bulkEmailCandidateSet() näyttää sen rehellisesti esikatselussa
+  // (0 tiliä) — ei piiloteta vaihtoehtoa kokonaan sen takia.
+  const segs=distinctSegments();
   panel.innerHTML = segs.length ? segs.map(s=>`<label class="bulk-sf-item">
       <input type="checkbox" ${bulkSegmenttiFilter.has(s)?'checked':''} onchange="toggleBulkSegmenttiOption(${esc(JSON.stringify(s))})">
       ${esc(s)}
-    </label>`).join('') : '<div style="padding:10px 14px;font-size:12px;color:var(--text2)">Ei segmenttejä tässä projektissa</div>';
+    </label>`).join('') : '<div style="padding:10px 14px;font-size:12px;color:var(--text2)">Ei segmenttejä</div>';
 }
 function toggleBulkSegmenttiOption(seg) {
   if (bulkSegmenttiFilter.has(seg)) bulkSegmenttiFilter.delete(seg);
@@ -8913,14 +8921,14 @@ function renderHeroPutki() {
   return `<div class="pipeline-row" style="margin-bottom:4px">${pipelineStageHtml()}</div>`;
 }
 // Segmenteillä ei ole hallittua listaa (toisin kuin projekteilla) — ne
-// johdetaan aina suoraan olemassa olevasta datasta. filterFn (valinnainen)
-// rajaa lähdejoukon ennen erottelua — käytössä massalähetyksen projekti-
-// kohtaisella segmenttivalitsimella, joka aiemman oman, hieman eri tavalla
-// (mm. trim() puuttui täältä) toteutetun erottelunsa takia näytti eri
-// segmenttilistan kuin Kanban/Tilit-suodattimet samalle datalle.
-function distinctSegments(filterFn) {
-  const src=filterFn?allProspects.filter(filterFn):allProspects;
-  return [...new Set(src.map(p=>(p.segmentti||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fi'));
+// johdetaan aina suoraan olemassa olevasta datasta, KOKO datasta (ei
+// rajattuna projektiin tms.) — massalähetyksen segmenttivalitsin käytti
+// aiemmin omaa, projektiin rajattua ja trim():ittä toteutettua erottelua,
+// jonka takia sama segmentti saattoi puuttua sen listasta vaikka se
+// näkyi Kanbanin/Tilien suodattimissa. Nyt kaikki kolme kutsuvat tätä
+// samaa funktiota, samalla (rajaamattomalla) datajoukolla.
+function distinctSegments() {
+  return [...new Set(allProspects.map(p=>(p.segmentti||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fi'));
 }
 function buildSegmentFilter() {
   const segs=distinctSegments();
