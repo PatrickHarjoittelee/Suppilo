@@ -1329,7 +1329,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-29.3';
+const BUILD_ID = '2026-09-29.4';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2157,20 +2157,34 @@ function closeBulkSegmenttiFilter() {
 }
 function renderBulkSegmenttiFilterPanel() {
   const panel=document.getElementById('bulk-sf-panel'); if (!panel) return;
-  // EI projektirajausta — täsmälleen sama, koko datan segmenttilista kuin
-  // Kanbanin (renderKanbanSegmenttiFilterPanel) ja Tilien (buildSegmentFilter)
-  // segmenttisuodattimilla. Aiempi projektikohtainen rajaus (vain segmentit
-  // jotka esiintyvät VALITUSSA projektissa) oli juuri se epäsynkka jota
-  // käyttäjä raportoi: segmentti joka on olemassa vain toisessa projektissa
-  // (esim. "Teollisuus") ei näkynyt listassa lainkaan, vaikka Kanban/Tilit
-  // näyttivät sen. Jos valittu segmentti ei osu yhteenkään valitun projektin
-  // tiliin, bulkEmailCandidateSet() näyttää sen rehellisesti esikatselussa
-  // (0 tiliä) — ei piiloteta vaihtoehtoa kokonaan sen takia.
-  const segs=distinctSegments();
-  panel.innerHTML = segs.length ? segs.map(s=>`<label class="bulk-sf-item">
+  // EI piilotusta — täsmälleen sama, koko datan segmenttilista kuin
+  // Kanbanin/Tilien segmenttisuodattimilla (edellinen projektiin rajattu
+  // versio piilotti "Teollisuus"-tyyppiset segmentit kokonaan jos ne eivät
+  // esiintyneet valitussa projektissa). MUTTA: projekti ja segmentti
+  // korreloivat tässä datassa vahvasti — jokaisella projektilla on omat
+  // segmenttinsä — joten pelkkä piilottamaton nimilista johti käyttäjän
+  // toistuvasti valitsemaan segmenttejä joilla on 0 osumaa VALITUSSA
+  // projektissa, ja lopputulos ("0 valittu vastaanottajaa") näytti
+  // selittämättömältä virheeltä vaikka se oli looginen seuraus siitä ettei
+  // esim. yksikään ETJ+-tili ole segmentissä "Teollisuus". Korjaus: näytetään
+  // jokaisen segmentin vierellä kuinka moni NYKYISEN projektin tili sitä
+  // käyttää, ja nostetaan osumia sisältävät segmentit listan kärkeen — ei
+  // enää mitään piiloon, mutta heti nähtävissä mikä valinta kannattaa.
+  const projekti=document.getElementById('bulk-projekti')?.value||'';
+  const counts=new Map();
+  allProspects.forEach(p=>{
+    if (p.kampanja!==projekti) return;
+    const s=(p.segmentti||'').trim(); if (!s) return;
+    counts.set(s,(counts.get(s)||0)+1);
+  });
+  const segs=distinctSegments().sort((a,b)=>(counts.get(b)||0)-(counts.get(a)||0) || a.localeCompare(b,'fi'));
+  panel.innerHTML = segs.length ? segs.map(s=>{
+    const n=counts.get(s)||0;
+    return `<label class="bulk-sf-item"${n?'':' style="color:var(--text2)"'}>
       <input type="checkbox" ${bulkSegmenttiFilter.has(s)?'checked':''} onchange="toggleBulkSegmenttiOption(${esc(JSON.stringify(s))})">
-      ${esc(s)}
-    </label>`).join('') : '<div style="padding:10px 14px;font-size:12px;color:var(--text2)">Ei segmenttejä</div>';
+      ${esc(s)}<span style="margin-left:auto;font-size:10px;opacity:.75">${n} tässä projektissa</span>
+    </label>`;
+  }).join('') : '<div style="padding:10px 14px;font-size:12px;color:var(--text2)">Ei segmenttejä</div>';
 }
 function toggleBulkSegmenttiOption(seg) {
   if (bulkSegmenttiFilter.has(seg)) bulkSegmenttiFilter.delete(seg);
