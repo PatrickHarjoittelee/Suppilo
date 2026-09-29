@@ -1329,7 +1329,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-29.2';
+const BUILD_ID = '2026-09-29.3';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -7026,7 +7026,13 @@ async function checkUnverifiedBulkContacts() {
   const chunks=[];
   for (let i=0;i<batch.length;i+=CONTACT_VERIFY_CHUNK_SIZE) chunks.push(batch.slice(i,i+CONTACT_VERIFY_CHUNK_SIZE));
 
-  const contactRows=[], verifyRows=[], newContacts=[];
+  // notes: ihmisluettava syy JOKAISELLE tilille joka ei päätynyt (täysin
+  // varmennettuna) newContacts:iin — ilman tätä "löytyi 0 yhteyshenkilöä"
+  // ei kertonut MIKSI (ei AI-osumaa lainkaan? nimi löytyi muttei osoitetta?
+  // AI:n nimeä ei voitu kohdistaa tiliin?), sama puute joka jo korjattiin
+  // signaaliseurannassa/prospektoinnissa (ks. batchErrors-kommentit) mutta
+  // unohtui tästä ensimmäisestä versiosta.
+  const contactRows=[], verifyRows=[], newContacts=[], notes=[];
   let aiError=null;
   for (let i=0;i<chunks.length;i++) {
     if (btn) btn.textContent=`Tarkistetaan… (${i*CONTACT_VERIFY_CHUNK_SIZE}/${batch.length})`;
@@ -7037,9 +7043,12 @@ async function checkUnverifiedBulkContacts() {
       aiError='Tekoälyn haku epäonnistui: '+friendlyAiError(e);
       break;
     }
+    const matchedIds=new Set();
     results.forEach(r=>{
       const p=matchSignalUpdateToAccount(r, chunks[i]);
-      if (!p || !r.contact_name) return;
+      if (!p) { notes.push(`AI:n nimeä "${r.company_name}" ei voitu kohdistaa mihinkään erän tiliin`); return; }
+      matchedIds.add(p.spara_id);
+      if (!r.contact_name) { notes.push(`${p.yritys_nimi}: AI ei löytänyt julkista yhteyshenkilöä`); return; }
       // Sama "vain todennettu kelpaa oikeaksi osoitteeksi" -sääntö kuin
       // createProspectAccountsBatch:ssa — nimi/titteli tallennetaan aina jos
       // AI löysi sellaisen, mutta sähköposti VAIN jos molemmat statukset
@@ -7048,6 +7057,7 @@ async function checkUnverifiedBulkContacts() {
       const verifiedEmail=verifiedPerson && r.email_status==='verified' &&
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.contact_email||'');
       const safeEmail=verifiedEmail?(r.contact_email||'').trim().toLowerCase():'';
+      if (!safeEmail) notes.push(`${p.yritys_nimi}: löytyi ${r.contact_name}, mutta osoitetta ei voitu vahvistaa (${r.contact_status}/${r.email_status})`);
       const ts=new Date().toISOString();
       const contactId='YH'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
       contactRows.push([contactId,p.spara_id,r.contact_name,r.contact_title||'','',safeEmail,'',ts]);
@@ -7059,6 +7069,10 @@ async function checkUnverifiedBulkContacts() {
         company_sources:vrow[5], contact_sources:vrow[6], email_sources:vrow[7],
         verified_at:vrow[8], confidence:vrow[9]});
     });
+    // Sama "tyhjä ei ole virhe, mutta ei myöskään hiljainen" -periaate kuin
+    // signaaliseurannassa: jos AI jätti jonkin erän tilin kokonaan
+    // mainitsematta (ei edes "ei löytynyt" -riviä), se on silti syytä näkyä.
+    chunks[i].forEach(p=>{ if (!matchedIds.has(p.spara_id)) notes.push(`${p.yritys_nimi}: tekoäly ei palauttanut tulosta tälle tilille`); });
   }
 
   try {
@@ -7077,8 +7091,9 @@ async function checkUnverifiedBulkContacts() {
   updateBulkEmailPreview();
   if (aiError) showToast(aiError,'error');
   const verifiedCount=newContacts.filter(c=>c.contact_status==='verified'&&c.email_status==='verified').length;
+  const reasonText=notes.length ? ' '+notes.slice(0,3).join(' · ')+(notes.length>3?' … ja '+(notes.length-3)+' muuta':'')+'.' : '';
   showToast(
-    `Tarkistettiin ${batch.length} tiliä — löytyi ${newContacts.length} yhteyshenkilöä, joista ${verifiedCount} täysin varmennettua${skipped?' ('+skipped+' tiliä jäi vielä tarkistamatta, aja uudelleen)':''}.`,
+    `Tarkistettiin ${batch.length} tiliä — löytyi ${newContacts.length} yhteyshenkilöä, joista ${verifiedCount} täysin varmennettua${skipped?' ('+skipped+' tiliä jäi vielä tarkistamatta, aja uudelleen)':''}.${reasonText}`,
     newContacts.length?'success':'error'
   );
 }
