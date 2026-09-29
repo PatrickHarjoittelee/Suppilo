@@ -1330,7 +1330,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-30.1';
+const BUILD_ID = '2026-09-30.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1480,9 +1480,11 @@ window.addEventListener('load', () => {
           return;
         }
         accessToken = resp.access_token;
+        localStorage.setItem('suppilo.sessionActive','1');
         console.log('Google-kirjautuminen onnistui, myönnetyt oikeudet:', resp.scope);
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('app').style.display = 'block';
+        ensureSuppiloHistoryGuard();
         // Kattaa myös retrySessionFromBanner():n prompt:'consent'-haaran,
         // joka päätyy tähän samaan callbackiin — ei tarvitse omaa
         // onnistumiskäsittelyä sille erikseen.
@@ -1507,15 +1509,41 @@ window.addEventListener('load', () => {
         await loadData();
       },
     });
+    // Refreshin jälkeen emme säilytä OAuth-tokenia levyllä. Säilytämme vain
+    // tiedon siitä, että käyttäjä EI ole kirjautunut ulos, ja pyydämme uuden
+    // lyhytikäisen tokenin hiljaisesti olemassa olevasta Google-istunnosta.
+    if (localStorage.getItem('suppilo.sessionActive')==='1') {
+      setTimeout(()=>tokenClient.requestAccessToken({prompt:''}),0);
+    }
   };
   document.head.appendChild(s);
 });
 
+let suppiloHistoryGuardReady=false;
+function ensureSuppiloHistoryGuard() {
+  if (suppiloHistoryGuardReady) return;
+  suppiloHistoryGuardReady=true;
+  history.replaceState({suppilo:true},'',location.href);
+  history.pushState({suppilo:true,guard:true},'',location.href);
+  window.addEventListener('popstate',()=>{
+    if (localStorage.getItem('suppilo.sessionActive')!=='1') return;
+    const app=document.getElementById('app');
+    if (!app || app.style.display==='none') return;
+    // Androidin/selaimen Takaisin-painike ei saa poistua CRM:stä vahingossa.
+    // Jos yhteyshenkilömodal on auki, suljetaan se vain katselutilassa;
+    // muokkaustila on tarkoituksella lukittu kunnes Tallenna/Peruuta.
+    const yh=document.getElementById('yhmodal-overlay');
+    if (yh && !yh.classList.contains('hidden') && !isYhEditMode()) closeYhModal(true);
+    history.pushState({suppilo:true,guard:true},'',location.href);
+  });
+}
+
 function login()  { tokenClient.requestAccessToken({ prompt: '' }); }
 function logout() {
   closeUserMenu();
+  localStorage.removeItem('suppilo.sessionActive');
   microsoftAccount = null;
-  google.accounts.oauth2.revoke(accessToken, ()=>{});
+  if (accessToken) google.accounts.oauth2.revoke(accessToken, ()=>{});
   accessToken = null;
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
@@ -2262,6 +2290,36 @@ function directContactRejectReason(c) {
 }
 function isDirectContactEmail(c) {
   return !directContactRejectReason(c);
+}
+function isManuallyVerifiableContact(c) {
+  const email=(c?.sahkoposti||'').trim().toLowerCase();
+  const name=(c?.nimi||'').trim();
+  if (!name || name.startsWith('#') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return false;
+  return !BULK_GENERIC_LOCALPARTS.has(email.split('@')[0]);
+}
+async function verifyAccountContactsFromKontaktoi(p) {
+  if (!p?.spara_id) return 0;
+  const contacts=allContacts.filter(c=>c.tili_id===p.spara_id && isManuallyVerifiableContact(c));
+  if (!contacts.length) return 0;
+  const rows=await sheetGet(`${YH_VERIFY_TAB}!A:J`);
+  const byId=new Map();
+  rows.slice(1).forEach((r,i)=>{ if(r[0]) byId.set(r[0],{row:i+2,data:r}); });
+  const now=new Date().toISOString();
+  let changed=0;
+  for (const c of contacts) {
+    const found=byId.get(c.id);
+    if (found) {
+      const r=found.data.slice(); while(r.length<10) r.push('');
+      r[3]='verified'; r[4]='verified'; r[8]=now; r[9]='high';
+      await sheetPut(`${YH_VERIFY_TAB}!A${found.row}:J${found.row}`,[r]);
+    } else {
+      const domain=((c.sahkoposti||'').split('@')[1]||'').trim().toLowerCase();
+      await sheetAppend(`${YH_VERIFY_TAB}!A:J`,[[c.id,domain,'','verified','verified','','','',now,'high']]);
+    }
+    Object.assign(c,{email_status:'verified',contact_status:'verified',verified_at:now,confidence:'high'});
+    changed++;
+  }
+  return changed;
 }
 function bulkCampaignKey(projekti,segmentti,templateId) {
   return [projekti,segmentti,templateId].map(x=>String(x||'').trim().toLowerCase()).join('|');
@@ -4778,8 +4836,11 @@ async function moveKauppaVaihe(sid, taskId, newVaihe) {
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
   try {
     await saveCrmState(p);
+    const verifiedCount=newVaihe==='Kontaktoi' ? await verifyAccountContactsFromKontaktoi(p) : 0;
     renderKanban(); updateSummary(); applyFilters(); renderDashboard();
-    showToast('Vaihe päivitetty ✓','success');
+    showToast(verifiedCount
+      ? `Vaihe päivitetty ✓ · ${verifiedCount} yhteystieto${verifiedCount===1?'':'a'} hyväksytty massalähetykseen`
+      : 'Vaihe päivitetty ✓','success');
   } catch(e) { showToast('Virhe: '+e.message,'error'); renderKanban(); }
 }
 
@@ -5282,7 +5343,14 @@ async function updateTaskTila(taskId, newTila) {
   if(task.tyyppi==='kauppa'){const prev=p.vaihe;p.vaihe=newTila;if(prev!==newTila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${newTila}`,p.omistaja);}
   p.aktiviteetit=JSON.stringify(acts);
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
-  try{await saveCrmState(p);renderTaskList(p);renderActivities(p);updateSummary();applyFilters();showToast('Tila päivitetty ✓','success');}
+  try{
+    await saveCrmState(p);
+    const verifiedCount=(task.tyyppi==='kauppa' && newTila==='Kontaktoi') ? await verifyAccountContactsFromKontaktoi(p) : 0;
+    renderTaskList(p);renderActivities(p);updateSummary();applyFilters();
+    showToast(verifiedCount
+      ? `Tila päivitetty ✓ · ${verifiedCount} yhteystieto${verifiedCount===1?'':'a'} hyväksytty massalähetykseen`
+      : 'Tila päivitetty ✓','success');
+  }
   catch(e){showToast('Virhe: '+e.message,'error');}
 }
 
@@ -6218,8 +6286,28 @@ function openYhModal(cid) {
   document.getElementById('yhmodal-overlay').classList.remove('hidden');
   if (c.sahkoposti && microsoftAccount) syncContactEmails(cid, {silent:true});
 }
-function closeYhModal() { document.getElementById('yhmodal-overlay').classList.add('hidden'); currentYhId=null; }
-function closeYhModalMaybe(e) { if (e.target===document.getElementById('yhmodal-overlay')) closeYhModal(); }
+function isYhEditMode() {
+  const edit=document.getElementById('yhmodal-edit');
+  const overlay=document.getElementById('yhmodal-overlay');
+  return !!(edit && overlay && !overlay.classList.contains('hidden') && edit.style.display!=='none');
+}
+function closeYhModal(force=false) {
+  if (!force && isYhEditMode()) {
+    showToast('Muokkaus on kesken — tallenna tai paina Peruuta','error');
+    return false;
+  }
+  document.getElementById('yhmodal-overlay').classList.add('hidden');
+  currentYhId=null;
+  return true;
+}
+function closeYhModalMaybe(e) {
+  if (e.target!==document.getElementById('yhmodal-overlay')) return;
+  if (isYhEditMode()) {
+    showToast('Muokkaus on kesken — modali ei sulkeudu taustaa klikkaamalla','error');
+    return;
+  }
+  closeYhModal(true);
+}
 
 function openTiliFromYh(sid) { closeYhModal(); openModal(sid); }
 
