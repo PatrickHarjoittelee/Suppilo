@@ -1136,6 +1136,7 @@
         <div class="form-group full"><label>Lisätiedot</label><textarea class="form-control" id="tf_lisatiedot" rows="2"></textarea></div>
         <div class="form-group full"><label>Signaali</label><input class="form-control" id="tf_signaali" placeholder="Konkreettinen havainto (esim. ChatGPT-tutkimuksesta)"></div>
         <div class="form-group full"><label>Perustelu</label><textarea class="form-control" id="tf_perustelu" rows="2" placeholder="Miksi relevantti"></textarea></div>
+        <div class="form-group full"><label>Avausviesti</label><textarea class="form-control" id="tf_avausviesti" rows="3" placeholder="Valmis personoitu kappale viestipohjan {{avausviesti}}-kohtaan"></textarea></div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
         <button class="btn btn-ghost" onclick="closeAddTili()">Peruuta</button>
@@ -1329,7 +1330,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-29.4';
+const BUILD_ID = '2026-09-29.5';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1392,7 +1393,7 @@ const CLIENT_ID = '305442089079-umco1cv64ei5i8vu9pfefo4dm4fp3kj4.apps.googleuser
 const SHEET_ID  = '1NpkHd0nTpWvaOP6GrwyFo1-P2_dohUn6BdTV-rmT0og';
 const SCOPE     = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email';
 const CRM_TAB   = 'CRM-tila';
-const CRM_COLS  = ['spara_id','vaihe','omistaja','seuraava_toimenpide','seuraava_pvm','muistiinpanot','aktiviteetit','updated_at','status','tili_override','ai_opener','ai_opener_hash'];
+const CRM_COLS  = ['spara_id','vaihe','omistaja','seuraava_toimenpide','seuraava_pvm','muistiinpanot','aktiviteetit','updated_at','status','tili_override','ai_opener','ai_opener_hash','avausviesti'];
 const MAIN_TAB  = 'Tilit';
 const TILIT_COLS = ['id','name','y_tunnus','toimiala','yhtiömuoto','osoite','postinumero','kaupunki','yhteyshenkilö','sahkoposti','rekisteroity','lisatiedot','created_at','www'];
 const YH_TAB  = 'Yhteyshenkilöt';
@@ -2008,7 +2009,7 @@ function emailComposerIsDirty() {
     || emailAttachments.length!==s.attachmentCount;
 }
 
-// {{etunimi}}/{{nimi}}/{{yritys}}/{{tekija}} korvataan mallia valittaessa —
+// {{etunimi}}/{{nimi}}/{{yritys}}/{{tekija}}/{{avausviesti}} korvataan mallia valittaessa —
 // esc() varmistaa ettei yhteystiedon nimi voi rikkoa mallin HTML-rakennetta.
 function applyEmailTemplate(templateId) {
   if (!templateId) return;
@@ -2019,8 +2020,13 @@ function applyEmailTemplate(templateId) {
     etunimi: c?c.nimi.split(/\s+/)[0]:'',
     nimi: c?c.nimi:'',
     yritys: p?p.yritys_nimi:'',
-    tekija: currentUser.nimi||''
+    tekija: currentUser.nimi||'',
+    avausviesti: p?.avausviesti||''
   };
+  if (/\{\{avausviesti\}\}/.test(`${t.aihe||''}\n${t.sisalto||''}`) && !vars.avausviesti.trim()) {
+    showToast('Tililtä puuttuu Avausviesti — täytä se ennen tämän mallin käyttöä','error');
+    return;
+  }
   const fill=s=>(s||'').replace(/\{\{(\w+)\}\}/g,(m,k)=>k in vars?esc(vars[k]):m);
   if (t.aihe) document.getElementById('email-subject').value=fill(t.aihe);
   document.getElementById('email-body-html').innerHTML=fill(t.sisalto)+signatureHtml();
@@ -2337,7 +2343,7 @@ function updateBulkEmailPreview() {
 }
 
 function renderBulkTemplate(template,p,c) {
-  const vars={etunimi:(c.nimi||'').trim().split(/\s+/)[0]||'',nimi:c.nimi||'',yritys:p.yritys_nimi||'',tekija:currentUser.nimi||''};
+  const vars={etunimi:(c.nimi||'').trim().split(/\s+/)[0]||'',nimi:c.nimi||'',yritys:p.yritys_nimi||'',tekija:currentUser.nimi||'',avausviesti:p.avausviesti||''};
   const fillSubject=v=>String(v||'').replace(/\{\{(\w+)\}\}/g,(m,k)=>k in vars?vars[k]:m);
   const fillHtml=v=>String(v||'').replace(/\{\{(\w+)\}\}/g,(m,k)=>k in vars?esc(vars[k]):m);
   return {subject:fillSubject(template.aihe).trim(),bodyHtml:fillHtml(template.sisalto)+signatureHtml()};
@@ -2387,6 +2393,13 @@ async function startBulkEmailSend() {
   if (x.remindersEnabled && (!reminder1Template||!reminder2Template)) { showToast('Valitse molemmat muistutusviestipohjat tai poista muistutukset käytöstä','error'); return; }
   if (!x.selected.length) { showToast('Lähetettäviä vastaanottajia ei löytynyt','error'); return; }
   if (!template.aihe?.trim() || !template.sisalto?.trim()) { showToast('Valitulta mallilta puuttuu aihe tai sisältö','error'); return; }
+  if (/\{\{avausviesti\}\}/.test(`${template.aihe||''}\n${template.sisalto||''}`)) {
+    const missingOpeners=x.selected.filter(({p})=>!String(p.avausviesti||'').trim());
+    if (missingOpeners.length) {
+      showToast(`${missingOpeners.length} valitulta tililtä puuttuu Avausviesti — lähetystä ei aloitettu`,'error');
+      return;
+    }
+  }
   if (x.remindersEnabled && (!reminder1Template.aihe?.trim()||!reminder1Template.sisalto?.trim()||!reminder2Template.aihe?.trim()||!reminder2Template.sisalto?.trim())) { showToast('Muistutusmallilta puuttuu aihe tai sisältö','error'); return; }
   const reminderConfirm=x.remindersEnabled?`\nMuistutus 1 (+3 pv): ${reminder1Template.nimi}\nMuistutus 2 (+10 pv): ${reminder2Template.nimi}\nMuistutukset perutaan, jos asiakas vastaa tai kaupan vaihe muuttuu.`:'\nMuistutukset: ei käytössä';
   const segmentList=[...x.segments].join(', ');
@@ -3642,6 +3655,21 @@ async function loadData() {
     const sheets = meta.sheets;
     const tabNames = sheets.map(s => s.properties.title);
     if (!tabNames.includes(CRM_TAB)) await addSheet(CRM_TAB, CRM_COLS);
+    else {
+      try {
+        const crmSheetMeta=sheets.find(s=>s.properties.title===CRM_TAB);
+        const crmSheetId=crmSheetMeta?.properties.sheetId;
+        const crmCols=crmSheetMeta?.properties.gridProperties?.columnCount||0;
+        if (crmSheetId!=null && crmCols<13) {
+          await apiPost(':batchUpdate',{requests:[{updateSheetProperties:{
+            properties:{sheetId:crmSheetId,gridProperties:{columnCount:13}},
+            fields:'gridProperties.columnCount'
+          }}]});
+        }
+        await sheetPut(`${CRM_TAB}!M1`,[['avausviesti']]);
+      }
+      catch(e) { console.warn('Avausviesti-otsikon päivitys epäonnistui:',e.message); }
+    }
     if (!tabNames.includes(YH_TAB))  await addSheet(YH_TAB,  YH_COLS);
     if (!tabNames.includes(YH_VERIFY_TAB)) await addSheet(YH_VERIFY_TAB, YH_VERIFY_COLS);
     if (!tabNames.includes(USERS_TAB)) await addSheet(USERS_TAB, USERS_COLS);
@@ -3718,7 +3746,7 @@ async function loadData() {
       } catch(_) {}
     }
     normalizeTalopakettiPisteet();
-    const crmRows = await sheetGet(`${CRM_TAB}!A:L`);
+    const crmRows = await sheetGet(`${CRM_TAB}!A:M`);
     applyCrmState(crmRows);
     const yhRows = await sheetGet(`${YH_TAB}!A:H`);
     // KRIITTINEN: .map() ENNEN .filter():ia, ei jälkeen. _rowIndex on suora
@@ -3875,12 +3903,12 @@ async function initVirtualKaupat() {
     const ov = p.tili_override&&Object.keys(p.tili_override).length?JSON.stringify(p.tili_override):'';
     newRows.push([p.spara_id, p.vaihe||'', p.omistaja||'', p.seuraava_toimenpide||'',
       p.seuraava_pvm||'', p.muistiinpanot||'', p.aktiviteetit, ts,
-      p.crm_status||'Prospekti', ov, '', '']);
+      p.crm_status||'Prospekti', ov, '', '', p.avausviesti||'']);
   });
   if (newRows.length) {
     try {
-      await sheetAppend(`${CRM_TAB}!A:L`, newRows);
-      const crmRows = await sheetGet(`${CRM_TAB}!A:L`);
+      await sheetAppend(`${CRM_TAB}!A:M`, newRows);
+      const crmRows = await sheetGet(`${CRM_TAB}!A:M`);
       applyCrmState(crmRows);
     } catch(e) { console.error('initVirtualKaupat:', e); }
   }
@@ -3898,7 +3926,7 @@ function detectVaihe(tila, tulos) {
   return null;
 }
 
-function blankCrm() { return { omistaja:null, seuraava_toimenpide:null, seuraava_pvm:null, muistiinpanot:null, aktiviteetit:'[]', crm_status:'Prospekti', tili_override:{}, _crmRow:null }; }
+function blankCrm() { return { omistaja:null, seuraava_toimenpide:null, seuraava_pvm:null, muistiinpanot:null, aktiviteetit:'[]', crm_status:'Prospekti', tili_override:{}, ai_opener:[], ai_opener_hash:null, avausviesti:null, _crmRow:null }; }
 
 // Konserni-/toimipaikkahierarkia tallennetaan CRM-tila.tili_override-JSONiin,
 // jotta Tilit-välilehden perusdataan ei tarvitse lisätä uusia sarakkeita.
@@ -4013,7 +4041,8 @@ function applyCrmState(crmRows) {
     map[row[0]] = { vaihe:row[1]||null, omistaja:row[2]||null, seuraava_toimenpide:row[3]||null,
       seuraava_pvm:row[4]||null, muistiinpanot:row[5]||null, aktiviteetit:row[6]||'[]',
       crm_updated_at:row[7]||null,
-      crm_status:row[8]||'Prospekti', tili_override:ov, ai_opener:aiOpener, ai_opener_hash:row[11]||null, _crmRow:i+1 };
+      crm_status:row[8]||'Prospekti', tili_override:ov, ai_opener:aiOpener, ai_opener_hash:row[11]||null,
+      avausviesti:row[12]||null, _crmRow:i+1 };
   });
   allProspects.forEach(p => {
     const s = map[p.spara_id];
@@ -4024,7 +4053,7 @@ function applyCrmState(crmRows) {
       seuraava_pvm:s.seuraava_pvm, muistiinpanot:s.muistiinpanot,
       aktiviteetit:s.aktiviteetit||'[]', crm_status:s.crm_status||'Prospekti', tili_override:ov,
       ai_opener:s.ai_opener||[], ai_opener_hash:s.ai_opener_hash||null, _crmRow:s._crmRow,
-      crm_updated_at:s.crm_updated_at });
+      avausviesti:s.avausviesti||null, crm_updated_at:s.crm_updated_at });
     if (ov.yritys_nimi)       p.yritys_nimi       = ov.yritys_nimi;
     if (ov.y_tunnus    != null) p.y_tunnus         = ov.y_tunnus;
     if (ov.segmentti   != null) p.segmentti        = ov.segmentti;
@@ -4046,12 +4075,12 @@ async function saveCrmState(p) {
   const row = [p.spara_id, p.vaihe||'', p.omistaja||'', p.seuraava_toimenpide||'',
     p.seuraava_pvm||'', p.muistiinpanot||'', p.aktiviteetit||'[]', new Date().toISOString(),
     p.crm_status||'Prospekti', ov,
-    p.ai_opener&&p.ai_opener.length?JSON.stringify(p.ai_opener):'', p.ai_opener_hash||''];
+    p.ai_opener&&p.ai_opener.length?JSON.stringify(p.ai_opener):'', p.ai_opener_hash||'', p.avausviesti||''];
   if (p._crmRow) {
-    await sheetPut(`${CRM_TAB}!A${p._crmRow}:L${p._crmRow}`, [row]);
+    await sheetPut(`${CRM_TAB}!A${p._crmRow}:M${p._crmRow}`, [row]);
   } else {
-    await sheetAppend(`${CRM_TAB}!A:L`, [row]);
-    const crmRows = await sheetGet(`${CRM_TAB}!A:L`);
+    await sheetAppend(`${CRM_TAB}!A:M`, [row]);
+    const crmRows = await sheetGet(`${CRM_TAB}!A:M`);
     applyCrmState(crmRows);
   }
 }
@@ -4106,6 +4135,7 @@ function renderTiedotEdit(p) {
       <div class="form-group"><label>Yhteyshenkilö</label><input class="form-control" id="me-yhteyshenkilö" value="${esc(p['yhteyshenkilö']||'')}"></div>
       <div class="form-group"><label>Sähköposti</label><input class="form-control" id="me-sahkoposti" value="${esc(p.henk_sahkoposti||'')}" type="email"></div>
       <div class="form-group full"><label>Lisätiedot</label><textarea class="form-control" id="me-lisatiedot" rows="3">${esc(p.huomiot||'')}</textarea></div>
+      <div class="form-group full"><label>Avausviesti</label><textarea class="form-control" id="me-avausviesti" rows="3" placeholder="Valmis personoitu kappale viestipohjan {{avausviesti}}-kohtaan">${esc(p.avausviesti||'')}</textarea></div>
       <div class="form-group"><label>Omistaja (CRM)</label><input class="form-control" id="me-omistaja" placeholder="Patrick" value="${esc(p.omistaja||'')}"></div>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:14px;">
@@ -4131,6 +4161,7 @@ async function saveMuokkaa() {
   p['yhteyshenkilö']= document.getElementById('me-yhteyshenkilö')?.value.trim() || '';
   p.henk_sahkoposti = document.getElementById('me-sahkoposti')?.value.trim() || '';
   p.huomiot         = document.getElementById('me-lisatiedot')?.value.trim() || '';
+  p.avausviesti     = document.getElementById('me-avausviesti')?.value.trim() || null;
   p.omistaja        = document.getElementById('me-omistaja')?.value.trim() || null;
   p.parent_tili_id  = document.getElementById('me-parent-tili')?.value || null;
   p.tili_tyyppi     = document.getElementById('me-tilityyppi')?.value || (p.parent_tili_id?'toimipaikka':null);
@@ -4763,6 +4794,7 @@ function openModal(sid) {
     ${f('LinkedIn',p.linkedin?lnk(p.linkedin):null)} ${f('WWW',lnk(p.www))}
     <div class="section-divider"></div>
     ${f('Signaali',p.signaali,true)} ${f('Perustelu',p.perustelu,true)}
+    ${f('Avausviesti',p.avausviesti,true)}
     ${f('ETJ-velvoiteluokka',p.velvoiteluokka,true)} ${f('Huomiot',p.huomiot,true)}
     <div class="section-divider"></div>
     ${f('Kontaktoinnin tila (Sheets)',p.kontaktoinnin_tila,true)}
@@ -5245,11 +5277,11 @@ async function initKaupat() {
     p.aktiviteetit=JSON.stringify(acts);
     const ov=p.tili_override&&Object.keys(p.tili_override).length?JSON.stringify(p.tili_override):'';
     return [p.spara_id,p.vaihe||'',p.omistaja||'',p.seuraava_toimenpide||'',
-      p.seuraava_pvm||'',p.muistiinpanot||'',p.aktiviteetit,ts,p.crm_status||'Prospekti',ov,'',''];
+      p.seuraava_pvm||'',p.muistiinpanot||'',p.aktiviteetit,ts,p.crm_status||'Prospekti',ov,'','',p.avausviesti||''];
   });
   try {
-    await sheetAppend(`${CRM_TAB}!A:L`,rows);
-    const crmRows=await sheetGet(`${CRM_TAB}!A:L`);
+    await sheetAppend(`${CRM_TAB}!A:M`,rows);
+    const crmRows=await sheetGet(`${CRM_TAB}!A:M`);
     applyCrmState(crmRows);
     updateSummary(); applyFilters(); renderDashboard();
     showToast(`${rows.length} kauppaa tallennettu ✓`,'success');
@@ -6396,7 +6428,7 @@ async function createProspectAccountsBatch(candidates, opts) {
       lahde:c.tf_rekisteroity||'', 'yhteyshenkilö':contactName, titteli:null, suora_numero:null,
       henk_sahkoposti:'', linkedin:null, created_at:ts,
       vaihe:null, _isTili:true, _rowIndex:tiliRowIndex,
-      ...blankCrm()
+      ...blankCrm(), avausviesti:(c.openingParagraph||'').trim()||null
     };
     tiliRowIndex += 1;
 
@@ -6431,7 +6463,7 @@ async function createProspectAccountsBatch(candidates, opts) {
 
     const ov=p.tili_override&&Object.keys(p.tili_override).length?JSON.stringify(p.tili_override):'';
     crmRows.push([p.spara_id,p.vaihe||'',p.omistaja||'',p.seuraava_toimenpide||'',
-      p.seuraava_pvm||'',p.muistiinpanot||'',p.aktiviteetit,ts,p.crm_status||'Prospekti',ov,'','']);
+      p.seuraava_pvm||'',p.muistiinpanot||'',p.aktiviteetit,ts,p.crm_status||'Prospekti',ov,'','',p.avausviesti||'']);
 
     newProspects.push(p);
   }
@@ -6455,13 +6487,13 @@ async function createProspectAccountsBatch(candidates, opts) {
   // vastaavaa rivintyhjennysmekanismia eikä siis samaa aukko-riskiä,
   // joten niiden sheetAppend jätetty ennalleen.
   await sheetPut(`${MAIN_TAB}!A${tiliStartRow}:AB${tiliStartRow+tiliRows.length-1}`, tiliRows);
-  await sheetAppend(`${CRM_TAB}!A:L`, crmRows);
+  await sheetAppend(`${CRM_TAB}!A:M`, crmRows);
   if (contactRows.length) await sheetAppend(`${YH_TAB}!A:H`, contactRows);
   if (verifyRows.length) await sheetAppend(`${YH_VERIFY_TAB}!A:J`, verifyRows);
 
   allProspects.push(...newProspects);
   allContacts.push(...newContacts);
-  const freshCrmRows=await sheetGet(`${CRM_TAB}!A:L`);
+  const freshCrmRows=await sheetGet(`${CRM_TAB}!A:M`);
   applyCrmState(freshCrmRows);
 
   buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard();
@@ -7507,10 +7539,10 @@ async function runSignalMonitoringBatch() {
         const rows=needsFirstCrmWrite.map(p=>{
           const ov=p.tili_override&&Object.keys(p.tili_override).length?JSON.stringify(p.tili_override):'';
           return [p.spara_id,p.vaihe||'',p.omistaja||'',p.seuraava_toimenpide||'',
-            p.seuraava_pvm||'',p.muistiinpanot||'',p.aktiviteetit,ts,p.crm_status||'Prospekti',ov,'',''];
+            p.seuraava_pvm||'',p.muistiinpanot||'',p.aktiviteetit,ts,p.crm_status||'Prospekti',ov,'','',p.avausviesti||''];
         });
-        await sheetAppend(`${CRM_TAB}!A:L`, rows);
-        const crmRows=await sheetGet(`${CRM_TAB}!A:L`);
+        await sheetAppend(`${CRM_TAB}!A:M`, rows);
+        const crmRows=await sheetGet(`${CRM_TAB}!A:M`);
         applyCrmState(crmRows);
       }
     } catch(e) {
@@ -7945,7 +7977,7 @@ function openAddTili() {
   hideYtjDropdown('addtili');
   ['tf_name','tf_ytunnus','tf_toimiala','tf_yhtiömuoto','tf_osoite','tf_postinumero',
    'tf_kaupunki','tf_www','tf_yhteyshenkilö','tf_sahkoposti','tf_rekisteroity','tf_lisatiedot',
-   'tf_signaali','tf_perustelu']
+   'tf_signaali','tf_perustelu','tf_avausviesti']
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   const kSel=document.getElementById('tf_kampanja');
   if (kSel) kSel.value=baseProjektiNimi('BASE_MUU');
@@ -7979,6 +8011,7 @@ async function saveNewTili() {
   const y_tunnus       = document.getElementById('tf_ytunnus')?.value.trim()||'';
   const signaali       = document.getElementById('tf_signaali')?.value.trim()||'';
   const perustelu      = document.getElementById('tf_perustelu')?.value.trim()||'';
+  const avausviesti    = document.getElementById('tf_avausviesti')?.value.trim()||'';
   const nowIso = new Date().toISOString();
   const row = [
     id, kampanja, '',
@@ -8042,7 +8075,7 @@ async function saveNewTili() {
       lahde:rekisteroity, 'yhteyshenkilö':yhteyshenkilö, titteli:null, suora_numero:null,
       henk_sahkoposti, linkedin:null, created_at:nowIso,
       vaihe:null, _isTili:true, _rowIndex:rowIndex,
-      ...blankCrm()
+      ...blankCrm(), avausviesti:avausviesti||null
     };
     // 'Liidi' oli vanhentunut jo ENNEN 2026-09-18-nimeämistä — tämä
     // luontipolku (Lisää tili -lomake) ei ollut koskaan päivitetty
@@ -8168,8 +8201,7 @@ function openAddTiliWithImportPrefill(candidate, kampanja) {
     tf_yhteyshenkilö: candidate.contact_name
       ? candidate.contact_name + (candidate.contact_title ? ' — '+candidate.contact_title : '')
       : '',
-    tf_lisatiedot: candidate.opening_paragraph
-      ? 'ChatGPT-ehdotus avausriville: '+candidate.opening_paragraph : ''
+    tf_avausviesti: candidate.opening_paragraph||''
   });
   // fillTiliForm asettaa .value:n suoraan, ei laukaise oninput:ia —
   // sama kutsu jonka selectYtjSuggestion() jo tekee ohjelmallisen
@@ -9303,7 +9335,7 @@ async function saveGlobalTask() {
       <div class="yh-add-form">
         <div class="form-grid">
           <div class="form-group full"><label>Mallin nimi</label><input class="form-control" id="tpl-uusi-nimi" placeholder="Esim. Ensikontakti"></div>
-          <div class="form-group full"><label>Aihe</label><input class="form-control" id="tpl-uusi-aihe" placeholder="Voi käyttää: {{etunimi}} {{nimi}} {{yritys}} {{tekija}}"></div>
+          <div class="form-group full"><label>Aihe</label><input class="form-control" id="tpl-uusi-aihe" placeholder="Voi käyttää: {{etunimi}} {{nimi}} {{yritys}} {{tekija}} {{avausviesti}}"></div>
           <div class="form-group full">
             <label>Sisältö</label>
             <div class="email-toolbar">
@@ -9319,7 +9351,7 @@ async function saveGlobalTask() {
             </div>
             <div class="form-control email-body-html" id="tpl-uusi-sisalto" contenteditable="true" style="min-height:90px"></div>
             <div style="font-size:11px;color:var(--text2);margin-top:4px">
-              Merkinnät <code>{{etunimi}}</code>, <code>{{nimi}}</code>, <code>{{yritys}}</code>, <code>{{tekija}}</code>
+              Merkinnät <code>{{etunimi}}</code>, <code>{{nimi}}</code>, <code>{{yritys}}</code>, <code>{{tekija}}</code>, <code>{{avausviesti}}</code>
               korvautuvat automaattisesti kun malli valitaan sähköpostin kirjoitusikkunassa.
             </div>
           </div>
