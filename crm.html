@@ -1329,7 +1329,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-29.4';
+const BUILD_ID = '2026-09-29.5';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2168,8 +2168,11 @@ function renderBulkSegmenttiFilterPanel() {
   // selittämättömältä virheeltä vaikka se oli looginen seuraus siitä ettei
   // esim. yksikään ETJ+-tili ole segmentissä "Teollisuus". Korjaus: näytetään
   // jokaisen segmentin vierellä kuinka moni NYKYISEN projektin tili sitä
-  // käyttää, ja nostetaan osumia sisältävät segmentit listan kärkeen — ei
-  // enää mitään piiloon, mutta heti nähtävissä mikä valinta kannattaa.
+  // käyttää — ei enää mitään piiloon, mutta heti nähtävissä mikä valinta
+  // kannattaa. Järjestys pysyy AAKKOSELLISENA (distinctSegments():in oma
+  // järjestys, sama kuin Kanban/Tilit) — ei uudelleenjärjestystä osuma-
+  // määrän mukaan, koska se hajottaisi toisiaan muistuttavat segmenttinimet
+  // (esim. "Teollisuus"/"Teollisuuskiinteistöt") kauas toisistaan.
   const projekti=document.getElementById('bulk-projekti')?.value||'';
   const counts=new Map();
   allProspects.forEach(p=>{
@@ -2177,7 +2180,7 @@ function renderBulkSegmenttiFilterPanel() {
     const s=(p.segmentti||'').trim(); if (!s) return;
     counts.set(s,(counts.get(s)||0)+1);
   });
-  const segs=distinctSegments().sort((a,b)=>(counts.get(b)||0)-(counts.get(a)||0) || a.localeCompare(b,'fi'));
+  const segs=distinctSegments();
   panel.innerHTML = segs.length ? segs.map(s=>{
     const n=counts.get(s)||0;
     return `<label class="bulk-sf-item"${n?'':' style="color:var(--text2)"'}>
@@ -2347,11 +2350,21 @@ function bulkDelay(ms) { return new Promise(resolve=>setTimeout(resolve,ms)); }
 function bulkAddDaysIso(iso,days) {
   const d=new Date(iso); d.setDate(d.getDate()+days); return d.toISOString();
 }
+// Palauttaa RAA'AN (ei normalisoidun) kauppa-aktiviteettiobjektin acts-
+// taulukosta VIITTEENÄ, jotta sen kenttiä voi muokata suoraan paikallaan
+// (ks. startBulkEmailSend():in vaiheensiirto) — sama "aktiivinen kauppa,
+// tai jos ei yhtään aktiivista niin viimeisin" -valintalogiikka jota
+// bulkCurrentDealStage() käytti aiemmin suoraan, nyt jaettuna molempien
+// kesken (lopputulos identtinen: bulkCurrentDealStage():in oma
+// normalizeKauppaVaihe()-kutsu normalisoi palautusarvon joka tapauksessa).
+function activeKauppaTask(acts) {
+  const deals=acts.filter(a=>a.tyyppi==='kauppa');
+  const active=deals.filter(a=>!taskIsDone(normalizeTask(a)));
+  return active.length?active[active.length-1]:(deals.length?deals[deals.length-1]:null);
+}
 function bulkCurrentDealStage(p,actsOverride) {
   const acts=actsOverride||parseActs(p);
-  const deals=acts.filter(a=>a.tyyppi==='kauppa').map(normalizeTask);
-  const active=deals.filter(a=>!taskIsDone(a));
-  const chosen=active.length?active[active.length-1]:(deals.length?deals[deals.length-1]:null);
+  const chosen=activeKauppaTask(acts);
   return normalizeKauppaVaihe(p.vaihe||chosen?.tila||'Tietojenkeruu');
 }
 function reminderRowsForTicket(ticketId) {
@@ -2425,6 +2438,40 @@ async function startBulkEmailSend() {
       const created=await createAndSendGraphMessage(token,message);
       const now=new Date().toISOString();
       const acts=parseActs(p);
+
+      // Massalähetys siirtää kaupan "Sovi tapaaminen" -vaiheeseen — mutta EI
+      // KOSKAAN taaksepäin: jos kauppa on jo edennyt pidemmälle (esim.
+      // Tarjous työn alla) tai se on jo päätetty (Sopimus syntynyt/Ei juuri
+      // nyt), sitä ei kosketa. Automaattinen massaviesti ei saa nollata jo
+      // tehtyä myyntityötä eikä avata suljettua kauppaa uudelleen. TÄYTYY
+      // tapahtua ENNEN baselineStage:n laskentaa (heti alla) — muuten
+      // muistutusten "peruuta jos kaupan vaihe muuttuu" -vertailu laukeaisi
+      // virheellisesti heti TÄSTÄ omasta muutoksesta eikä vain myöhemmästä
+      // aidosta muutoksesta. Jos samalla tilillä on useampi vastaanottaja
+      // tässä samassa erässä, toisen kierroksen acts on jo edellisen
+      // kierroksen päivittämä, joten vaihetta ei yritetä siirtää enää
+      // uudelleen (dealIdx<soviIdx ei enää päde).
+      const dealTask=activeKauppaTask(acts);
+      if (dealTask) {
+        const currentTila=normalizeKauppaVaihe(dealTask.tila);
+        const dealIdx=VAIHEET.indexOf(currentTila);
+        const soviIdx=VAIHEET.indexOf('Sovi tapaaminen');
+        const dealDone=dealTask.done||(TASK_DONE.kauppa||[]).includes(currentTila);
+        if (!dealDone && dealIdx>=0 && dealIdx<soviIdx) {
+          const prevVaihe=p.vaihe;
+          dealTask.tila='Sovi tapaaminen'; dealTask.done=false; dealTask.completed_at=null; dealTask.updated_at=now;
+          p.vaihe='Sovi tapaaminen';
+          // Suoraan acts.push (ei addActToProspect) — se lukisi p.aktiviteetit:in
+          // tuoreeltaan JA kirjoittaisi heti, jolloin tämän silmukkakierroksen
+          // vielä tallentamattomat muutokset (tämä vaihemuutos + kohta lisättävä
+          // sähköpostitiketti) katoaisivat kun tämän funktion oma
+          // p.aktiviteetit=JSON.stringify(acts) suorittaisi lopuksi.
+          acts.push({tyyppi:'vaihe_muutos',
+            teksti:`Vaihe: ${prevVaihe} → Sovi tapaaminen (massalähetys)`,
+            tekija:currentUser.nimi||currentUserEmail||null, created_at:now});
+        }
+      }
+
       const threadEntry={dir:'out',graphId:created.id,ts:now,subject:rendered.subject,
         preview:truncateEmailBody(htmlToPlainText(rendered.bodyHtml))};
       const storableBodyHtml=emailDraftBodyTooLarge(rendered.bodyHtml)?null:rendered.bodyHtml;
@@ -2474,6 +2521,7 @@ async function startBulkEmailSend() {
   const cancelled=bulkEmailRun.cancel;
   bulkEmailRun={running:false,cancel:false};
   updateSummary(); applyFilters(); applyYhFilters(); renderDashboard();
+  if (document.getElementById('tab-kanban')?.classList.contains('active')) renderKanban();
   renderBulkProgress(sent,failed,x.selected.length,cancelled?'Keskeytetty käyttäjän pyynnöstä':'',true);
   showToast(cancelled?`Lähetys keskeytetty: ${sent} lähetetty`:`Massalähetys valmis: ${sent} lähetetty, ${failed} epäonnistui`,failed?'error':'success');
 }
