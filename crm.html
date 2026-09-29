@@ -1330,7 +1330,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-29.5';
+const BUILD_ID = '2026-09-30.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2247,15 +2247,21 @@ const BULK_GENERIC_LOCALPARTS=new Set([
   'varaus','reservations','laskutus','billing','accounting','hr','rekry','recruitment','jobs',
   'careers','marketing','markkinointi'
 ]);
-function isDirectContactEmail(c) {
+function directContactRejectReason(c) {
   const email=(c?.sahkoposti||'').trim().toLowerCase();
   const name=(c?.nimi||'').trim();
-  if (!name || name.startsWith('#') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return false;
-  // Massalähetys hyväksyy vain erikseen varmennetut prospektointikontaktit.
-  // Pelkkä "etunimi.sukunimi@"-näköinen osoite ei enää riitä.
-  if (c.email_status!=='verified' || c.contact_status!=='verified') return false;
+  if (!name || name.startsWith('#')) return 'nimi puuttuu';
+  if (!email) return 'sähköposti puuttuu';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'sähköpostin muoto virheellinen';
   const local=email.split('@')[0];
-  return !BULK_GENERIC_LOCALPARTS.has(local);
+  if (BULK_GENERIC_LOCALPARTS.has(local)) return 'yleisosoite';
+  if (c.contact_status!=='verified' && c.email_status!=='verified') return 'henkilöä ja sähköpostia ei ole varmennettu';
+  if (c.contact_status!=='verified') return 'yhteyshenkilöä ei ole varmennettu';
+  if (c.email_status!=='verified') return 'sähköpostia ei ole varmennettu';
+  return '';
+}
+function isDirectContactEmail(c) {
+  return !directContactRejectReason(c);
 }
 function bulkCampaignKey(projekti,segmentti,templateId) {
   return [projekti,segmentti,templateId].map(x=>String(x||'').trim().toLowerCase()).join('|');
@@ -2280,13 +2286,18 @@ function bulkEmailCandidateSet() {
   const reminder1TemplateId=remindersEnabled?(document.getElementById('bulk-reminder1-template')?.value||''):'';
   const reminder2TemplateId=remindersEnabled?(document.getElementById('bulk-reminder2-template')?.value||''):'';
   const accounts=allProspects.filter(p=>p.kampanja===projekti && bulkSegmenttiFilter.has((p.segmentti||'').trim()));
-  const eligible=[], seenEmails=new Set();
+  const eligible=[], rejected=[], seenEmails=new Set();
   let accountsWithoutDirect=0, alreadySent=0, duplicateEmails=0;
   accounts.forEach(p=>{
     const segmentti=(p.segmentti||'').trim();
     const key=bulkCampaignKey(projekti,segmentti,templateId);
-    const contacts=allContacts.filter(c=>c.tili_id===p.spara_id && isDirectContactEmail(c));
-    if (!contacts.length) accountsWithoutDirect++;
+    const accountContacts=allContacts.filter(c=>c.tili_id===p.spara_id);
+    const contacts=accountContacts.filter(c=>isDirectContactEmail(c));
+    if (!contacts.length) {
+      accountsWithoutDirect++;
+      if (!accountContacts.length) rejected.push({p,c:null,reason:'yhteyshenkilö puuttuu'});
+      else accountContacts.forEach(c=>rejected.push({p,c,reason:directContactRejectReason(c)||'ei kelvollinen vastaanottaja'}));
+    }
     contacts.forEach(c=>{
       const email=c.sahkoposti.trim().toLowerCase();
       if (seenEmails.has(email)) { duplicateEmails++; return; }
@@ -2299,7 +2310,7 @@ function bulkEmailCandidateSet() {
   const requested=Math.max(1,parseInt(document.getElementById('bulk-count')?.value||'10',10)||10);
   const selected=scope==='all'?eligible:eligible.slice(0,requested);
   return {projekti,segments:new Set(bulkSegmenttiFilter),templateId,remindersEnabled,reminder1TemplateId,reminder2TemplateId,
-    accounts,eligible,selected,accountsWithoutDirect,alreadySent,duplicateEmails};
+    accounts,eligible,selected,rejected,accountsWithoutDirect,alreadySent,duplicateEmails};
 }
 
 function updateBulkEmailPreview() {
@@ -2336,6 +2347,7 @@ function updateBulkEmailPreview() {
         Valituissa segmenteissä ${x.accounts.length} tiliä · ilman varmennettua henkilökohtaista osoitetta ${x.accountsWithoutDirect} tiliä
         · sama kampanja jo lähetetty ${x.alreadySent} vastaanottajalle${x.duplicateEmails?' · päällekkäisiä osoitteita ohitettu '+x.duplicateEmails:''}.
       </div>
+      ${x.rejected?.length ? `<details style="margin-top:7px"><summary style="cursor:pointer;font-size:11px;color:var(--text2)">Näytä miksi ${x.rejected.length} kontaktia/tiliä hylättiin</summary><div style="margin-top:6px;max-height:160px;overflow:auto">${x.rejected.slice(0,50).map(({p,c,reason})=>`<div style="font-size:10px;padding:3px 0;border-bottom:1px solid var(--border)"><strong>${esc(p.yritys_nimi)}</strong>${c?' — '+esc(c.nimi||'')+(c.sahkoposti?' · '+esc(c.sahkoposti):''):''}: <span style="color:var(--warning)">${esc(reason)}</span></div>`).join('')}${x.rejected.length>50?'<div style="font-size:10px;padding-top:4px">… ja '+(x.rejected.length-50)+' muuta</div>':''}</div></details>` : ''}
       ${verifyBtn}
       <div style="font-size:11px;margin-top:9px">Malli: <strong>${template?esc(template.nimi):'ei valittu'}</strong></div>
       <div style="font-size:11px;margin-top:4px;color:var(--text2)">${x.remindersEnabled
