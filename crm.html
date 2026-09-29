@@ -81,6 +81,14 @@
     .kb-sf-panel.hidden { display:none; }
     .kb-sf-item { display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap; }
     .kb-sf-item:hover { background:var(--bg3); }
+    /* Massalähetyksen monivalintainen segmenttivalitsin — sama pudotus-
+       paneeli-kaava kuin Kanbanin segmenttisuodattimella (kb-sf-*), oma
+       pieni luokkajoukko samasta syystä kuin muillakin tämän kaavan
+       toisinnoilla tässä tiedostossa. */
+    .bulk-sf-panel { position:absolute;left:0;top:calc(100% + 6px);background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.55);z-index:901;min-width:220px;max-height:260px;overflow-y:auto;padding:4px 0; }
+    .bulk-sf-panel.hidden { display:none; }
+    .bulk-sf-item { display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap; }
+    .bulk-sf-item:hover { background:var(--bg3); }
     /* Sähköpostin monivalintainen vastaanottajapoiminta — sama
        pudotuspaneeli-kaava kuin Kanbanin projektisuodattimella
        (kb-pf-*), oma pieni luokkajoukko ettei kahta erillistä
@@ -1321,7 +1329,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-25.4';
+const BUILD_ID = '2026-09-29.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2038,26 +2046,39 @@ async function reloadBulkEmailRules() {
   })).filter(x=>x.id&&x.projekti&&x.segmentti);
 }
 
+// Yhden projekti+segmentti-parin sääntö ylikirjoitetaan/luodaan — poimittu
+// saveBulkEmailRule():sta jotta monivalinta (bulkSegmenttiFilter) voi
+// kutsua tätä kerran per valittu segmentti (jokainen segmentti muistaa
+// mallivalintansa edelleen erikseen, ks. bulkRuleFor).
+async function upsertBulkEmailRule(projekti, segmentti, templateId, reminder1TemplateId, reminder2TemplateId, now) {
+  const existing=bulkRuleFor(projekti,segmentti);
+  if (existing?._rowIndex) {
+    await sheetPut(`${BULK_RULES_TAB}!B${existing._rowIndex}:G${existing._rowIndex}`,[[
+      projekti,segmentti,templateId,now,reminder1TemplateId,reminder2TemplateId
+    ]]);
+    Object.assign(existing,{template_id:templateId,updated_at:now,
+      reminder1_template_id:reminder1TemplateId,reminder2_template_id:reminder2TemplateId});
+  } else {
+    await sheetAppend(`${BULK_RULES_TAB}!A:G`,[['BER'+Date.now(),projekti,segmentti,templateId,now,reminder1TemplateId,reminder2TemplateId]]);
+    await reloadBulkEmailRules();
+  }
+}
+
 async function saveBulkEmailRule() {
   const projekti=document.getElementById('bulk-projekti')?.value||'';
-  const segmentti=document.getElementById('bulk-segmentti')?.value||'';
   const templateId=document.getElementById('bulk-template')?.value||'';
   const remindersEnabled=!!document.getElementById('bulk-reminders-enabled')?.checked;
   const reminder1TemplateId=remindersEnabled?(document.getElementById('bulk-reminder1-template')?.value||''):'';
   const reminder2TemplateId=remindersEnabled?(document.getElementById('bulk-reminder2-template')?.value||''):'';
-  if (!projekti||!segmentti||!templateId) return;
+  if (!projekti||!bulkSegmenttiFilter.size||!templateId) return;
   const now=new Date().toISOString();
-  const existing=bulkRuleFor(projekti,segmentti);
   try {
-    if (existing?._rowIndex) {
-      await sheetPut(`${BULK_RULES_TAB}!B${existing._rowIndex}:G${existing._rowIndex}`,[[
-        projekti,segmentti,templateId,now,reminder1TemplateId,reminder2TemplateId
-      ]]);
-      Object.assign(existing,{template_id:templateId,updated_at:now,
-        reminder1_template_id:reminder1TemplateId,reminder2_template_id:reminder2TemplateId});
-    } else {
-      await sheetAppend(`${BULK_RULES_TAB}!A:G`,[['BER'+Date.now(),projekti,segmentti,templateId,now,reminder1TemplateId,reminder2TemplateId]]);
-      await reloadBulkEmailRules();
+    // Peräkkäin (ei Promise.all) — samat rivit/BULK_RULES_TAB-haku
+    // jaetaan kutsujen kesken (bulkRuleFor/reloadBulkEmailRules), rinnakkain
+    // ajettuna kaksi "ei vielä olemassa" -haaraa voisivat molemmat päättää
+    // luoda uuden rivin samalle segmentille.
+    for (const segmentti of bulkSegmenttiFilter) {
+      await upsertBulkEmailRule(projekti, segmentti, templateId, reminder1TemplateId, reminder2TemplateId, now);
     }
   } catch(e) {
     showToast('Segmentin mallivalinnan tallennus epäonnistui: '+e.message,'error');
@@ -2114,33 +2135,78 @@ function closeBulkEmailMaybe(e) {
   if (e.target===document.getElementById('bulk-email-modal')) closeBulkEmailModal();
 }
 
-function bulkEmailProjectChanged() {
+// ── Massalähetys: monivalintainen segmenttivalitsin ─────────────────────────
+// Käyttäjä pyysi (1) että tämä lista pysyy synkassa Kanbanin/Tilien
+// segmenttisuodattimen kanssa — molemmat johtavat nyt segmenttinsä samasta
+// distinctSegments()-funktiosta (aiemmin tällä oli oma, hieman eri tavalla
+// erotteleva ad hoc -toteutuksensa) — ja (2) mahdollisuuden valita useampi
+// segmentti kerralla samaan lähetykseen, sama Set-pohjainen kaava kuin
+// Kanbanin kb-sf-*-suodattimella.
+let bulkSegmenttiFilter = new Set();
+
+function toggleBulkSegmenttiFilter(e) {
+  e.stopPropagation();
+  const panel=document.getElementById('bulk-sf-panel'); if (!panel) return;
+  const opening=panel.classList.contains('hidden');
+  closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter(); closeEmailToPicker();
+  if (opening) { renderBulkSegmenttiFilterPanel(); panel.classList.remove('hidden'); }
+  else panel.classList.add('hidden');
+}
+function closeBulkSegmenttiFilter() {
+  document.getElementById('bulk-sf-panel')?.classList.add('hidden');
+}
+function renderBulkSegmenttiFilterPanel() {
+  const panel=document.getElementById('bulk-sf-panel'); if (!panel) return;
   const projekti=document.getElementById('bulk-projekti')?.value||'';
-  const segments=[...new Set(allProspects.filter(p=>p.kampanja===projekti).map(p=>(p.segmentti||'').trim()).filter(Boolean))]
-    .sort((a,b)=>a.localeCompare(b,'fi'));
-  const sel=document.getElementById('bulk-segmentti');
-  sel.innerHTML=segments.length
-    ? segments.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')
-    : '<option value="">— ei segmenttejä —</option>';
+  const segs=distinctSegments(p=>p.kampanja===projekti);
+  panel.innerHTML = segs.length ? segs.map(s=>`<label class="bulk-sf-item">
+      <input type="checkbox" ${bulkSegmenttiFilter.has(s)?'checked':''} onchange="toggleBulkSegmenttiOption(${esc(JSON.stringify(s))})">
+      ${esc(s)}
+    </label>`).join('') : '<div style="padding:10px 14px;font-size:12px;color:var(--text2)">Ei segmenttejä tässä projektissa</div>';
+}
+function toggleBulkSegmenttiOption(seg) {
+  if (bulkSegmenttiFilter.has(seg)) bulkSegmenttiFilter.delete(seg);
+  else bulkSegmenttiFilter.add(seg);
+  updateBulkSegmenttiFilterBtn();
+  bulkEmailSegmentChanged();
+}
+function updateBulkSegmenttiFilterBtn() {
+  const btn=document.getElementById('bulk-sf-btn'); if (!btn) return;
+  const n=bulkSegmenttiFilter.size;
+  const label = n===0 ? 'Valitse segmentit' : n===1 ? [...bulkSegmenttiFilter][0] : n+' valittu';
+  btn.textContent = label+' ▾';
+}
+
+function bulkEmailProjectChanged() {
+  bulkSegmenttiFilter=new Set();
+  updateBulkSegmenttiFilterBtn();
+  renderBulkSegmenttiFilterPanel();
   bulkEmailSegmentChanged();
 }
 
+// Mallivalinnan automaattitäyttö (bulkRuleFor) toimii vain YHDEN valitun
+// segmentin tapauksessa — sääntö on aina yhden projekti+segmentti-parin
+// oma, joten useammalle valitulle segmentille ei ole yksikäsitteistä
+// "muistettua" mallia näytettäväksi. 0 tai 2+ valittuna lomake jätetään
+// ennalleen (ei arvata eikä tyhjennetä käyttäjän jo tekemää valintaa).
 function bulkEmailSegmentChanged() {
   const projekti=document.getElementById('bulk-projekti')?.value||'';
-  const segmentti=document.getElementById('bulk-segmentti')?.value||'';
-  const rule=bulkRuleFor(projekti,segmentti);
-  const tpl=document.getElementById('bulk-template');
-  const r1=document.getElementById('bulk-reminder1-template');
-  const r2=document.getElementById('bulk-reminder2-template');
-  if (rule && emailTemplates.some(t=>t.id===rule.template_id)) tpl.value=rule.template_id;
-  else tpl.value='';
-  if (rule && emailTemplates.some(t=>t.id===rule.reminder1_template_id)) r1.value=rule.reminder1_template_id;
-  else r1.value='';
-  if (rule && emailTemplates.some(t=>t.id===rule.reminder2_template_id)) r2.value=rule.reminder2_template_id;
-  else r2.value='';
-  const enabled=rule?!!(r1.value||r2.value):true;
-  document.getElementById('bulk-reminders-enabled').checked=enabled;
-  r1.disabled=!enabled; r2.disabled=!enabled;
+  if (bulkSegmenttiFilter.size===1) {
+    const segmentti=[...bulkSegmenttiFilter][0];
+    const rule=bulkRuleFor(projekti,segmentti);
+    const tpl=document.getElementById('bulk-template');
+    const r1=document.getElementById('bulk-reminder1-template');
+    const r2=document.getElementById('bulk-reminder2-template');
+    if (rule && emailTemplates.some(t=>t.id===rule.template_id)) tpl.value=rule.template_id;
+    else tpl.value='';
+    if (rule && emailTemplates.some(t=>t.id===rule.reminder1_template_id)) r1.value=rule.reminder1_template_id;
+    else r1.value='';
+    if (rule && emailTemplates.some(t=>t.id===rule.reminder2_template_id)) r2.value=rule.reminder2_template_id;
+    else r2.value='';
+    const enabled=rule?!!(r1.value||r2.value):true;
+    document.getElementById('bulk-reminders-enabled').checked=enabled;
+    r1.disabled=!enabled; r2.disabled=!enabled;
+  }
   updateBulkEmailPreview();
 }
 
@@ -2170,18 +2236,24 @@ function bulkWasAlreadySent(p,c,key) {
     (a.contactId===c.id || (a.bulkRecipientEmail||'').trim().toLowerCase()===email));
 }
 
+// segmentti/key ovat nyt PER TILI (ei enää yksi yhteinen arvo koko
+// joukolle) koska segmenttivalitsin on monivalinta — sama vastaanottaja-
+// joukko voi sisältää tilejä useasta eri segmentistä samalla kertaa, ja
+// "jo lähetetty samalle kampanjalle" -tarkistus (bulkWasAlreadySent) sekä
+// aktiviteettiin kirjattava bulkSegment/bulkCampaignKey tarkoittavat
+// nimenomaan KYSEISEN TILIN omaa segmenttiä, eivät koko valintaa.
 function bulkEmailCandidateSet() {
   const projekti=document.getElementById('bulk-projekti')?.value||'';
-  const segmentti=document.getElementById('bulk-segmentti')?.value||'';
   const templateId=document.getElementById('bulk-template')?.value||'';
   const remindersEnabled=!!document.getElementById('bulk-reminders-enabled')?.checked;
   const reminder1TemplateId=remindersEnabled?(document.getElementById('bulk-reminder1-template')?.value||''):'';
   const reminder2TemplateId=remindersEnabled?(document.getElementById('bulk-reminder2-template')?.value||''):'';
-  const accounts=allProspects.filter(p=>p.kampanja===projekti && (p.segmentti||'').trim()===segmentti);
-  const key=bulkCampaignKey(projekti,segmentti,templateId);
+  const accounts=allProspects.filter(p=>p.kampanja===projekti && bulkSegmenttiFilter.has((p.segmentti||'').trim()));
   const eligible=[], seenEmails=new Set();
   let accountsWithoutDirect=0, alreadySent=0, duplicateEmails=0;
   accounts.forEach(p=>{
+    const segmentti=(p.segmentti||'').trim();
+    const key=bulkCampaignKey(projekti,segmentti,templateId);
     const contacts=allContacts.filter(c=>c.tili_id===p.spara_id && isDirectContactEmail(c));
     if (!contacts.length) accountsWithoutDirect++;
     contacts.forEach(c=>{
@@ -2189,14 +2261,14 @@ function bulkEmailCandidateSet() {
       if (seenEmails.has(email)) { duplicateEmails++; return; }
       seenEmails.add(email);
       if (templateId && bulkWasAlreadySent(p,c,key)) { alreadySent++; return; }
-      eligible.push({p,c});
+      eligible.push({p,c,segmentti,key});
     });
   });
   const scope=document.getElementById('bulk-scope')?.value||'count';
   const requested=Math.max(1,parseInt(document.getElementById('bulk-count')?.value||'10',10)||10);
   const selected=scope==='all'?eligible:eligible.slice(0,requested);
-  return {projekti,segmentti,templateId,remindersEnabled,reminder1TemplateId,reminder2TemplateId,
-    key,accounts,eligible,selected,accountsWithoutDirect,alreadySent,duplicateEmails};
+  return {projekti,segments:new Set(bulkSegmenttiFilter),templateId,remindersEnabled,reminder1TemplateId,reminder2TemplateId,
+    accounts,eligible,selected,accountsWithoutDirect,alreadySent,duplicateEmails};
 }
 
 function updateBulkEmailPreview() {
@@ -2208,21 +2280,33 @@ function updateBulkEmailPreview() {
   const template=emailTemplates.find(t=>t.id===x.templateId);
   const reminder1=emailTemplates.find(t=>t.id===x.reminder1TemplateId);
   const reminder2=emailTemplates.find(t=>t.id===x.reminder2TemplateId);
-  if (!x.projekti||!x.segmentti) {
-    preview.innerHTML='<div class="empty" style="padding:16px">Valitse projekti ja segmentti.</div>'; return;
+  if (!x.projekti||!x.segments.size) {
+    preview.innerHTML='<div class="empty" style="padding:16px">Valitse projekti ja vähintään yksi segmentti.</div>'; return;
   }
   const rows=x.selected.slice(0,20).map(({p,c})=>`
     <div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px">
       <span><strong>${esc(p.yritys_nimi)}</strong> — ${esc(c.nimi)}</span><span style="color:var(--text2)">${esc(c.sahkoposti)}</span>
     </div>`).join('');
+  // "Tarkista vahvistamattomat" näkyy vain kun jotain tarkistettavaa on —
+  // täysin automaattinen AI-tarkistus (ks. checkUnverifiedBulkContacts):
+  // ei erillistä hyväksyntäruutua, tulos kirjoitetaan suoraan Yhteyshenkilöt/
+  // Yhteyshenkilövarmennus-välilehdille samalla varmuudella kuin AI itse
+  // raportoi (verified/probable/unverified/...) — vain aidosti
+  // contact_status=verified+email_status=verified läpäisee tämän jälkeenkin
+  // isDirectContactEmail():n, joten massalähetykseen ei silti päädy mitään
+  // arvailtua osoitetta.
+  const verifyBtn=x.accountsWithoutDirect
+    ? `<button class="btn btn-ghost btn-sm" id="bulk-verify-btn" style="margin-top:8px" onclick="checkUnverifiedBulkContacts()">🔍 Tarkista ${x.accountsWithoutDirect} vahvistamatonta tiliä</button>`
+    : '';
   preview.innerHTML=`
     <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px">
       <div style="font-size:13px;font-weight:700;margin-bottom:6px">Lähetykseen valittu ${x.selected.length} / ${x.eligible.length} kelvollista vastaanottajaa</div>
       <div style="font-size:11px;color:var(--text2);line-height:1.55">
-        Segmentissä ${x.accounts.length} tiliä · ilman varmennettua henkilökohtaista osoitetta ${x.accountsWithoutDirect} tiliä
+        Valituissa segmenteissä ${x.accounts.length} tiliä · ilman varmennettua henkilökohtaista osoitetta ${x.accountsWithoutDirect} tiliä
         · sama kampanja jo lähetetty ${x.alreadySent} vastaanottajalle${x.duplicateEmails?' · päällekkäisiä osoitteita ohitettu '+x.duplicateEmails:''}.
       </div>
-      <div style="font-size:11px;margin-top:5px">Malli: <strong>${template?esc(template.nimi):'ei valittu'}</strong></div>
+      ${verifyBtn}
+      <div style="font-size:11px;margin-top:9px">Malli: <strong>${template?esc(template.nimi):'ei valittu'}</strong></div>
       <div style="font-size:11px;margin-top:4px;color:var(--text2)">${x.remindersEnabled
         ? 'Muistutukset: +3 pv <strong>'+(reminder1?esc(reminder1.nimi):'ei valittu')+'</strong> · +10 pv <strong>'+(reminder2?esc(reminder2.nimi):'ei valittu')+'</strong>'
         : 'Muistutukset: ei käytössä'}</div>
@@ -2276,14 +2360,15 @@ async function startBulkEmailSend() {
   const template=emailTemplates.find(t=>t.id===x.templateId);
   const reminder1Template=emailTemplates.find(t=>t.id===x.reminder1TemplateId);
   const reminder2Template=emailTemplates.find(t=>t.id===x.reminder2TemplateId);
-  if (!x.projekti||!x.segmentti) { showToast('Valitse projekti ja segmentti','error'); return; }
+  if (!x.projekti||!x.segments.size) { showToast('Valitse projekti ja vähintään yksi segmentti','error'); return; }
   if (!template) { showToast('Valitse sähköpostimalli','error'); return; }
   if (x.remindersEnabled && (!reminder1Template||!reminder2Template)) { showToast('Valitse molemmat muistutusviestipohjat tai poista muistutukset käytöstä','error'); return; }
   if (!x.selected.length) { showToast('Lähetettäviä vastaanottajia ei löytynyt','error'); return; }
   if (!template.aihe?.trim() || !template.sisalto?.trim()) { showToast('Valitulta mallilta puuttuu aihe tai sisältö','error'); return; }
   if (x.remindersEnabled && (!reminder1Template.aihe?.trim()||!reminder1Template.sisalto?.trim()||!reminder2Template.aihe?.trim()||!reminder2Template.sisalto?.trim())) { showToast('Muistutusmallilta puuttuu aihe tai sisältö','error'); return; }
   const reminderConfirm=x.remindersEnabled?`\nMuistutus 1 (+3 pv): ${reminder1Template.nimi}\nMuistutus 2 (+10 pv): ${reminder2Template.nimi}\nMuistutukset perutaan, jos asiakas vastaa tai kaupan vaihe muuttuu.`:'\nMuistutukset: ei käytössä';
-  if (!confirm(`Lähetetäänkö ${x.selected.length} henkilökohtaista sähköpostia Outlook-tililtäsi?\n\nProjekti: ${x.projekti}\nSegmentti: ${x.segmentti}\nMalli: ${template.nimi}${reminderConfirm}\n\nViestit lähetetään yksi kerrallaan noin 3 sekunnin välein.`)) return;
+  const segmentList=[...x.segments].join(', ');
+  if (!confirm(`Lähetetäänkö ${x.selected.length} henkilökohtaista sähköpostia Outlook-tililtäsi?\n\nProjekti: ${x.projekti}\nSegmentit: ${segmentList}\nMalli: ${template.nimi}${reminderConfirm}\n\nViestit lähetetään yksi kerrallaan noin 3 sekunnin välein.`)) return;
 
   await saveBulkEmailRule();
   bulkEmailRun={running:true,cancel:false};
@@ -2305,7 +2390,7 @@ async function startBulkEmailSend() {
 
   for (let i=0;i<x.selected.length;i++) {
     if (bulkEmailRun.cancel) break;
-    const {p,c}=x.selected[i];
+    const {p,c,segmentti,key}=x.selected[i];
     renderBulkProgress(sent,failed,x.selected.length,`${p.yritys_nimi} — ${c.nimi}`,false);
     try {
       const rendered=renderBulkTemplate(template,p,c);
@@ -2330,8 +2415,8 @@ async function startBulkEmailSend() {
         tekija:currentUser.nimi||currentUserEmail||null,muistiinpanot:null,bodyHtml:storableBodyHtml,
         created_at:now,completed_at:now,due_date:null,contactId:c.id,
         conversationId:created.conversationId||null,ticketCode,thread:[threadEntry],
-        bulkCampaignKey:x.key,bulkRunId:runId,bulkTemplateId:template.id,
-        bulkSegment:x.segmentti,bulkProject:x.projekti,bulkRecipientEmail:c.sahkoposti.trim().toLowerCase(),
+        bulkCampaignKey:key,bulkRunId:runId,bulkTemplateId:template.id,
+        bulkSegment:segmentti,bulkProject:x.projekti,bulkRecipientEmail:c.sahkoposti.trim().toLowerCase(),
         bulkReminderSenderEmail:senderEmail,bulkReminderBaselineStage:baselineStage
       });
       p.aktiviteetit=JSON.stringify(acts);
@@ -2441,7 +2526,7 @@ function toggleEmailToPicker(e) {
   e.stopPropagation();
   const panel=document.getElementById('email-to-picker-panel'); if (!panel) return;
   const opening=panel.classList.contains('hidden');
-  closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter();
+  closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter(); closeBulkSegmenttiFilter();
   if (opening) { renderEmailToPicker(); panel.classList.remove('hidden'); }
   else panel.classList.add('hidden');
 }
@@ -4403,7 +4488,7 @@ function toggleKanbanProjektiFilter(e) {
   e.stopPropagation();
   const panel=document.getElementById('kb-pf-panel'); if (!panel) return;
   const opening=panel.classList.contains('hidden');
-  closeQuickAdd(); closeUserMenu(); closeKanbanSegmenttiFilter();
+  closeQuickAdd(); closeUserMenu(); closeKanbanSegmenttiFilter(); closeBulkSegmenttiFilter();
   if (opening) { renderKanbanProjektiFilterPanel(); panel.classList.remove('hidden'); }
   else panel.classList.add('hidden');
 }
@@ -4442,7 +4527,7 @@ function toggleKanbanSegmenttiFilter(e) {
   e.stopPropagation();
   const panel=document.getElementById('kb-sf-panel'); if (!panel) return;
   const opening=panel.classList.contains('hidden');
-  closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter();
+  closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeBulkSegmenttiFilter();
   if (opening) { renderKanbanSegmenttiFilterPanel(); panel.classList.remove('hidden'); }
   else panel.classList.add('hidden');
 }
@@ -6783,6 +6868,213 @@ async function generateSignalUpdates(accounts) {
     : await anthropicGenerateSignalUpdates(prompt, key);
 }
 
+// ── Massalähetys: vahvistamattomien yhteystietojen AI-tarkistus ────────────
+// Sama kaava kuin SIGNAL_UPDATE_SCHEMA/generateSignalUpdates (yksi
+// jäsennelty AI-web-haku-vastaus usealle tilille kerralla), mutta etsii/
+// vahvistaa YHTEYSHENKILÖN JA SÄHKÖPOSTIN tileille joilla ei vielä ole
+// yhtään suoraa varmennettua osoitetta (ks. isDirectContactEmail) — täysin
+// automaattinen, käyttäjän oman valinnan mukaisesti: ei erillistä käsin
+// hyväksyntää, sama contact_status/email_status-sanasto ja samat kentät
+// kuin ChatGPT-tuonnissa (YH_VERIFY_COLS) kirjoitetaan suoraan sellaisenaan.
+// "probable"/"unverified"-tulos ei ole roskaa: se rikastaa kontaktin
+// CRM:ään, muttei silti läpäise isDirectContactEmail():n massalähetys-
+// porttia (vain contact_status=verified JA email_status=verified tekee
+// sen) — turvaverkko säilyy, vain käsin tehty ChatGPT-JSON-kierros poistuu.
+const CONTACT_VERIFY_SCHEMA={
+  type:'object',
+  properties:{
+    results:{
+      type:'array',
+      items:{
+        type:'object',
+        properties:{
+          company_name:{type:'string', description:'Täsmälleen sama nimi kuin syötteessä — käytetään tuloksen kohdistamiseen oikeaan tiliin'},
+          contact_name:{type:'string', description:'Päättäjän/yhteyshenkilön koko nimi jos löytyy verkkohaulla (esim. yrityksen yhteystiedot-sivulta), muuten tyhjä merkkijono — älä koskaan arvaa nimeä'},
+          contact_title:{type:'string', description:'Titteli jos löytyy, muuten tyhjä merkkijono'},
+          contact_email:{type:'string', description:'Henkilökohtainen (ei yleinen info@/myynti@) sähköpostiosoite jos löytyy täsmälleen sellaisenaan julkisesta lähteestä, muuten tyhjä merkkijono'},
+          domain:{type:'string', description:'Yrityksen verkkotunnus jos tiedossa, muuten tyhjä merkkijono'},
+          domain_status:{type:'string', enum:['verified','unverified','unknown'], description:'verified vain jos domain todennettiin yrityksen omalta sivulta/muusta luotettavasta lähteestä'},
+          contact_status:{type:'string', enum:['verified','probable','unverified','former','unknown'], description:'verified VAIN jos nimi+rooli löytyi yrityksen omalta sivulta tai muusta luotettavasta lähteestä'},
+          email_status:{type:'string', enum:['verified','probable','unverified','group','missing'], description:'verified VAIN jos osoite löytyi täsmälleen sellaisenaan julkisesta lähteestä — EI KOSKAAN pääteltynä kaavasta (esim. "etunimi.sukunimi@domain")'},
+          confidence:{type:'string', enum:['high','medium','low']}
+        },
+        required:['company_name','contact_name','contact_title','contact_email','domain','domain_status','contact_status','email_status','confidence'],
+        additionalProperties:false
+      }
+    }
+  },
+  required:['results'],
+  additionalProperties:false
+};
+
+function contactVerifyRequestBody(prompt, extraMessages) {
+  return {
+    model:anthropicModel(),
+    max_tokens:4096,
+    tools:[{...anthropicWebSearchToolDef(), max_uses:8}],
+    output_config:{format:{type:'json_schema', schema:CONTACT_VERIFY_SCHEMA}},
+    messages:[{role:'user',content:prompt}, ...(extraMessages||[])]
+  };
+}
+
+function parseContactVerifyJson(text) {
+  if (!text) throw new Error('Tekoäly ei palauttanut jäsenneltyä vastausta');
+  let parsed;
+  try { parsed=JSON.parse(text); }
+  catch(e) { throw new Error('Tekoälyn vastaus ei ollut kelvollista JSONia: '+e.message); }
+  if (!parsed || !Array.isArray(parsed.results)) throw new Error('Tekoälyn vastauksesta puuttui results-taulukko');
+  return parsed.results;
+}
+
+async function anthropicVerifyContacts(prompt, key) {
+  const headers={
+    'x-api-key':key,
+    'anthropic-version':'2023-06-01',
+    'anthropic-dangerous-direct-browser-access':'true',
+    'content-type':'application/json'
+  };
+  let response=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST', headers, body:JSON.stringify(contactVerifyRequestBody(prompt))
+  });
+  if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+  let data=await response.json();
+
+  // Sama pause_turn-uudelleenlähetyskaava kuin signaaliseurannassa/
+  // prospektoinnissa — kertaalleen uudelleen SAMALLA user+assistant-parilla.
+  if (data.stop_reason==='pause_turn') {
+    response=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST', headers,
+      body:JSON.stringify(contactVerifyRequestBody(prompt, [{role:'assistant',content:data.content}]))
+    });
+    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+    data=await response.json();
+    if (data.stop_reason==='pause_turn') throw new Error('Tekoäly ei saanut hakua valmiiksi (jatkoyritys pysähtyi uudelleen) — kokeile pienempää erää');
+  }
+
+  const textBlocks=(data.content||[]).filter(b=>b.type==='text');
+  if (!textBlocks.length) throw new Error('Tekoäly ei palauttanut jäsenneltyä vastausta');
+  return parseContactVerifyJson(textBlocks[textBlocks.length-1].text);
+}
+
+async function openaiVerifyContacts(prompt, key) {
+  const response=await fetch('https://api.openai.com/v1/responses',{
+    method:'POST',
+    headers:{
+      'Authorization':`Bearer ${key}`,
+      'content-type':'application/json'
+    },
+    body:JSON.stringify({
+      model:openaiModel(),
+      tools:[openaiWebSearchToolDef()],
+      input:prompt,
+      text:{format:{type:'json_schema', name:'contact_verify', strict:true, schema:CONTACT_VERIFY_SCHEMA}}
+    })
+  });
+  if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+  const data=await response.json();
+  return parseContactVerifyJson(extractOpenaiText(data));
+}
+
+// accounts: [{name, city}].
+async function verifyContactsForAccounts(accounts) {
+  const provider=aiProvider();
+  const key=activeAiApiKey();
+  if (!key) throw new Error(`Lisää ${activeAiProviderLabel()} API-avain Asetuksissa`);
+  const list=accounts.map(a=>`- ${a.name}${a.city?' ('+a.city+')':''}`).join('\n');
+  const prompt=`Etsi verkkohaulla suora päättäjä-/yhteyshenkilö ja tämän henkilökohtainen sähköpostiosoite näille suomalaisille yrityksille. Käytä VAIN julkisesti saatavilla olevaa tietoa (esim. yrityksen omat yhteystiedot-/johto-/hallitussivut) — älä koskaan arvaa nimeä äläkä päättele sähköpostiosoitetta kaavasta (esim. "etunimi.sukunimi@domain") ellet nähnyt sitä sellaisenaan lähteessä. Jos et löydä mitään luotettavaa, jätä contact_name/contact_email tyhjäksi ja merkitse tila "unknown"/"missing" — hylkää mieluummin kuin arvaa väärin. Käytä company_name-kenttään täsmälleen sama nimi kuin alla:\n\n${list}`;
+  return provider==='openai'
+    ? await openaiVerifyContacts(prompt, key)
+    : await anthropicVerifyContacts(prompt, key);
+}
+
+// Käynnistetään massalähetysmodaalin "🔍 Tarkista N vahvistamatonta tiliä"
+// -napista (ks. updateBulkEmailPreview). Lohkotaan CONTACT_VERIFY_CHUNK_SIZE
+// kappaleen eriin (sama periaate kuin SIGNAL_CHUNK_SIZE:llä) yhden liian
+// ison kehotteen/aikakatkaisun välttämiseksi, mutta Sheets-kirjoitus tehdään
+// vasta KAIKKIEN erien jälkeen yhtenä kutsuna (accounts-joukko on tässä
+// rajattu yhteen projekti+segmentti(t)-valintaan, siis paljon pienempi kuin
+// signaaliseurannan mahdollisesti satojen tilien ajo, joten per-erä-
+// tallennuksen lisävarmuudelle ei ole samaa tarvetta). Jos AI-kutsu
+// epäonnistuu kesken erien, jo saadut tulokset silti kirjoitetaan —
+// ei kaadeta onnistuneita löytöjä yhden myöhemmän virheen takia.
+const CONTACT_VERIFY_CHUNK_SIZE=8;
+const CONTACT_VERIFY_MAX_PER_RUN=24;
+let bulkContactCheckRunning=false;
+
+async function checkUnverifiedBulkContacts() {
+  if (bulkContactCheckRunning) return;
+  const projekti=document.getElementById('bulk-projekti')?.value||'';
+  if (!projekti||!bulkSegmenttiFilter.size) { showToast('Valitse projekti ja vähintään yksi segmentti','error'); return; }
+  const accounts=allProspects.filter(p=>p.kampanja===projekti && bulkSegmenttiFilter.has((p.segmentti||'').trim()));
+  const targets=accounts.filter(p=>!allContacts.some(c=>c.tili_id===p.spara_id && isDirectContactEmail(c)));
+  if (!targets.length) { showToast('Kaikilla valittujen segmenttien tileillä on jo varmennettu vastaanottaja','success'); return; }
+  const batch=targets.slice(0,CONTACT_VERIFY_MAX_PER_RUN);
+  const skipped=targets.length-batch.length;
+
+  bulkContactCheckRunning=true;
+  const btn=document.getElementById('bulk-verify-btn');
+  if (btn) btn.disabled=true;
+
+  const chunks=[];
+  for (let i=0;i<batch.length;i+=CONTACT_VERIFY_CHUNK_SIZE) chunks.push(batch.slice(i,i+CONTACT_VERIFY_CHUNK_SIZE));
+
+  const contactRows=[], verifyRows=[], newContacts=[];
+  let aiError=null;
+  for (let i=0;i<chunks.length;i++) {
+    if (btn) btn.textContent=`Tarkistetaan… (${i*CONTACT_VERIFY_CHUNK_SIZE}/${batch.length})`;
+    let results;
+    try {
+      results=await verifyContactsForAccounts(chunks[i].map(p=>({name:p.yritys_nimi, city:p.kaupunki})));
+    } catch(e) {
+      aiError='Tekoälyn haku epäonnistui: '+friendlyAiError(e);
+      break;
+    }
+    results.forEach(r=>{
+      const p=matchSignalUpdateToAccount(r, chunks[i]);
+      if (!p || !r.contact_name) return;
+      // Sama "vain todennettu kelpaa oikeaksi osoitteeksi" -sääntö kuin
+      // createProspectAccountsBatch:ssa — nimi/titteli tallennetaan aina jos
+      // AI löysi sellaisen, mutta sähköposti VAIN jos molemmat statukset
+      // ovat "verified" JA muoto on kelvollinen.
+      const verifiedPerson=r.contact_status==='verified';
+      const verifiedEmail=verifiedPerson && r.email_status==='verified' &&
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.contact_email||'');
+      const safeEmail=verifiedEmail?(r.contact_email||'').trim().toLowerCase():'';
+      const ts=new Date().toISOString();
+      const contactId='YH'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+      contactRows.push([contactId,p.spara_id,r.contact_name,r.contact_title||'','',safeEmail,'',ts]);
+      const vrow=[contactId,r.domain||'',r.domain_status||'',r.email_status||'',r.contact_status||'','[]','[]','[]',ts,r.confidence||''];
+      verifyRows.push(vrow);
+      newContacts.push({id:contactId, tili_id:p.spara_id, nimi:r.contact_name, titteli:r.contact_title||'',
+        puhelin:'', sahkoposti:safeEmail, linkedin:'', created_at:ts,
+        domain:vrow[1], domain_status:vrow[2], email_status:vrow[3], contact_status:vrow[4],
+        company_sources:vrow[5], contact_sources:vrow[6], email_sources:vrow[7],
+        verified_at:vrow[8], confidence:vrow[9]});
+    });
+  }
+
+  try {
+    if (contactRows.length) {
+      const yhRowIndex=(await sheetGet(`${YH_TAB}!A:A`)).length+1;
+      newContacts.forEach((c,i)=>c._rowIndex=yhRowIndex+i);
+      await sheetAppend(`${YH_TAB}!A:H`, contactRows);
+      await sheetAppend(`${YH_VERIFY_TAB}!A:J`, verifyRows);
+      allContacts.push(...newContacts);
+    }
+  } catch(e) {
+    aiError=(aiError?aiError+' ':'')+'Tallennus epäonnistui: '+e.message;
+  }
+
+  bulkContactCheckRunning=false;
+  updateBulkEmailPreview();
+  if (aiError) showToast(aiError,'error');
+  const verifiedCount=newContacts.filter(c=>c.contact_status==='verified'&&c.email_status==='verified').length;
+  showToast(
+    `Tarkistettiin ${batch.length} tiliä — löytyi ${newContacts.length} yhteyshenkilöä, joista ${verifiedCount} täysin varmennettua${skipped?' ('+skipped+' tiliä jäi vielä tarkistamatta, aja uudelleen)':''}.`,
+    newContacts.length?'success':'error'
+  );
+}
+
 // "Viimeksi tarkistettu" johdetaan aktiviteettilokista, EI uudesta
 // sheet-sarakkeesta — tämä sama sheet kaatoi kerran koko sovelluksen kun
 // sen ruudukko oli liian kapea uudelle sarakkeelle (ks. commit-historia,
@@ -8621,9 +8913,14 @@ function renderHeroPutki() {
   return `<div class="pipeline-row" style="margin-bottom:4px">${pipelineStageHtml()}</div>`;
 }
 // Segmenteillä ei ole hallittua listaa (toisin kuin projekteilla) — ne
-// johdetaan aina suoraan olemassa olevasta datasta.
-function distinctSegments() {
-  return [...new Set(allProspects.map(p=>p.segmentti).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fi'));
+// johdetaan aina suoraan olemassa olevasta datasta. filterFn (valinnainen)
+// rajaa lähdejoukon ennen erottelua — käytössä massalähetyksen projekti-
+// kohtaisella segmenttivalitsimella, joka aiemman oman, hieman eri tavalla
+// (mm. trim() puuttui täältä) toteutetun erottelunsa takia näytti eri
+// segmenttilistan kuin Kanban/Tilit-suodattimet samalle datalle.
+function distinctSegments(filterFn) {
+  const src=filterFn?allProspects.filter(filterFn):allProspects;
+  return [...new Set(src.map(p=>(p.segmentti||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fi'));
 }
 function buildSegmentFilter() {
   const segs=distinctSegments();
@@ -8671,7 +8968,7 @@ function toggleQuickAdd(e) {
   m.style.display=m.style.display==='none'?'':'none';
 }
 function closeQuickAdd() { const m=document.getElementById('quick-add-menu'); if(m) m.style.display='none'; }
-document.addEventListener('click', ()=>{ closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter(); closeEmailToPicker(); });
+document.addEventListener('click', ()=>{ closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter(); closeEmailToPicker(); closeBulkSegmenttiFilter(); });
 
 // ── Global Add Contact ────────────────────────────────────────────────────────
 function openGlobalContact() {
@@ -9081,11 +9378,17 @@ async function saveGlobalTask() {
         </div>
         <div class="form-grid">
           <div class="form-group"><label>Projekti</label><select class="form-control" id="bulk-projekti" onchange="bulkEmailProjectChanged()"></select></div>
-          <div class="form-group"><label>Segmentti</label><select class="form-control" id="bulk-segmentti" onchange="bulkEmailSegmentChanged()"></select></div>
+          <div class="form-group">
+            <label>Segmentti</label>
+            <div class="bulk-sf-wrap" style="position:relative">
+              <button type="button" class="btn btn-ghost btn-sm" id="bulk-sf-btn" style="width:100%;justify-content:space-between" onclick="toggleBulkSegmenttiFilter(event)">Valitse segmentit ▾</button>
+              <div class="bulk-sf-panel hidden" id="bulk-sf-panel" onclick="event.stopPropagation()"></div>
+            </div>
+          </div>
           <div class="form-group full">
             <label>Sähköpostimalli</label>
             <select class="form-control" id="bulk-template" onchange="bulkEmailTemplateChanged()"></select>
-            <div style="font-size:10px;color:var(--text2);margin-top:4px">Mallivalinta muistetaan tälle projekti + segmentti -yhdistelmälle yhteisesti.</div>
+            <div style="font-size:10px;color:var(--text2);margin-top:4px">Mallivalinta muistetaan erikseen jokaiselle valitulle projekti + segmentti -yhdistelmälle.</div>
           </div>
           <div class="form-group full" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
