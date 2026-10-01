@@ -1387,7 +1387,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-01.5';
+const BUILD_ID = '2026-10-01.6';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -6308,10 +6308,15 @@ function renderDashboardRecent() {
 
 function dashboardActivityStats() {
   const activities=allProspects.flatMap(p=>parseActs(p));
+  const reminderStatus=r=>String(r.status||'').trim().toLowerCase();
+  const scheduledReminderStatuses=new Set(['pending','processing','queued','scheduled','ajastettu']);
+  const sentReminderStatuses=new Set(['sent','delivered','toimitettu']);
   return {
-    total:activities.length,
-    sentEmails:activities.filter(a=>a.tyyppi==='sahkoposti'&&a.tila==='Toimitettu').length,
-    scheduledEmails:activities.filter(a=>a.tyyppi==='sahkoposti'&&a.tila==='Ajastettu').length,
+    total:activities.length+reminderQueue.length,
+    sentEmails:activities.filter(a=>a.tyyppi==='sahkoposti'&&a.tila==='Toimitettu').length+
+      reminderQueue.filter(r=>sentReminderStatuses.has(reminderStatus(r))).length,
+    scheduledEmails:activities.filter(a=>a.tyyppi==='sahkoposti'&&a.tila==='Ajastettu').length+
+      reminderQueue.filter(r=>scheduledReminderStatuses.has(reminderStatus(r))).length,
     callTasks:activities.filter(a=>a.tyyppi==='soitto').length,
     otherTasks:activities.filter(a=>a.tyyppi==='muu').length,
     dealMoves:activities.filter(a=>a.tyyppi==='vaihe_muutos').length
@@ -6327,7 +6332,7 @@ function dashboardActivityKpisHtml() {
     ['Muut tehtävät',s.otherTasks],
     ['Kauppojen liikkeet',s.dealMoves]
   ];
-  return items.map(([label,value])=>`<div class="activity-kpi">
+  return items.map(([label,value])=>`<div class="activity-kpi"${label==='Ajastetut sähköpostit'?' title="Sisältää normaalit ajastukset sekä Muistutusjonossa odottavat ja käsittelyssä olevat viestit"':''}>
     <div class="activity-kpi-value">${Number(value).toLocaleString('fi-FI')}</div>
     <div class="activity-kpi-label">${label}</div>
   </div>`).join('');
