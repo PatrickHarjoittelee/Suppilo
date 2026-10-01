@@ -805,7 +805,7 @@
        tai iso luku pakotti koko rivin, ja sitä myöten koko sivun,
        leveämmäksi kuin näyttö (vaakavieritys, muutkin elementit näyttivät
        "leikkautuvan" samasta syystä — koko sivu venyi, ei vain tämä rivi). */
-    .spara-kpi-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-paper);overflow:hidden;margin-bottom:20px;}
+    .spara-kpi-row{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-paper);overflow:hidden;margin-bottom:20px;}
     @media(max-width:720px){.spara-kpi-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}}
     .spara-kpi-cell{padding:16px 20px;border-right:1px solid var(--spara-hairline);}
     .spara-kpi-cell:last-child{border-right:none;}
@@ -1387,7 +1387,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-01.6';
+const BUILD_ID = '2026-10-01.7';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -4751,6 +4751,28 @@ function kauppaStats(){
   }));
   return st;
 }
+
+// Historiapohjainen konversio: vain jo päättyneet kaupat määrittävät
+// toteutuneen win raten. Avoimet kaupat eivät saa vaikuttaa kertoimeen,
+// koska niiden outcome ei vielä ole tiedossa.
+function historicalConversionStats(st, openSum, openN) {
+  const won=st['Sopimus syntynyt'].n;
+  const lost=st['Ei juuri nyt'].n;
+  const closed=won+lost;
+  const winRate=closed>0 ? won/closed : 0;
+  return {
+    won,lost,closed,winRate,
+    expectedWins:openN*winRate,
+    historicalForecast:openSum*winRate
+  };
+}
+
+function fmtPct(v) {
+  return (v*100).toLocaleString('fi-FI',{minimumFractionDigits:0,maximumFractionDigits:1})+' %';
+}
+function fmtCountEstimate(v) {
+  return v.toLocaleString('fi-FI',{minimumFractionDigits:0,maximumFractionDigits:1});
+}
 const TASK_TILA={
   kauppa:    VAIHEET,
   soitto:    ['Uusi','Vastaamaton','Viesti vastaajaan','SMS-viesti','Tavoitettu'],
@@ -6202,7 +6224,7 @@ function pipelineBoxesHtml(st) {
     return `<div class="pipeline-stage"><div class="pipeline-count" style="color:${V_COLORS[v]}">${s.n}</div>
       <div class="pipeline-label">${v}</div>
       <div style="font-size:11px;font-weight:700;margin-top:4px">${fmtEur(s.sum)}</div>
-      <div style="font-size:10px;color:var(--text2)">tn ${Math.round(VAIHE_TN[v]*100)} % → ${fmtEur(s.sum*VAIHE_TN[v])}</div>
+      <div style="font-size:10px;color:var(--text2)">vaihepaino ${Math.round(VAIHE_TN[v]*100)} % → ${fmtEur(s.sum*VAIHE_TN[v])}</div>
     </div>`;
   }).join('');
 }
@@ -6219,30 +6241,34 @@ function pipelineFunnelHtml(st) {
       <div class="spara-funnel-name">${v}<span class="n">${s.n}</span></div>
       <div class="spara-funnel-track"><div class="spara-funnel-fill${isLost?' is-lost':''}" style="width:${pct}%"></div></div>
       <div class="spara-funnel-count">${fmtEur(s.sum)}</div>
-      <div class="spara-funnel-forecast">tn ${Math.round(VAIHE_TN[v]*100)} % → <strong>${fmtEur(s.sum*VAIHE_TN[v])}</strong></div>
+      <div class="spara-funnel-forecast">vaihepaino ${Math.round(VAIHE_TN[v]*100)} % → <strong>${fmtEur(s.sum*VAIHE_TN[v])}</strong></div>
     </div>`;
   }).join('');
 }
 
-function dashKpisClassicHtml(openSum, openN, weighted, st) {
+function dashKpisClassicHtml(openSum, openN, st, conv) {
   const kpi=(label,val,color,sub)=>`<div class="card"><div class="card-label">${label}</div>
     <div class="card-value" style="color:${color}">${val}</div>
     ${sub?`<div style="font-size:10px;color:var(--text2);margin-top:2px">${sub}</div>`:''}</div>`;
-  return kpi('Avoimena myyntiputkessa',fmtEur(openSum),'var(--blue)',openN+' avointa kauppaa')+
-    kpi('Painotettu ennuste',fmtEur(weighted),'var(--orange)','vaiheiden tn:llä painotettu')+
-    kpi('Sopimus syntynyt',fmtEur(st['Sopimus syntynyt'].sum),'var(--green)',st['Sopimus syntynyt'].n+' sopimusta')+
-    kpi('Ei juuri nyt',fmtEur(st['Ei juuri nyt'].sum),'var(--red)',st['Ei juuri nyt'].n+' kauppaa');
+  return kpi('Avoin potentiaali',fmtEur(openSum),'var(--blue)',openN+' avointa keissiä')+
+    kpi('Toteutunut win rate',fmtPct(conv.winRate),'var(--orange)',conv.closed?conv.won+'/'+conv.closed+' päättyneestä voitettu':'ei vielä päättyneitä kauppoja')+
+    kpi('Odotetut voitot',fmtCountEstimate(conv.expectedWins),'var(--purple)',openN+' × '+fmtPct(conv.winRate))+
+    kpi('Historiapohjainen ennuste',fmtEur(conv.historicalForecast),'var(--orange)','avoin potentiaali × win rate')+
+    kpi('Voitetut',String(st['Sopimus syntynyt'].n),'var(--green)',fmtEur(st['Sopimus syntynyt'].sum))+
+    kpi('Hävityt / Ei juuri nyt',String(st['Ei juuri nyt'].n),'var(--red)',fmtEur(st['Ei juuri nyt'].sum));
 }
 // "Ei juuri nyt" himmennetään .is-quiet:lla värin sijaan (ei punaista
 // Sparan tunnusväreissä) — tila viestitään muodolla, ei uudella sävyllä.
-function dashKpisSparaHtml(openSum, openN, weighted, st) {
+function dashKpisSparaHtml(openSum, openN, st, conv) {
   const kpi=(label,val,quiet,sub)=>`<div class="spara-kpi-cell"><span class="spara-kpi-eyebrow">${label}</span>
     <div class="spara-kpi-num${quiet?' is-quiet':''}">${val}</div>
     ${sub?`<div class="spara-kpi-sub">${sub}</div>`:''}</div>`;
-  return kpi('Avoimena myyntiputkessa',fmtEur(openSum),false,openN+' avointa kauppaa')+
-    kpi('Painotettu ennuste',fmtEur(weighted),false,'vaiheiden tn:llä painotettu')+
-    kpi('Sopimus syntynyt',fmtEur(st['Sopimus syntynyt'].sum),false,st['Sopimus syntynyt'].n+' sopimusta')+
-    kpi('Ei juuri nyt',fmtEur(st['Ei juuri nyt'].sum),true,st['Ei juuri nyt'].n+' kauppaa');
+  return kpi('Avoin potentiaali',fmtEur(openSum),false,openN+' avointa keissiä')+
+    kpi('Toteutunut win rate',fmtPct(conv.winRate),false,conv.closed?conv.won+'/'+conv.closed+' päättyneestä voitettu':'ei vielä päättyneitä kauppoja')+
+    kpi('Odotetut voitot',fmtCountEstimate(conv.expectedWins),false,openN+' × '+fmtPct(conv.winRate))+
+    kpi('Historiapohjainen ennuste',fmtEur(conv.historicalForecast),false,'avoin potentiaali × win rate')+
+    kpi('Voitetut',String(st['Sopimus syntynyt'].n),false,fmtEur(st['Sopimus syntynyt'].sum))+
+    kpi('Hävityt / Ei juuri nyt',String(st['Ei juuri nyt'].n),true,fmtEur(st['Ei juuri nyt'].sum));
 }
 
 // Jaettu datalaskenta (segmentointi vaiheittain per projekti) — vain
@@ -6395,15 +6421,17 @@ function renderDashboard() {
   const shellEl=document.getElementById('dash-body');
   if (shellEl) shellEl.innerHTML = theme==='spara' ? dashboardShellSparaHtml() : dashboardShellClassicHtml();
 
-  // KPIs + pipeline euroineen ja todennäköisyyksineen
+  // KPI:t: kappalemääräinen toteutunut konversio ensin, eurot vasta sen
+  // päälle. Vaihekohtainen VAIHE_TN jää operatiiviseksi vaihepainoksi
+  // suppilovisualisointiin ja tehtävien priorisointiin, ei "ennusteeksi".
   const st=kauppaStats();
   const openSum=VAIHE_AVOIN.reduce((s,v)=>s+st[v].sum,0);
   const openN=VAIHE_AVOIN.reduce((s,v)=>s+st[v].n,0);
-  const weighted=VAIHE_AVOIN.reduce((s,v)=>s+st[v].sum*VAIHE_TN[v],0);
+  const conv=historicalConversionStats(st,openSum,openN);
   const kpiEl=document.getElementById('dash-kpis');
   if (kpiEl) kpiEl.innerHTML = theme==='spara'
-    ? dashKpisSparaHtml(openSum, openN, weighted, st)
-    : dashKpisClassicHtml(openSum, openN, weighted, st);
+    ? dashKpisSparaHtml(openSum, openN, st, conv)
+    : dashKpisClassicHtml(openSum, openN, st, conv);
 
   const activityKpiEl=document.getElementById('dash-activity-kpis');
   if (activityKpiEl) activityKpiEl.innerHTML=dashboardActivityKpisHtml();
