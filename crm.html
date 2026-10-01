@@ -485,7 +485,7 @@
     [data-dash-theme="spara"] #bulk-email-modal .modal-title{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.04em;color:var(--spara-navy);}
     [data-dash-theme="spara"] #bulk-email-modal .form-control{background:var(--spara-cream);border-color:var(--spara-hairline);color:var(--spara-ink);}
     [data-dash-theme="spara"] #bulk-email-modal .btn-primary{background:var(--spara-navy);color:var(--spara-on-dark);}
-    .bulk-recipient-row{width:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 6px;border:0;border-bottom:1px solid var(--border);background:transparent;color:var(--text);font:inherit;text-align:left;cursor:pointer;transition:background .15s,border-color .15s;}
+    .bulk-recipient-row{width:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 6px;border:0;border-bottom:1px solid var(--border);background:transparent;color:var(--text);font:inherit;text-align:left;transition:background .15s,border-color .15s;}
     .bulk-recipient-row:hover,.bulk-recipient-row:focus-visible{background:var(--bg4);outline:none;}
     .bulk-recipient-main{min-width:0;font-size:11px;overflow-wrap:anywhere;}
     .bulk-recipient-email{min-width:0;font-size:11px;color:var(--text2);overflow-wrap:anywhere;}
@@ -494,6 +494,8 @@
     .bulk-rejected-row{cursor:default;}
     .bulk-rejected-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;white-space:nowrap;}
     .bulk-rejected-actions .btn{padding:5px 8px;font-size:10px;}
+    .bulk-recipient-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;white-space:nowrap;}
+    .bulk-recipient-actions .btn{padding:5px 8px;font-size:10px;}
     [data-dash-theme="spara"] #bulk-email-modal .bulk-recipient-row{color:var(--spara-ink);}
     [data-dash-theme="spara"] #bulk-email-modal .bulk-recipient-row:hover,
     [data-dash-theme="spara"] #bulk-email-modal .bulk-recipient-row:focus-visible{background:var(--spara-lavender-wash);}
@@ -506,6 +508,7 @@
       .bulk-rejected-row{grid-template-columns:minmax(0,1fr);}
       .bulk-rejected-row .bulk-recipient-email{grid-column:1;}
       .bulk-rejected-actions{grid-column:1;justify-content:flex-start;}
+      .bulk-recipient-actions{grid-column:1/-1;justify-content:flex-start;flex-wrap:wrap;}
     }
 
     /* Sähköpostin Aihe- ja Viesti-kentät: aina valkoinen tausta + musta
@@ -695,6 +698,12 @@
     @media(max-width:900px){.dash-grid{grid-template-columns:1fr;}}
     .dash-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;}
     .dash-section-title{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;font-weight:600;}
+    .activity-kpi-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-bottom:16px;}
+    .activity-kpi{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;min-width:0;}
+    .activity-kpi-value{font-size:20px;font-weight:700;color:var(--text);}
+    .activity-kpi-label{font-size:10px;color:var(--text2);margin-top:3px;line-height:1.25;}
+    @media(max-width:900px){.activity-kpi-grid{grid-template-columns:repeat(3,minmax(0,1fr));}}
+    @media(max-width:520px){.activity-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
     .pipeline-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px;}
     .pipeline-stage{flex:1;min-width:80px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;text-align:center;}
     .pipeline-count{font-size:22px;font-weight:700;} .pipeline-label{font-size:10px;color:var(--text2);margin-top:2px;}
@@ -804,6 +813,11 @@
     .spara-kpi-num{font-family:'Fjalla One',sans-serif;font-size:22px;color:var(--spara-navy);margin-top:6px;}
     .spara-kpi-num.is-quiet{color:var(--spara-quiet);}
     .spara-kpi-sub{font-size:11.5px;color:var(--spara-ink-faint);margin-top:3px;}
+    [data-dash-theme="spara"] .activity-kpi-grid{gap:0;border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-paper);overflow:hidden;}
+    [data-dash-theme="spara"] .activity-kpi{background:var(--spara-paper);border:0;border-right:1px solid var(--spara-hairline);border-radius:0;}
+    [data-dash-theme="spara"] .activity-kpi:last-child{border-right:0;}
+    [data-dash-theme="spara"] .activity-kpi-value{font-family:'Fjalla One',sans-serif;font-weight:400;color:var(--spara-navy);}
+    [data-dash-theme="spara"] .activity-kpi-label{color:var(--spara-ink-faint);text-transform:uppercase;letter-spacing:.04em;}
     .spara-section-title{font-family:'Fjalla One',sans-serif;text-transform:uppercase;letter-spacing:.05em;font-size:14px;color:var(--spara-navy);margin-bottom:14px;}
     .spara-funnel{border:1px solid var(--spara-hairline);border-radius:3px;background:var(--spara-paper);margin-bottom:24px;}
     .spara-funnel-row{display:grid;grid-template-columns:140px 1fr 90px 130px;align-items:center;gap:14px;padding:11px 18px;border-bottom:1px solid var(--spara-hairline);}
@@ -1373,7 +1387,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-01.4';
+const BUILD_ID = '2026-10-01.5';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1491,6 +1505,7 @@ let emailTemplates = [];
 let bulkEmailRules = [];
 let reminderQueue = [];
 let bulkEmailRun = {running:false,cancel:false};
+let bulkExcludedContactIds = new Set();
 const BULK_EMAIL_DELAY_MS = 3000;
 let msalInstance = null, microsoftAccount = null, emailDraftContext = null, msalInstanceKey = null;
 let emailAttachments = [];
@@ -2219,6 +2234,7 @@ function openBulkEmailModal() {
     document.getElementById('bulk-email-modal').classList.remove('hidden');
     return;
   }
+  bulkExcludedContactIds.clear();
   const projectSel=document.getElementById('bulk-projekti');
   const names=allProjektitNimet();
   projectSel.innerHTML=names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
@@ -2440,6 +2456,16 @@ async function approveBulkRejectedContact(contactId,event) {
     showToast('Hyväksyntää ei voitu tallentaa: '+e.message,'error');
   }
 }
+function excludeBulkRecipient(contactId,event) {
+  event?.stopPropagation();
+  if (!contactId) return;
+  bulkExcludedContactIds.add(contactId);
+  updateBulkEmailPreview();
+}
+function restoreBulkExcludedRecipients() {
+  bulkExcludedContactIds.clear();
+  updateBulkEmailPreview();
+}
 function bulkCampaignKey(projekti,segmentti,templateId) {
   return [projekti,segmentti,templateId].map(x=>String(x||'').trim().toLowerCase()).join('|');
 }
@@ -2485,9 +2511,11 @@ function bulkEmailCandidateSet() {
   });
   const scope=document.getElementById('bulk-scope')?.value||'count';
   const requested=Math.max(1,parseInt(document.getElementById('bulk-count')?.value||'10',10)||10);
-  const selected=scope==='all'?eligible:eligible.slice(0,requested);
+  const selectedBeforeExclusions=scope==='all'?eligible:eligible.slice(0,requested);
+  const selected=selectedBeforeExclusions.filter(({c})=>!bulkExcludedContactIds.has(c.id));
+  const excludedCount=selectedBeforeExclusions.length-selected.length;
   return {projekti,segments:new Set(bulkSegmenttiFilter),templateId,remindersEnabled,reminder1TemplateId,reminder2TemplateId,
-    accounts,eligible,selected,rejected,accountsWithoutDirect,alreadySent,duplicateEmails};
+    accounts,eligible,selected,rejected,accountsWithoutDirect,alreadySent,duplicateEmails,excludedCount};
 }
 
 function updateBulkEmailPreview() {
@@ -2503,11 +2531,14 @@ function updateBulkEmailPreview() {
     preview.innerHTML='<div class="empty" style="padding:16px">Valitse projekti ja vähintään yksi segmentti.</div>'; return;
   }
   const rows=x.selected.map(({p,c})=>`
-    <button type="button" class="bulk-recipient-row" onclick="openBulkEmailAccount(${esc(JSON.stringify(p.spara_id))})" title="Avaa ${esc(p.yritys_nimi)} tarkistettavaksi">
+    <div class="bulk-recipient-row">
       <span class="bulk-recipient-main"><strong>${esc(p.yritys_nimi)}</strong> — ${esc(c.nimi)}</span>
       <span class="bulk-recipient-email">${esc(c.sahkoposti)}</span>
-      <span class="bulk-recipient-open">Avaa →</span>
-    </button>`).join('');
+      <span class="bulk-recipient-actions">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="openBulkEmailAccount(${esc(JSON.stringify(p.spara_id))})" title="Avaa ${esc(p.yritys_nimi)} tarkistettavaksi">Avaa →</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="excludeBulkRecipient(${esc(JSON.stringify(c.id))},event)">Pois lähetyslistalta</button>
+      </span>
+    </div>`).join('');
   const rejectedRows=(x.rejected||[]).map(({p,c,reason})=>{
     const canApprove=!!c && isManuallyVerifiableContact(c);
     return `<div class="bulk-recipient-row bulk-rejected-row">
@@ -2535,8 +2566,9 @@ function updateBulkEmailPreview() {
       <div style="font-size:13px;font-weight:700;margin-bottom:6px">Lähetykseen valittu ${x.selected.length} / ${x.eligible.length} kelvollista vastaanottajaa</div>
       <div style="font-size:11px;color:var(--text2);line-height:1.55">
         Valituissa segmenteissä ${x.accounts.length} tiliä · ilman varmennettua henkilökohtaista osoitetta ${x.accountsWithoutDirect} tiliä
-        · sama kampanja jo lähetetty ${x.alreadySent} vastaanottajalle${x.duplicateEmails?' · päällekkäisiä osoitteita ohitettu '+x.duplicateEmails:''}.
+        · sama kampanja jo lähetetty ${x.alreadySent} vastaanottajalle${x.duplicateEmails?' · päällekkäisiä osoitteita ohitettu '+x.duplicateEmails:''}${x.excludedCount?' · käsin poistettu '+x.excludedCount:''}.
       </div>
+      ${x.excludedCount?`<button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="restoreBulkExcludedRecipients()">↩ Palauta poistetut (${x.excludedCount})</button>`:''}
       ${x.rejected?.length ? `<details style="margin-top:7px" ${bulkRejectedDetailsOpen?'open':''} ontoggle="bulkRejectedDetailsOpen=this.open"><summary style="cursor:pointer;font-size:11px;color:var(--text2)">Näytä miksi ${x.rejected.length} kontaktia/tiliä hylättiin</summary><div style="margin-top:6px;max-height:220px;overflow:auto">${rejectedRows}</div></details>` : ''}
       ${verifyBtn}
       <div style="font-size:11px;margin-top:9px">Malli: <strong>${template?esc(template.nimi):'ei valittu'}</strong></div>
@@ -6274,8 +6306,37 @@ function renderDashboardRecent() {
       <div class="dash-item-task">${kampBadge(p.kampanja)}</div></div></div>`).join('');
 }
 
+function dashboardActivityStats() {
+  const activities=allProspects.flatMap(p=>parseActs(p));
+  return {
+    total:activities.length,
+    sentEmails:activities.filter(a=>a.tyyppi==='sahkoposti'&&a.tila==='Toimitettu').length,
+    scheduledEmails:activities.filter(a=>a.tyyppi==='sahkoposti'&&a.tila==='Ajastettu').length,
+    callTasks:activities.filter(a=>a.tyyppi==='soitto').length,
+    otherTasks:activities.filter(a=>a.tyyppi==='muu').length,
+    dealMoves:activities.filter(a=>a.tyyppi==='vaihe_muutos').length
+  };
+}
+function dashboardActivityKpisHtml() {
+  const s=dashboardActivityStats();
+  const items=[
+    ['Aktiviteetit yhteensä',s.total],
+    ['Lähetetyt sähköpostit',s.sentEmails],
+    ['Ajastetut sähköpostit',s.scheduledEmails],
+    ['Puhelutehtävät',s.callTasks],
+    ['Muut tehtävät',s.otherTasks],
+    ['Kauppojen liikkeet',s.dealMoves]
+  ];
+  return items.map(([label,value])=>`<div class="activity-kpi">
+    <div class="activity-kpi-value">${Number(value).toLocaleString('fi-FI')}</div>
+    <div class="activity-kpi-label">${label}</div>
+  </div>`).join('');
+}
+
 function dashboardShellClassicHtml() {
   return `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px" id="dash-kpis"></div>
+    <div class="dash-section-title">Aktiviteetit</div>
+    <div class="activity-kpi-grid" id="dash-activity-kpis"></div>
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px">
       <div class="dash-section-title">Myyntiputki – kaupat vaiheittain</div>
       <div class="pipeline-row" id="dash-pipeline"></div>
@@ -6297,6 +6358,8 @@ function dashboardShellClassicHtml() {
 }
 function dashboardShellSparaHtml() {
   return `<div class="spara-kpi-row" id="dash-kpis"></div>
+    <div class="spara-section-title">Aktiviteetit</div>
+    <div class="activity-kpi-grid" id="dash-activity-kpis"></div>
     <div class="spara-section-title">Myyntiputki vaiheittain</div>
     <div class="spara-funnel" id="dash-pipeline"></div>
     <div class="spara-dash-split">
@@ -6317,8 +6380,8 @@ function dashboardShellSparaHtml() {
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 // #dash-body:in sisältö rakennetaan aina teeman mukaan täysin uudelleen —
-// molemmat kuoret (classic/spara) emittoivat SAMAT neljä mount-point-id:tä
-// (dash-kpis/dash-pipeline/dash-upcoming/dash-projects), minkä ansiosta
+// molemmat kuoret (classic/spara) emittoivat SAMAT mount-point-id:t
+// (dash-kpis/dash-activity-kpis/dash-pipeline/dash-upcoming/dash-projects), minkä ansiosta
 // loppuosa tästä funktiosta — ja erityisesti renderDashboardUpcoming():in
 // sivutuslogiikka — ei tarvitse mitään teematietoisuutta ollenkaan.
 function renderDashboard() {
@@ -6336,6 +6399,9 @@ function renderDashboard() {
   if (kpiEl) kpiEl.innerHTML = theme==='spara'
     ? dashKpisSparaHtml(openSum, openN, weighted, st)
     : dashKpisClassicHtml(openSum, openN, weighted, st);
+
+  const activityKpiEl=document.getElementById('dash-activity-kpis');
+  if (activityKpiEl) activityKpiEl.innerHTML=dashboardActivityKpisHtml();
 
   const plEl=document.getElementById('dash-pipeline');
   if (plEl) plEl.innerHTML=pipelineStageHtml();
