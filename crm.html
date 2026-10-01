@@ -487,6 +487,7 @@
     .bulk-recipient-row:hover,.bulk-recipient-row:focus-visible{background:var(--bg4);outline:none;}
     .bulk-recipient-main{min-width:0;font-size:11px;overflow-wrap:anywhere;}
     .bulk-recipient-email{min-width:0;font-size:11px;color:var(--text2);overflow-wrap:anywhere;}
+    .bulk-rejected-reason{color:var(--warning);font-weight:700;}
     .bulk-recipient-open{font-size:10px;font-weight:700;color:var(--accent);white-space:nowrap;}
     [data-dash-theme="spara"] #bulk-email-modal .bulk-recipient-row{color:var(--spara-ink);}
     [data-dash-theme="spara"] #bulk-email-modal .bulk-recipient-row:hover,
@@ -1352,7 +1353,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-01.1';
+const BUILD_ID = '2026-10-01.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2197,6 +2198,7 @@ function closeBulkEmailMaybe(e) {
 // lasketaan silloin uudelleen, jotta käsin korjattu yhteyshenkilö,
 // sähköposti, Avausviesti tai kaupan tila vaikuttaa heti kelpoisuuteen.
 let returnToBulkEmailAfterAccount=false;
+let bulkRejectedDetailsOpen=false;
 function openBulkEmailAccount(sid) {
   const p=allProspects.find(x=>x.spara_id===sid);
   if (!p) { showToast('Tiliä ei löytynyt','error'); return; }
@@ -2425,6 +2427,12 @@ function updateBulkEmailPreview() {
       <span class="bulk-recipient-email">${esc(c.sahkoposti)}</span>
       <span class="bulk-recipient-open">Avaa →</span>
     </button>`).join('');
+  const rejectedRows=(x.rejected||[]).map(({p,c,reason})=>`
+    <button type="button" class="bulk-recipient-row bulk-rejected-row" onclick="openBulkEmailAccount(${esc(JSON.stringify(p.spara_id))})" title="Avaa ${esc(p.yritys_nimi)} korjattavaksi">
+      <span class="bulk-recipient-main"><strong>${esc(p.yritys_nimi)}</strong>${c?' — '+esc(c.nimi||''):''}</span>
+      <span class="bulk-recipient-email">${c?.sahkoposti?esc(c.sahkoposti)+' · ':''}<span class="bulk-rejected-reason">${esc(reason)}</span></span>
+      <span class="bulk-recipient-open">Korjaa →</span>
+    </button>`).join('');
   // "Tarkista vahvistamattomat" näkyy vain kun jotain tarkistettavaa on —
   // täysin automaattinen AI-tarkistus (ks. checkUnverifiedBulkContacts):
   // ei erillistä hyväksyntäruutua, tulos kirjoitetaan suoraan Yhteyshenkilöt/
@@ -2443,7 +2451,7 @@ function updateBulkEmailPreview() {
         Valituissa segmenteissä ${x.accounts.length} tiliä · ilman varmennettua henkilökohtaista osoitetta ${x.accountsWithoutDirect} tiliä
         · sama kampanja jo lähetetty ${x.alreadySent} vastaanottajalle${x.duplicateEmails?' · päällekkäisiä osoitteita ohitettu '+x.duplicateEmails:''}.
       </div>
-      ${x.rejected?.length ? `<details style="margin-top:7px"><summary style="cursor:pointer;font-size:11px;color:var(--text2)">Näytä miksi ${x.rejected.length} kontaktia/tiliä hylättiin</summary><div style="margin-top:6px;max-height:160px;overflow:auto">${x.rejected.slice(0,50).map(({p,c,reason})=>`<div style="font-size:10px;padding:3px 0;border-bottom:1px solid var(--border)"><strong>${esc(p.yritys_nimi)}</strong>${c?' — '+esc(c.nimi||'')+(c.sahkoposti?' · '+esc(c.sahkoposti):''):''}: <span style="color:var(--warning)">${esc(reason)}</span></div>`).join('')}${x.rejected.length>50?'<div style="font-size:10px;padding-top:4px">… ja '+(x.rejected.length-50)+' muuta</div>':''}</div></details>` : ''}
+      ${x.rejected?.length ? `<details style="margin-top:7px" ${bulkRejectedDetailsOpen?'open':''} ontoggle="bulkRejectedDetailsOpen=this.open"><summary style="cursor:pointer;font-size:11px;color:var(--text2)">Näytä miksi ${x.rejected.length} kontaktia/tiliä hylättiin</summary><div style="margin-top:6px;max-height:220px;overflow:auto">${rejectedRows}</div></details>` : ''}
       ${verifyBtn}
       <div style="font-size:11px;margin-top:9px">Malli: <strong>${template?esc(template.nimi):'ei valittu'}</strong></div>
       <div style="font-size:11px;margin-top:4px;color:var(--text2)">${x.remindersEnabled
