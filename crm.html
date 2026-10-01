@@ -489,6 +489,9 @@
     .bulk-recipient-email{min-width:0;font-size:11px;color:var(--text2);overflow-wrap:anywhere;}
     .bulk-rejected-reason{color:var(--warning);font-weight:700;}
     .bulk-recipient-open{font-size:10px;font-weight:700;color:var(--accent);white-space:nowrap;}
+    .bulk-rejected-row{cursor:default;}
+    .bulk-rejected-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;white-space:nowrap;}
+    .bulk-rejected-actions .btn{padding:5px 8px;font-size:10px;}
     [data-dash-theme="spara"] #bulk-email-modal .bulk-recipient-row{color:var(--spara-ink);}
     [data-dash-theme="spara"] #bulk-email-modal .bulk-recipient-row:hover,
     [data-dash-theme="spara"] #bulk-email-modal .bulk-recipient-row:focus-visible{background:var(--spara-lavender-wash);}
@@ -498,6 +501,9 @@
       .bulk-recipient-row{grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:10px 6px;}
       .bulk-recipient-email{grid-column:1/-1;}
       .bulk-recipient-open{grid-column:2;grid-row:1;}
+      .bulk-rejected-row{grid-template-columns:minmax(0,1fr);}
+      .bulk-rejected-row .bulk-recipient-email{grid-column:1;}
+      .bulk-rejected-actions{grid-column:1;justify-content:flex-start;}
     }
 
     /* Sähköpostin Aihe- ja Viesti-kentät: aina valkoinen tausta + musta
@@ -1353,7 +1359,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-01.2';
+const BUILD_ID = '2026-10-01.3';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2335,9 +2341,7 @@ function isManuallyVerifiableContact(c) {
   if (!name || name.startsWith('#') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return false;
   return !BULK_GENERIC_LOCALPARTS.has(email.split('@')[0]);
 }
-async function verifyAccountContactsFromKontaktoi(p) {
-  if (!p?.spara_id) return 0;
-  const contacts=allContacts.filter(c=>c.tili_id===p.spara_id && isManuallyVerifiableContact(c));
+async function persistVerifiedContacts(contacts) {
   if (!contacts.length) return 0;
   const rows=await sheetGet(`${YH_VERIFY_TAB}!A:J`);
   const byId=new Map();
@@ -2358,6 +2362,30 @@ async function verifyAccountContactsFromKontaktoi(p) {
     changed++;
   }
   return changed;
+}
+async function verifyAccountContactsFromKontaktoi(p) {
+  if (!p?.spara_id) return 0;
+  const contacts=allContacts.filter(c=>c.tili_id===p.spara_id && isManuallyVerifiableContact(c));
+  return persistVerifiedContacts(contacts);
+}
+async function approveBulkRejectedContact(contactId,event) {
+  event?.stopPropagation();
+  const c=allContacts.find(x=>x.id===contactId);
+  if (!c || !isManuallyVerifiableContact(c)) {
+    showToast('Korjaa ensin nimi ja henkilökohtainen sähköpostiosoite','error');
+    return;
+  }
+  const btn=event?.currentTarget;
+  if (btn) { btn.disabled=true; btn.textContent='Hyväksytään…'; }
+  try {
+    await persistVerifiedContacts([c]);
+    bulkRejectedDetailsOpen=true;
+    updateBulkEmailPreview();
+    showToast(`${c.nimi} hyväksytty massalähetykseen`,'success');
+  } catch(e) {
+    if (btn) { btn.disabled=false; btn.textContent='✓ Hyväksy'; }
+    showToast('Hyväksyntää ei voitu tallentaa: '+e.message,'error');
+  }
 }
 function bulkCampaignKey(projekti,segmentti,templateId) {
   return [projekti,segmentti,templateId].map(x=>String(x||'').trim().toLowerCase()).join('|');
@@ -2427,12 +2455,17 @@ function updateBulkEmailPreview() {
       <span class="bulk-recipient-email">${esc(c.sahkoposti)}</span>
       <span class="bulk-recipient-open">Avaa →</span>
     </button>`).join('');
-  const rejectedRows=(x.rejected||[]).map(({p,c,reason})=>`
-    <button type="button" class="bulk-recipient-row bulk-rejected-row" onclick="openBulkEmailAccount(${esc(JSON.stringify(p.spara_id))})" title="Avaa ${esc(p.yritys_nimi)} korjattavaksi">
+  const rejectedRows=(x.rejected||[]).map(({p,c,reason})=>{
+    const canApprove=!!c && isManuallyVerifiableContact(c);
+    return `<div class="bulk-recipient-row bulk-rejected-row">
       <span class="bulk-recipient-main"><strong>${esc(p.yritys_nimi)}</strong>${c?' — '+esc(c.nimi||''):''}</span>
       <span class="bulk-recipient-email">${c?.sahkoposti?esc(c.sahkoposti)+' · ':''}<span class="bulk-rejected-reason">${esc(reason)}</span></span>
-      <span class="bulk-recipient-open">Korjaa →</span>
-    </button>`).join('');
+      <span class="bulk-rejected-actions">
+        <button type="button" class="btn btn-ghost btn-sm" ${canApprove?`onclick="approveBulkRejectedContact(${esc(JSON.stringify(c.id))},event)"`:'disabled title="Korjaa nimi tai sähköpostiosoite ensin"'}>✓ Hyväksy</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="openBulkEmailAccount(${esc(JSON.stringify(p.spara_id))})">Korjaa →</button>
+      </span>
+    </div>`;
+  }).join('');
   // "Tarkista vahvistamattomat" näkyy vain kun jotain tarkistettavaa on —
   // täysin automaattinen AI-tarkistus (ks. checkUnverifiedBulkContacts):
   // ei erillistä hyväksyntäruutua, tulos kirjoitetaan suoraan Yhteyshenkilöt/
