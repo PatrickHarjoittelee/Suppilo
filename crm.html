@@ -483,6 +483,21 @@
     [data-dash-theme="spara"] #bulk-email-modal .modal-title{font-family:'Fjalla One',sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.04em;color:var(--spara-navy);}
     [data-dash-theme="spara"] #bulk-email-modal .form-control{background:var(--spara-cream);border-color:var(--spara-hairline);color:var(--spara-ink);}
     [data-dash-theme="spara"] #bulk-email-modal .btn-primary{background:var(--spara-navy);color:var(--spara-on-dark);}
+    .bulk-recipient-row{width:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 6px;border:0;border-bottom:1px solid var(--border);background:transparent;color:var(--text);font:inherit;text-align:left;cursor:pointer;transition:background .15s,border-color .15s;}
+    .bulk-recipient-row:hover,.bulk-recipient-row:focus-visible{background:var(--bg4);outline:none;}
+    .bulk-recipient-main{min-width:0;font-size:11px;overflow-wrap:anywhere;}
+    .bulk-recipient-email{min-width:0;font-size:11px;color:var(--text2);overflow-wrap:anywhere;}
+    .bulk-recipient-open{font-size:10px;font-weight:700;color:var(--accent);white-space:nowrap;}
+    [data-dash-theme="spara"] #bulk-email-modal .bulk-recipient-row{color:var(--spara-ink);}
+    [data-dash-theme="spara"] #bulk-email-modal .bulk-recipient-row:hover,
+    [data-dash-theme="spara"] #bulk-email-modal .bulk-recipient-row:focus-visible{background:var(--spara-lavender-wash);}
+    [data-dash-theme="spara"] #bulk-email-modal .bulk-recipient-email{color:var(--spara-ink-faint);}
+    [data-dash-theme="spara"] #bulk-email-modal .bulk-recipient-open{color:var(--spara-lavender-deep);}
+    @media(max-width:640px){
+      .bulk-recipient-row{grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:10px 6px;}
+      .bulk-recipient-email{grid-column:1/-1;}
+      .bulk-recipient-open{grid-column:2;grid-row:1;}
+    }
 
     /* Sähköpostin Aihe- ja Viesti-kentät: aina valkoinen tausta + musta
        oletusteksti, RIIPPUMATTA aktiivisesta dashboard-teemasta — pyydetty
@@ -1337,7 +1352,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-09-30.3';
+const BUILD_ID = '2026-10-01.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2176,6 +2191,20 @@ function closeBulkEmailMaybe(e) {
   if (e.target===document.getElementById('bulk-email-modal')) closeBulkEmailModal();
 }
 
+// Kun vastaanottaja avataan massalähetyksen esikatselusta, lomaketta ei
+// alusteta uudelleen. Massalähetys vain piilotetaan tilimodaalin ajaksi ja
+// palautetaan suljettaessa täsmälleen samoilla valinnoilla. Esikatselu
+// lasketaan silloin uudelleen, jotta käsin korjattu yhteyshenkilö,
+// sähköposti, Avausviesti tai kaupan tila vaikuttaa heti kelpoisuuteen.
+let returnToBulkEmailAfterAccount=false;
+function openBulkEmailAccount(sid) {
+  const p=allProspects.find(x=>x.spara_id===sid);
+  if (!p) { showToast('Tiliä ei löytynyt','error'); return; }
+  returnToBulkEmailAfterAccount=true;
+  document.getElementById('bulk-email-modal')?.classList.add('hidden');
+  openModal(sid);
+}
+
 // ── Massalähetys: monivalintainen segmenttivalitsin ─────────────────────────
 // Käyttäjä pyysi (1) että tämä lista pysyy synkassa Kanbanin/Tilien
 // segmenttisuodattimen kanssa — molemmat johtavat nyt segmenttinsä samasta
@@ -2390,10 +2419,12 @@ function updateBulkEmailPreview() {
   if (!x.projekti||!x.segments.size) {
     preview.innerHTML='<div class="empty" style="padding:16px">Valitse projekti ja vähintään yksi segmentti.</div>'; return;
   }
-  const rows=x.selected.slice(0,20).map(({p,c})=>`
-    <div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px">
-      <span><strong>${esc(p.yritys_nimi)}</strong> — ${esc(c.nimi)}</span><span style="color:var(--text2)">${esc(c.sahkoposti)}</span>
-    </div>`).join('');
+  const rows=x.selected.map(({p,c})=>`
+    <button type="button" class="bulk-recipient-row" onclick="openBulkEmailAccount(${esc(JSON.stringify(p.spara_id))})" title="Avaa ${esc(p.yritys_nimi)} tarkistettavaksi">
+      <span class="bulk-recipient-main"><strong>${esc(p.yritys_nimi)}</strong> — ${esc(c.nimi)}</span>
+      <span class="bulk-recipient-email">${esc(c.sahkoposti)}</span>
+      <span class="bulk-recipient-open">Avaa →</span>
+    </button>`).join('');
   // "Tarkista vahvistamattomat" näkyy vain kun jotain tarkistettavaa on —
   // täysin automaattinen AI-tarkistus (ks. checkUnverifiedBulkContacts):
   // ei erillistä hyväksyntäruutua, tulos kirjoitetaan suoraan Yhteyshenkilöt/
@@ -2418,7 +2449,7 @@ function updateBulkEmailPreview() {
       <div style="font-size:11px;margin-top:4px;color:var(--text2)">${x.remindersEnabled
         ? 'Muistutukset: +3 pv <strong>'+(reminder1?esc(reminder1.nimi):'ei valittu')+'</strong> · +10 pv <strong>'+(reminder2?esc(reminder2.nimi):'ei valittu')+'</strong>'
         : 'Muistutukset: ei käytössä'}</div>
-      ${rows?'<div style="margin-top:9px;max-height:210px;overflow:auto">'+rows+(x.selected.length>20?'<div style="padding-top:6px;color:var(--text2)">… ja '+(x.selected.length-20)+' muuta</div>':'')+'</div>':''}
+      ${rows?'<div style="margin-top:9px;max-height:260px;overflow:auto">'+rows+'</div>':''}
     </div>`;
 }
 
@@ -4964,7 +4995,14 @@ function openModal(sid) {
   renderContactsInTiedot(p);
   document.getElementById('modal-overlay').classList.remove('hidden');
 }
-function closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); currentId=null; }
+function closeModal() {
+  document.getElementById('modal-overlay').classList.add('hidden'); currentId=null;
+  if (returnToBulkEmailAfterAccount) {
+    returnToBulkEmailAfterAccount=false;
+    updateBulkEmailPreview();
+    document.getElementById('bulk-email-modal')?.classList.remove('hidden');
+  }
+}
 function closeMaybe(e) { if (e.target===document.getElementById('modal-overlay')) closeModal(); }
 
 function switchToTiedotAndEdit() {
