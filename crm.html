@@ -121,6 +121,8 @@
       #tab-kanban .kb-pf-wrap,#tab-kanban .kb-sf-wrap { width:100%; }
       #tab-kanban .kb-pf-wrap > button,#tab-kanban .kb-sf-wrap > button { width:100%;min-width:0;justify-content:space-between; }
       #tab-kanban .kb-pf-panel,#tab-kanban .kb-sf-panel { left:0;right:0;width:100%;min-width:0;max-width:none;max-height:52vh;max-height:52dvh; }
+      #tab-kanban .kb-ready-sort { width:100%; }
+      #email-modal .email-reminder-grid { grid-template-columns:1fr; }
       .info-grid { grid-template-columns:1fr; }
       .info-block,.info-block.full { grid-column:1/-1; }
       .form-grid { grid-template-columns:1fr; }
@@ -520,6 +522,7 @@
        voi yhä olla oma inline-värinsä, se on tarkoituksellista. */
     #email-modal #email-subject,
     #email-modal #email-body-html { background:#fff; color:#000; }
+    .email-reminder-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
 
     /* Kanban */
     .kanban{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;}
@@ -534,6 +537,13 @@
     .kcard.dragging{opacity:.4;}
     .kc-name{font-size:12px;font-weight:600;margin-bottom:3px;} .kc-meta{font-size:11px;color:var(--text2);line-height:1.5;}
     .kc-prio{display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:4px;vertical-align:middle;}
+    .kc-comm{margin-top:7px;font-size:10px;color:var(--text2);}
+    .kc-comm-bars{display:flex;gap:3px;margin-top:4px;}
+    .kc-comm-bar{height:3px;flex:1;border-radius:3px;background:var(--bg2);border:1px solid var(--border);}
+    .kc-comm-bar.sent{background:var(--text);border-color:var(--text);}
+    .kc-comm-bar.pending{background:var(--bg);border-color:var(--border);}
+    .kc-comm-bar.cancelled{background:transparent;border-style:dashed;opacity:.55;}
+    .kb-ready-sort{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);cursor:pointer;white-space:nowrap;}
     .dot-A{background:var(--red);} .dot-B{background:var(--orange);}
 
     /* Kanban — Spara-teema (korjattu). Jokainen kanban-, kcard-, kc- ja
@@ -966,6 +976,10 @@
         <button type="button" class="btn btn-ghost btn-sm" id="kb-sf-btn" aria-haspopup="true" aria-expanded="false" onclick="toggleKanbanSegmenttiFilter(event)">Segmentit: Kaikki ▾</button>
         <div class="kb-sf-panel hidden" id="kb-sf-panel" onclick="event.stopPropagation()"></div>
       </div>
+      <label class="kb-ready-sort" title="Näytä ensin tapaukset, joissa ei odoteta ajastetun viestin lähetystä">
+        <input type="checkbox" id="kb-ready-first" onchange="toggleKanbanReadyFirst(this.checked)">
+        Ei odottavia viestejä ensin
+      </label>
     </div>
     <div class="kanban" id="kanban-board"></div>
   </div>
@@ -1359,7 +1373,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-01.3';
+const BUILD_ID = '2026-10-01.4';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2037,6 +2051,7 @@ function openEmailComposer(opts) {
   } else {
     tplWrap.style.display='none';
   }
+  initEmailReminderControls(p, opts.taskId ? parseActs(p).find(a=>a.id===opts.taskId) : null);
   aiOpenerButtonState(p);
 
   emailAttachments=[];
@@ -2055,7 +2070,10 @@ function captureEmailComposerSnapshot() {
   emailComposerInitialSnapshot = {
     subject: document.getElementById('email-subject')?.value||'',
     bodyHtml: document.getElementById('email-body-html')?.innerHTML||'',
-    attachmentCount: emailAttachments.length
+    attachmentCount: emailAttachments.length,
+    remindersEnabled: !!document.getElementById('email-reminders-enabled')?.checked,
+    reminder1TemplateId: document.getElementById('email-reminder1-template')?.value||'',
+    reminder2TemplateId: document.getElementById('email-reminder2-template')?.value||''
   };
 }
 function emailComposerIsDirty() {
@@ -2063,7 +2081,42 @@ function emailComposerIsDirty() {
   const s=emailComposerInitialSnapshot;
   return (document.getElementById('email-subject')?.value||'')!==s.subject
     || (document.getElementById('email-body-html')?.innerHTML||'')!==s.bodyHtml
-    || emailAttachments.length!==s.attachmentCount;
+    || emailAttachments.length!==s.attachmentCount
+    || !!document.getElementById('email-reminders-enabled')?.checked!==s.remindersEnabled
+    || (document.getElementById('email-reminder1-template')?.value||'')!==s.reminder1TemplateId
+    || (document.getElementById('email-reminder2-template')?.value||'')!==s.reminder2TemplateId;
+}
+
+function initEmailReminderControls(p, task) {
+  const options='<option value="">— valitse viestipohja —</option>'+emailTemplates.map(t=>`<option value="${esc(t.id)}">${esc(t.nimi)}</option>`).join('');
+  const first=document.getElementById('email-reminder1-template');
+  const second=document.getElementById('email-reminder2-template');
+  if (!first||!second) return;
+  first.innerHTML=options; second.innerHTML=options;
+  const queued=task?.id?reminderRowsForTicket(task.id):[];
+  const rule=bulkRuleFor(p.kampanja,p.segmentti);
+  first.value=queued.find(r=>String(r.order)==='1')?.template_id||task?.reminder1TemplateId||rule?.reminder1_template_id||'';
+  second.value=queued.find(r=>String(r.order)==='2')?.template_id||task?.reminder2TemplateId||rule?.reminder2_template_id||'';
+  const enabled=queued.length ? true : task?.remindersEnabled!==false;
+  document.getElementById('email-reminders-enabled').checked=enabled;
+  emailReminderToggleChanged();
+}
+function emailReminderToggleChanged() {
+  const enabled=!!document.getElementById('email-reminders-enabled')?.checked;
+  ['email-reminder1-template','email-reminder2-template'].forEach(id=>{ const el=document.getElementById(id); if (el) el.disabled=!enabled; });
+}
+function emailReminderSelection(to) {
+  const enabled=!!document.getElementById('email-reminders-enabled')?.checked;
+  const reminder1TemplateId=document.getElementById('email-reminder1-template')?.value||'';
+  const reminder2TemplateId=document.getElementById('email-reminder2-template')?.value||'';
+  if (!enabled) return {enabled:false,reminder1TemplateId:'',reminder2TemplateId:''};
+  const recipients=String(to||'').split(/[;,]/).map(x=>x.trim()).filter(Boolean);
+  if (recipients.length!==1) { showToast('Automaattinen muistutusketju vaatii yhden vastaanottajan','error'); return null; }
+  const templates=[reminder1TemplateId,reminder2TemplateId].map(id=>emailTemplates.find(t=>t.id===id));
+  if (templates.some(t=>!t||!t.aihe?.trim()||!t.sisalto?.trim())) {
+    showToast('Valitse molemmat valmiit muistutusviestipohjat tai poista muistutukset käytöstä','error'); return null;
+  }
+  return {enabled:true,reminder1TemplateId,reminder2TemplateId,recipient:recipients[0].toLowerCase()};
 }
 
 // {{etunimi}}/{{nimi}}/{{yritys}}/{{tekija}}/{{avausviesti}} korvataan mallia valittaessa —
@@ -2525,6 +2578,22 @@ function bulkCurrentDealStage(p,actsOverride) {
 function reminderRowsForTicket(ticketId) {
   return reminderQueue.filter(r=>r.ticket_id===ticketId).sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0));
 }
+async function enqueueReminderSeries({p,ticketId,contactId,senderEmail,recipient,originalIso,
+  reminder1TemplateId,reminder2TemplateId,conversationId,ticketCode,baselineStage}) {
+  if (!ticketId||reminderRowsForTicket(ticketId).length) return;
+  const createdAt=new Date().toISOString();
+  const queueRows=[
+    [ticketId+':R1',p.spara_id,ticketId,contactId||'',senderEmail,recipient,bulkAddDaysIso(originalIso,3),'1',reminder1TemplateId,'pending',createdAt,'','','',conversationId||'',ticketCode||'',originalIso,baselineStage||'',''],
+    [ticketId+':R2',p.spara_id,ticketId,contactId||'',senderEmail,recipient,bulkAddDaysIso(originalIso,10),'2',reminder2TemplateId,'pending',createdAt,'','','',conversationId||'',ticketCode||'',originalIso,baselineStage||'','']
+  ];
+  await sheetAppend(`${REMINDER_QUEUE_TAB}!A:S`,queueRows);
+  queueRows.forEach(r=>reminderQueue.push({
+    id:r[0],tili_id:r[1],ticket_id:r[2],contact_id:r[3],sender_email:r[4],recipient_email:r[5],
+    due_at:r[6],order:r[7],template_id:r[8],status:r[9],created_at:r[10],claimed_at:r[11],
+    processed_at:r[12],cancel_reason:r[13],conversation_id:r[14],ticket_code:r[15],
+    original_sent_at:r[16],baseline_stage:r[17],last_error:r[18],_rowIndex:null
+  }));
+}
 
 function renderBulkProgress(sent,failed,total,currentText,finished) {
   const div=document.getElementById('bulk-progress'); if (!div) return;
@@ -2655,17 +2724,9 @@ async function startBulkEmailSend() {
         await saveCrmState(p);
         if (x.remindersEnabled) {
           const recipient=(c.sahkoposti||'').trim().toLowerCase();
-          const queueRows=[
-            [ticketId+':R1',p.spara_id,ticketId,c.id,senderEmail,recipient,bulkAddDaysIso(now,3),'1',x.reminder1TemplateId,'pending',now,'','','',created.conversationId||'',ticketCode,now,baselineStage,''],
-            [ticketId+':R2',p.spara_id,ticketId,c.id,senderEmail,recipient,bulkAddDaysIso(now,10),'2',x.reminder2TemplateId,'pending',now,'','','',created.conversationId||'',ticketCode,now,baselineStage,'']
-          ];
-          await sheetAppend(`${REMINDER_QUEUE_TAB}!A:S`,queueRows);
-          queueRows.forEach((r,idx)=>reminderQueue.push({
-            id:r[0],tili_id:r[1],ticket_id:r[2],contact_id:r[3],sender_email:r[4],recipient_email:r[5],
-            due_at:r[6],order:r[7],template_id:r[8],status:r[9],created_at:r[10],claimed_at:r[11],
-            processed_at:r[12],cancel_reason:r[13],conversation_id:r[14],ticket_code:r[15],
-            original_sent_at:r[16],baseline_stage:r[17],last_error:r[18],_rowIndex:null
-          }));
+          await enqueueReminderSeries({p,ticketId,contactId:c.id,senderEmail,recipient,originalIso:now,
+            reminder1TemplateId:x.reminder1TemplateId,reminder2TemplateId:x.reminder2TemplateId,
+            conversationId:created.conversationId||'',ticketCode,baselineStage});
         }
       } catch(logError) {
         console.error('Massalähetys onnistui mutta CRM-/muistutusjonon kirjaus epäonnistui',p.spara_id,c.sahkoposti,logError);
@@ -3120,9 +3181,11 @@ async function sendOutlookEmail() {
   const bodyHtml=(bodyEl.innerHTML||'').trim();
   const bodyEmpty=!bodyEl.textContent.trim() && !bodyEl.querySelector('img,a');
   if (!to||!subject||bodyEmpty) { showToast('Vastaanottaja, aihe ja viesti ovat pakollisia','error'); return; }
+  const reminderConfig=emailReminderSelection(to); if (!reminderConfig) return;
   const btn=document.getElementById('email-send-btn');
-  if (!confirm(`Lähetetäänkö sähköposti Outlook-tililtä ${recipientPhrase(to)}?`)) return;
+  if (!confirm(`Lähetetäänkö sähköposti Outlook-tililtä ${recipientPhrase(to)}?${reminderConfig.enabled?'\n\nSamalla ajastetaan muistutukset +3 ja +10 päivää.':''}`)) return;
   btn.disabled=true; btn.textContent='Lähetetään…';
+  let reminderQueueError=null;
   try {
     const token=await microsoftAccessToken();
     const p=allProspects.find(x=>x.spara_id===emailDraftContext.tiliId);
@@ -3165,28 +3228,41 @@ async function sendOutlookEmail() {
       // tapahtunut Graphiin mennessä), jättää vain bodyHtml:n tallentamatta
       // jos se on liian iso/sisältää upotetun kuvan.
       const storableBodyHtml=emailDraftBodyTooLarge(bodyHtml)?null:bodyHtml;
+      let sentTask=task;
+      const reminderFields={remindersEnabled:reminderConfig.enabled,
+        reminder1TemplateId:reminderConfig.reminder1TemplateId,reminder2TemplateId:reminderConfig.reminder2TemplateId};
       if (task) {
         task.thread=task.thread||[];
         task.thread.push(threadEntry);
         Object.assign(task,{tila:'Toimitettu',done:true,aihe:subject,teksti,bodyHtml:storableBodyHtml,
           updated_at:threadEntry.ts,completed_at:threadEntry.ts,
           contactId:emailDraftContext.contactId||task.contactId||null,
-          conversationId:created.conversationId||task.conversationId||null, ticketCode});
+          conversationId:created.conversationId||task.conversationId||null, ticketCode,...reminderFields});
       } else {
         const completed_at=new Date().toISOString();
-        acts.push({id:'TK'+Date.now(),tyyppi:'sahkoposti',tila:'Toimitettu',done:true,
+        sentTask={id:'TK'+Date.now(),tyyppi:'sahkoposti',tila:'Toimitettu',done:true,
           aihe:subject,teksti,tekija,muistiinpanot:null,bodyHtml:storableBodyHtml,created_at:completed_at,completed_at,
           due_date:null,contactId:emailDraftContext.contactId||null,
-          conversationId:created.conversationId||null,ticketCode,thread:[threadEntry]});
+          conversationId:created.conversationId||null,ticketCode,thread:[threadEntry],...reminderFields};
+        acts.push(sentTask);
       }
       p.aktiviteetit=JSON.stringify(acts);
       await saveCrmState(p);
+      if (reminderConfig.enabled) {
+        try {
+          await enqueueReminderSeries({p,ticketId:sentTask.id,contactId:sentTask.contactId,
+            senderEmail:(microsoftAccount?.username||currentUserEmail||'').trim().toLowerCase(),recipient:reminderConfig.recipient,
+            originalIso:threadEntry.ts,reminder1TemplateId:reminderConfig.reminder1TemplateId,
+            reminder2TemplateId:reminderConfig.reminder2TemplateId,conversationId:sentTask.conversationId,
+            ticketCode,baselineStage:bulkCurrentDealStage(p,acts)});
+        } catch(queueError) { reminderQueueError=queueError; console.error('Muistutusjonon tallennus epäonnistui',queueError); }
+      }
       if (currentId===p.spara_id) { renderActivities(p); renderTaskList(p); }
     }
     closeTaskForm();
     closeEmailComposer();
     updateMicrosoftStatus();
-    showToast('Sähköposti lähetetty Outlookista ✓','success');
+    showToast(reminderQueueError?'Sähköposti lähti, mutta muistutusten tallennus epäonnistui':'Sähköposti lähetetty Outlookista ✓',reminderQueueError?'error':'success');
   } catch(e) {
     showToast('Lähetys epäonnistui: '+e.message,'error');
   } finally {
@@ -3214,9 +3290,11 @@ async function scheduleOutlookEmail(deferredIso) {
   const bodyEmpty=!bodyEl.textContent.trim() && !bodyEl.querySelector('img,a');
   if (!to||!subject||bodyEmpty) { showToast('Vastaanottaja, aihe ja viesti ovat pakollisia','error'); return; }
   if (!deferredIso || Date.parse(deferredIso)<=Date.now()) { showToast('Valitse tuleva ajankohta','error'); return; }
-  if (!confirm(`Ajastetaanko sähköposti lähtemään ${fmtDT(deferredIso)} ${recipientPhrase(to)}?`)) return;
+  const reminderConfig=emailReminderSelection(to); if (!reminderConfig) return;
+  if (!confirm(`Ajastetaanko sähköposti lähtemään ${fmtDT(deferredIso)} ${recipientPhrase(to)}?${reminderConfig.enabled?'\n\nSamalla ajastetaan muistutukset +3 ja +10 päivää alkuperäisestä lähetysajasta.':''}`)) return;
   const btn=document.getElementById('email-schedule-confirm-btn');
   if (btn) { btn.disabled=true; btn.textContent='Ajastetaan…'; }
+  let reminderQueueError=null;
   try {
     const token=await microsoftAccessToken();
     const p=allProspects.find(x=>x.spara_id===emailDraftContext.tiliId);
@@ -3242,28 +3320,41 @@ async function scheduleOutlookEmail(deferredIso) {
       // "ajastin viestin", ei ennuste tulevasta toimituksesta.
       const threadEntry={dir:'out',graphId:created.id,ts:nowIso,subject,preview:truncateEmailBody(htmlToPlainText(bodyHtml))};
       const storableBodyHtml=emailDraftBodyTooLarge(bodyHtml)?null:bodyHtml;
+      let sentTask=task;
+      const reminderFields={remindersEnabled:reminderConfig.enabled,
+        reminder1TemplateId:reminderConfig.reminder1TemplateId,reminder2TemplateId:reminderConfig.reminder2TemplateId};
       if (task) {
         task.thread=task.thread||[];
         task.thread.push(threadEntry);
         Object.assign(task,{tila:'Ajastettu',done:false,aihe:subject,teksti,bodyHtml:storableBodyHtml,completed_at:null,
           updated_at:nowIso, due_date:dueDateOnly, scheduledSendAt:deferredIso,
           contactId:emailDraftContext.contactId||task.contactId||null,
-          conversationId:created.conversationId||task.conversationId||null, ticketCode});
+          conversationId:created.conversationId||task.conversationId||null, ticketCode,...reminderFields});
       } else {
-        acts.push({id:'TK'+Date.now(),tyyppi:'sahkoposti',tila:'Ajastettu',done:false,
+        sentTask={id:'TK'+Date.now(),tyyppi:'sahkoposti',tila:'Ajastettu',done:false,
           aihe:subject,teksti,tekija,muistiinpanot:null,bodyHtml:storableBodyHtml,created_at:nowIso,
           due_date:dueDateOnly,scheduledSendAt:deferredIso,thread:[threadEntry],
           contactId:emailDraftContext.contactId||null,
-          conversationId:created.conversationId||null,ticketCode});
+          conversationId:created.conversationId||null,ticketCode,...reminderFields};
+        acts.push(sentTask);
       }
       p.aktiviteetit=JSON.stringify(acts);
       await saveCrmState(p);
+      if (reminderConfig.enabled) {
+        try {
+          await enqueueReminderSeries({p,ticketId:sentTask.id,contactId:sentTask.contactId,
+            senderEmail:(microsoftAccount?.username||currentUserEmail||'').trim().toLowerCase(),recipient:reminderConfig.recipient,
+            originalIso:deferredIso,reminder1TemplateId:reminderConfig.reminder1TemplateId,
+            reminder2TemplateId:reminderConfig.reminder2TemplateId,conversationId:sentTask.conversationId,
+            ticketCode,baselineStage:bulkCurrentDealStage(p,acts)});
+        } catch(queueError) { reminderQueueError=queueError; console.error('Muistutusjonon tallennus epäonnistui',queueError); }
+      }
       if (currentId===p.spara_id) { renderActivities(p); renderTaskList(p); }
     }
     closeTaskForm();
     closeEmailComposer();
     updateMicrosoftStatus();
-    showToast('Sähköposti ajastettu ✓ ('+fmtDT(deferredIso)+')','success');
+    showToast(reminderQueueError?'Sähköposti ajastettiin, mutta muistutusten tallennus epäonnistui':'Sähköposti ajastettu ✓ ('+fmtDT(deferredIso)+')',reminderQueueError?'error':'success');
   } catch(e) {
     showToast('Ajastus epäonnistui: '+e.message,'error');
   } finally {
@@ -3341,12 +3432,16 @@ async function saveEmailDraftTask() {
   const acts=parseActs(p);
   const task=emailDraftContext.taskId ? acts.find(a=>a.id===emailDraftContext.taskId) : null;
   const tekija=currentUser.nimi||currentUserEmail||null;
+  const reminderFields={remindersEnabled:!!document.getElementById('email-reminders-enabled')?.checked,
+    reminder1TemplateId:document.getElementById('email-reminder1-template')?.value||'',
+    reminder2TemplateId:document.getElementById('email-reminder2-template')?.value||''};
   if (task) {
     Object.assign(task,{tila:'Luonnos',done:false,aihe:subject,
       teksti:'Luonnos: '+subject, bodyHtml,completed_at:null,updated_at:new Date().toISOString(),
-      contactId:emailDraftContext.contactId||task.contactId||null});
+      contactId:emailDraftContext.contactId||task.contactId||null,...reminderFields});
   } else {
     const newTask=buildDraftEmailActivity({contactId:emailDraftContext.contactId, subject, bodyHtml, tekija});
+    Object.assign(newTask,reminderFields);
     acts.push(newTask);
     emailDraftContext.taskId=newTask.id;
   }
@@ -4733,6 +4828,12 @@ function nearestTask(p){return parseActs(p).map(normalizeTask).filter(a=>a.due_d
 // natiivi <select> sallii vain yhden valinnan kerrallaan, joten se
 // korvattiin pudotuspaneelilla jossa on valintaruutu per projekti.
 let kanbanProjektiFilter = new Set();
+let kanbanReadyFirst=localStorage.getItem('suppiloKanbanReadyFirst')==='1';
+function toggleKanbanReadyFirst(checked) {
+  kanbanReadyFirst=!!checked;
+  localStorage.setItem('suppiloKanbanReadyFirst',kanbanReadyFirst?'1':'0');
+  renderKanban();
+}
 
 function toggleKanbanProjektiFilter(e) {
   e.stopPropagation();
@@ -4823,12 +4924,43 @@ function getAllKaupat(filterSet) {
   return out;
 }
 
+function communicationProgress(p) {
+  const emails=parseActs(p).filter(a=>a.tyyppi==='sahkoposti').sort((a,b)=>
+    String(b.updated_at||b.completed_at||b.created_at||'').localeCompare(String(a.updated_at||a.completed_at||a.created_at||'')));
+  const email=emails[0]||null;
+  const now=Date.now();
+  let originalState='idle';
+  if (email) {
+    const scheduledAt=Date.parse(email.scheduledSendAt||'');
+    if (email.tila==='Ajastettu' && Number.isFinite(scheduledAt) && scheduledAt>now) originalState='pending';
+    else if (email.tila==='Toimitettu'||email.done||(email.tila==='Ajastettu'&&Number.isFinite(scheduledAt)&&scheduledAt<=now)) originalState='sent';
+  }
+  const rows=email?.id?reminderRowsForTicket(email.id):[];
+  const states=[originalState,1,2].map((item,index)=>{
+    if (index===0) return originalState;
+    const row=rows.find(r=>Number(r.order)===item);
+    const status=String(row?.status||'').toLowerCase();
+    if (['sent','delivered','toimitettu'].includes(status)) return 'sent';
+    if (['pending','processing','queued','scheduled','ajastettu'].includes(status)) return 'pending';
+    if (['cancelled','canceled','peruttu','failed','error'].includes(status)) return 'cancelled';
+    return 'idle';
+  });
+  return {delivered:states.filter(x=>x==='sent').length,total:3,
+    hasPending:states.includes('pending'),states};
+}
+function communicationProgressHtml(progress) {
+  return `<div class="kc-comm">✉️ ${progress.delivered}/${progress.total} toimitettu
+    <div class="kc-comm-bars" aria-label="Viestinnän vaihe ${progress.delivered}/${progress.total}">${progress.states.map(state=>`<span class="kc-comm-bar ${state}"></span>`).join('')}</div>
+  </div>`;
+}
+
 function kanbanCardHtml(k) {
   const {p,task}=k;
   const arvo=Number(task.arvo)||0;
   return `<div class="kcard" draggable="true" data-sid="${p.spara_id}" data-task-id="${task.id}" onclick="openKauppa('${p.spara_id}','${task.id}')">
         <div class="kc-name"><span class="kc-prio dot-${p.prioriteetti||'B'}"></span>${esc(p.yritys_nimi)} – ${esc(task.aihe||'–')}</div>
         <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--green);font-weight:700">${fmtEur(arvo)}</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
+        ${communicationProgressHtml(k.comm||communicationProgress(p))}
       </div>`;
 }
 // Spara-versio: sama rakenne, mutta kortin arvo on inline-tyylitetty (ei
@@ -4840,6 +4972,7 @@ function kanbanCardSparaHtml(k) {
   return `<div class="kcard" draggable="true" data-sid="${p.spara_id}" data-task-id="${task.id}" onclick="openKauppa('${p.spara_id}','${task.id}')">
         <div class="kc-name"><span class="kc-prio dot-${p.prioriteetti||'B'}"></span>${esc(p.yritys_nimi)} – ${esc(task.aihe||'–')}</div>
         <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--spara-ink);font-weight:700">${fmtEur(arvo)}</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
+        ${communicationProgressHtml(k.comm||communicationProgress(p))}
       </div>`;
 }
 function kanbanColHtml(v, cards, colSum) {
@@ -4856,6 +4989,7 @@ function kanbanColSparaHtml(v, cards, colSum) {
 
 function renderKanban() {
   applyDashboardThemeAttr();
+  const readyToggle=document.getElementById('kb-ready-first'); if (readyToggle) readyToggle.checked=kanbanReadyFirst;
   // Segmentti- ja hakusuodatus jatkosuodattavat Projektit-valinnan JÄLKEEN
   // — getAllKaupat palauttaa jo projektien mukaan rajatun listan, nämä vain
   // karsivat siitä lisää. Hakukenttä käyttää samoja kenttiä joita kortti
@@ -4873,7 +5007,9 @@ function renderKanban() {
   board.innerHTML='';
   const theme=dashboardTheme();
   VAIHEET.forEach(v => {
-    const cards=kaupat.filter(k=>k.task.tila===v);
+    let cards=kaupat.filter(k=>k.task.tila===v).map(k=>({...k,comm:communicationProgress(k.p)}));
+    if (kanbanReadyFirst) cards=cards.map((k,index)=>({...k,_sortIndex:index})).sort((a,b)=>
+      Number(a.comm.hasPending)-Number(b.comm.hasPending)||a._sortIndex-b._sortIndex);
     const colSum=cards.reduce((s,k)=>s+(Number(k.task.arvo)||0),0);
     const col=document.createElement('div'); col.className='kanban-col';
     col.innerHTML = theme==='spara' ? kanbanColSparaHtml(v,cards,colSum) : kanbanColHtml(v,cards,colSum);
@@ -9763,6 +9899,20 @@ async function saveGlobalTask() {
         <div class="form-group full" id="email-template-wrap" style="display:none">
           <label>Malli</label>
           <select class="form-control" id="email-template-picker" onchange="applyEmailTemplate(this.value)"></select>
+        </div>
+        <div class="form-group full" id="email-reminders-wrap" style="border-top:1px solid var(--border);padding-top:12px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="email-reminders-enabled" checked onchange="emailReminderToggleChanged()">
+            Automaattiset muistutukset
+          </label>
+          <div style="font-size:10px;color:var(--text2);margin-top:4px">
+            Muistutus 1 lähtee +3 päivää ja muistutus 2 +10 päivää alkuperäisestä lähetysajasta.
+            Muistutukset perutaan, jos asiakas vastaa tai kaupan vaihe muuttuu.
+          </div>
+          <div class="email-reminder-grid">
+            <div><label>Muistutus 1 (+3 päivää)</label><select class="form-control" id="email-reminder1-template"></select></div>
+            <div><label>Muistutus 2 (+10 päivää)</label><select class="form-control" id="email-reminder2-template"></select></div>
+          </div>
         </div>
         <div class="form-group full" id="ai-opener-wrap">
           <button type="button" class="btn btn-outlook btn-sm" id="ai-opener-btn" style="display:none" onclick="openAiOpenerPanel()">✨ Personoi avaus</button>
