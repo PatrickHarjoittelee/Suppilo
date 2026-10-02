@@ -1094,7 +1094,15 @@
             <select class="form-control" id="task-soitto-contact" aria-label="Yhteyshenkilö"
                     style="display:none;grid-column:1/-1" onchange="updateSoittoNowButtonVisibility()"></select>
             <input class="form-control" id="task-aihe" placeholder="Aihe…" style="grid-column:1/-1">
-            <input class="form-control" id="task-arvo" type="number" placeholder="Arvo €" min="0" style="display:none;grid-column:1/-1">
+            <div class="form-group full" id="task-arvo-wrap" style="display:none">
+              <label>Kertaluonteinen arvo (€)</label>
+              <input class="form-control" id="task-arvo" type="number" placeholder="0" min="0">
+            </div>
+            <div class="form-group full" id="task-arr-wrap" style="display:none">
+              <label>Jatkuva vuosilaskutus – ARR (€/v)</label>
+              <input class="form-control" id="task-arr" type="number" placeholder="0" min="0" oninput="updateTaskMrrHint()">
+              <div id="task-mrr-hint" style="font-size:10px;color:var(--text2);margin-top:4px">MRR: 0 €/kk</div>
+            </div>
             <select class="form-control" id="task-tekija" aria-label="Käsittelijä"></select>
             <input class="form-control" id="task-due" type="date">
             <div id="task-email-preview-wrap" style="display:none;grid-column:1/-1">
@@ -1387,7 +1395,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-01.7';
+const BUILD_ID = '2026-10-02.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -4220,7 +4228,7 @@ async function initVirtualKaupat() {
     if (p.kampanja === etjNimi) { aihe=etjNimi; arvo=299; }
     else if (taloNimet.has(p.kampanja)) { aihe=p.kampanja; arvo=7000; }
     else return;
-    acts.push({id:'TKv_'+p.spara_id, tyyppi:'kauppa', tila:'Tietojenkeruu', aihe, arvo,
+    acts.push({id:'TKv_'+p.spara_id, tyyppi:'kauppa', tila:'Tietojenkeruu', aihe, arvo, arr:0,
       tekija:null, muistiinpanot:p.signaali||null, created_at:ts, due_date:null, done:false});
     p.aktiviteetit = JSON.stringify(acts);
     if (!p.vaihe) p.vaihe = 'Tietojenkeruu';
@@ -4742,12 +4750,12 @@ const VAIHE_AVOIN=['Tietojenkeruu','Kontaktoi','Sovi tapaaminen','Tarjous työn 
 function normalizeKauppaVaihe(v) { return VAIHE_LEGACY[v] || v || 'Tietojenkeruu'; }
 const fmtEur=n=>Math.round(n).toLocaleString('fi-FI')+' €';
 function kauppaStats(){
-  const st={}; VAIHEET.forEach(v=>st[v]={n:0,sum:0});
+  const st={}; VAIHEET.forEach(v=>st[v]={n:0,sum:0,arr:0});
   allProspects.forEach(p=>parseActs(p).forEach(a=>{
     if(a.tyyppi!=='kauppa') return;
     const tila=normalizeKauppaVaihe(a.tila);
     if(!st[tila]) return;
-    st[tila].n++; st[tila].sum+=Number(a.arvo)||0;
+    st[tila].n++; st[tila].sum+=Number(a.arvo)||0; st[tila].arr+=Number(a.arr)||0;
   }));
   return st;
 }
@@ -4802,14 +4810,24 @@ function populateHandlerSelect(selectedValue='') {
   ].join('');
   sel.value=selected||'';
 }
+function updateTaskMrrHint() {
+  const arr=Math.max(0,Number(document.getElementById('task-arr')?.value)||0);
+  const hint=document.getElementById('task-mrr-hint');
+  if(hint) hint.textContent='MRR: '+fmtEur(arr/12)+'/kk';
+}
+function updateGlobalTaskMrrHint() {
+  const arr=Math.max(0,Number(document.getElementById('gt-arr')?.value)||0);
+  const hint=document.getElementById('gt-mrr-hint');
+  if(hint) hint.textContent='MRR: '+fmtEur(arr/12)+'/kk';
+}
 function openTaskForm(tyyppi) {
   document.getElementById('task-type').value=tyyppi;
   document.getElementById('task-form-label').textContent=`${TASK_ICON[tyyppi]} ${TASK_LABEL[tyyppi]}`;
   const sel=document.getElementById('task-tila');
   if(sel) sel.innerHTML=(TASK_TILA[tyyppi]||TASK_TILA.muu).map(t=>`<option>${t}</option>`).join('');
-  const arvoEl=document.getElementById('task-arvo');
-  if(arvoEl) arvoEl.style.display=tyyppi==='kauppa'?'grid-column:1/-1;display:block':'none';
-  if(arvoEl) arvoEl.style.cssText=tyyppi==='kauppa'?'display:block;grid-column:1/-1':'display:none';
+  ['task-arvo-wrap','task-arr-wrap'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.display=tyyppi==='kauppa'?'':'none';
+  });
   document.querySelectorAll('.task-type-btn').forEach(b=>b.classList.toggle('active',b.dataset.type===tyyppi));
   // Automaattivalinta: uudelle tehtävälle käsittelijäksi kirjautunut käyttäjä,
   // ellei kenttää ole jo täytetty (esim. tyyppiä vaihdettaessa kesken
@@ -4848,7 +4866,10 @@ function closeTaskForm() {
   document.querySelectorAll('.task-type-btn').forEach(b=>b.classList.remove('active'));
   const aihe=document.getElementById('task-aihe'); if(aihe) aihe.value='';
   const due=document.getElementById('task-due'); if(due) due.value='';
-  const arvo=document.getElementById('task-arvo'); if(arvo){arvo.value='';arvo.style.display='none';}
+  const arvo=document.getElementById('task-arvo'); if(arvo) arvo.value='';
+  const arr=document.getElementById('task-arr'); if(arr) arr.value='';
+  ['task-arvo-wrap','task-arr-wrap'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  updateTaskMrrHint();
   const tekija=document.getElementById('task-tekija'); if(tekija) tekija.value='';
   const nota=document.getElementById('task-muistiinpanot'); if(nota) nota.value='';
   const preview=document.getElementById('task-email-preview'); if(preview) preview.textContent='';
@@ -4866,6 +4887,8 @@ function updateGtTilaOptions() {
   sel.innerHTML=(TASK_TILA[tyyppi]||TASK_TILA.muu).map(t=>`<option>${t}</option>`).join('');
   const wrap=document.getElementById('gt-arvo-wrap');
   if(wrap) wrap.style.display=tyyppi==='kauppa'?'':'none';
+  const arrWrap=document.getElementById('gt-arr-wrap');
+  if(arrWrap) arrWrap.style.display=tyyppi==='kauppa'?'':'none';
 }
 function taskIsDone(t){return t.done||(TASK_DONE[t.tyyppi]||[]).includes(t.tila);}
 function normalizeTask(a){
@@ -5011,9 +5034,10 @@ function communicationProgressHtml(progress) {
 function kanbanCardHtml(k) {
   const {p,task}=k;
   const arvo=Number(task.arvo)||0;
+  const arr=Number(task.arr)||0;
   return `<div class="kcard" draggable="true" data-sid="${p.spara_id}" data-task-id="${task.id}" onclick="openKauppa('${p.spara_id}','${task.id}')">
         <div class="kc-name"><span class="kc-prio dot-${p.prioriteetti||'B'}"></span>${esc(p.yritys_nimi)} – ${esc(task.aihe||'–')}</div>
-        <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--green);font-weight:700">${fmtEur(arvo)}</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
+        <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--green);font-weight:700">Kerta ${fmtEur(arvo)}</span>`:''}${arr?`<br><span style="color:var(--green);font-weight:700">ARR ${fmtEur(arr)}/v · MRR ${fmtEur(arr/12)}/kk</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
         ${communicationProgressHtml(k.comm||communicationProgress(p))}
       </div>`;
 }
@@ -5023,21 +5047,22 @@ function kanbanCardHtml(k) {
 function kanbanCardSparaHtml(k) {
   const {p,task}=k;
   const arvo=Number(task.arvo)||0;
+  const arr=Number(task.arr)||0;
   return `<div class="kcard" draggable="true" data-sid="${p.spara_id}" data-task-id="${task.id}" onclick="openKauppa('${p.spara_id}','${task.id}')">
         <div class="kc-name"><span class="kc-prio dot-${p.prioriteetti||'B'}"></span>${esc(p.yritys_nimi)} – ${esc(task.aihe||'–')}</div>
-        <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--spara-ink);font-weight:700">${fmtEur(arvo)}</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
+        <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--spara-ink);font-weight:700">Kerta ${fmtEur(arvo)}</span>`:''}${arr?`<br><span style="color:var(--spara-ink);font-weight:700">ARR ${fmtEur(arr)}/v · MRR ${fmtEur(arr/12)}/kk</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
         ${communicationProgressHtml(k.comm||communicationProgress(p))}
       </div>`;
 }
-function kanbanColHtml(v, cards, colSum) {
-  return `<div class="kanban-header"><span class="kanban-title" style="color:${V_COLORS[v]}">${v}</span><span class="kanban-cnt">${cards.length}${colSum?' · '+fmtEur(colSum):''}</span></div>
+function kanbanColHtml(v, cards, colSum, colArr) {
+  return `<div class="kanban-header"><span class="kanban-title" style="color:${V_COLORS[v]}">${v}</span><span class="kanban-cnt">${cards.length}${colSum?' · kerta '+fmtEur(colSum):''}${colArr?' · ARR '+fmtEur(colArr):''}</span></div>
       <div class="kanban-body" data-vaihe="${v}">${cards.length?cards.map(kanbanCardHtml).join(''):'<div style="font-size:11px;color:var(--text2);text-align:center;padding:12px">–</div>'}</div>`;
 }
 // Pylvään otsikko EI enää saa omaa väriään vaiheittain (ei inline style
 // lainkaan) — pelkkä .kanban-title-luokan ink-soft-väri kaikille
 // vaiheille, järjestys viestii vaiheen. Katso Kanban-CSS-lohkon kommentti.
-function kanbanColSparaHtml(v, cards, colSum) {
-  return `<div class="kanban-header"><span class="kanban-title">${v}</span><span class="kanban-cnt">${cards.length}${colSum?' · '+fmtEur(colSum):''}</span></div>
+function kanbanColSparaHtml(v, cards, colSum, colArr) {
+  return `<div class="kanban-header"><span class="kanban-title">${v}</span><span class="kanban-cnt">${cards.length}${colSum?' · kerta '+fmtEur(colSum):''}${colArr?' · ARR '+fmtEur(colArr):''}</span></div>
       <div class="kanban-body" data-vaihe="${v}">${cards.length?cards.map(kanbanCardSparaHtml).join(''):'<div class="spara-kanban-empty">–</div>'}</div>`;
 }
 
@@ -5065,8 +5090,9 @@ function renderKanban() {
     if (kanbanReadyFirst) cards=cards.map((k,index)=>({...k,_sortIndex:index})).sort((a,b)=>
       Number(a.comm.hasPending)-Number(b.comm.hasPending)||a._sortIndex-b._sortIndex);
     const colSum=cards.reduce((s,k)=>s+(Number(k.task.arvo)||0),0);
+    const colArr=cards.reduce((s,k)=>s+(Number(k.task.arr)||0),0);
     const col=document.createElement('div'); col.className='kanban-col';
-    col.innerHTML = theme==='spara' ? kanbanColSparaHtml(v,cards,colSum) : kanbanColHtml(v,cards,colSum);
+    col.innerHTML = theme==='spara' ? kanbanColSparaHtml(v,cards,colSum,colArr) : kanbanColHtml(v,cards,colSum,colArr);
     board.appendChild(col);
   });
   attachKanbanDnD();
@@ -5336,6 +5362,8 @@ function editTask(taskId) {
   const sel=document.getElementById('task-tila'); if(sel) sel.value=t.tyyppi==='kauppa'?normalizeKauppaVaihe(t.tila):t.tila||'';
   const aihe=document.getElementById('task-aihe'); if(aihe) aihe.value=t.aihe||'';
   const arvo=document.getElementById('task-arvo'); if(arvo) arvo.value=t.arvo??'';
+  const arr=document.getElementById('task-arr'); if(arr) arr.value=t.arr??'';
+  updateTaskMrrHint();
   populateHandlerSelect(t.tekija||'');
   const tek=document.getElementById('task-tekija'); if(tek) tek.value=t.tekija||'';
   const due=document.getElementById('task-due'); if(due) due.value=t.due_date||'';
@@ -5484,13 +5512,15 @@ async function updateTaskEdit(taskId, overrides) {
   const aihe=overrides?.aihe ?? (document.getElementById('task-aihe')?.value||'').trim();
   const arvoRaw=tyyppi==='kauppa'?(document.getElementById('task-arvo')?.value||''):'';
   const arvo=arvoRaw!==''?parseFloat(arvoRaw):task.arvo;
+  const arrRaw=tyyppi==='kauppa'?(document.getElementById('task-arr')?.value||''):'';
+  const arr=arrRaw!==''?parseFloat(arrRaw):(task.arr??null);
   const tekija=(document.getElementById('task-tekija')?.value||'').trim()||null;
   const taskNote=(document.getElementById('task-muistiinpanot')?.value||'').trim()||null;
   const contactId=overrides?.contactId ?? (tyyppi==='soitto' ? soittoContactIdFromForm(tyyppi) : (task.contactId ?? null));
   const prevTila=task.tila;
   const wasDone=taskIsDone(normalizeTask(task));
   const done=(TASK_DONE[tyyppi]||[]).includes(tila);
-  Object.assign(task,{tyyppi,tila,aihe,arvo,tekija,muistiinpanot:taskNote,contactId,
+  Object.assign(task,{tyyppi,tila,aihe,arvo,arr,tekija,muistiinpanot:taskNote,contactId,
     due_date:overrides?.due_date ?? (document.getElementById('task-due')?.value||task.due_date||null),
     done,updated_at:new Date().toISOString(),completed_at:done?(wasDone?task.completed_at||new Date().toISOString():new Date().toISOString()):null});
   if(tyyppi==='kauppa'&&tila&&tila!==prevTila){
@@ -5523,6 +5553,8 @@ async function addTask(overrides) {
   const due_date=overrides?.due_date ?? (document.getElementById('task-due')?.value||'');
   const arvoRaw=tyyppi==='kauppa'?(document.getElementById('task-arvo')?.value||''):'';
   const arvo=arvoRaw?parseFloat(arvoRaw):null;
+  const arrRaw=tyyppi==='kauppa'?(document.getElementById('task-arr')?.value||''):'';
+  const arr=arrRaw?parseFloat(arrRaw):null;
   if (!due_date) { showToast('Valitse päivämäärä','error'); return null; }
   const tekija=(document.getElementById('task-tekija')?.value||'').trim()||null;
   const taskNote=(document.getElementById('task-muistiinpanot')?.value||'').trim()||null;
@@ -5531,7 +5563,7 @@ async function addTask(overrides) {
   const acts=parseActs(p);
   const created_at=new Date().toISOString();
   const id='TK'+Date.now();
-  acts.push({id,tyyppi,tila,aihe,arvo,tekija,muistiinpanot:taskNote,created_at,due_date,done,completed_at:done?created_at:null,contactId});
+  acts.push({id,tyyppi,tila,aihe,arvo,arr,tekija,muistiinpanot:taskNote,created_at,due_date,done,completed_at:done?created_at:null,contactId});
   p.aktiviteetit=JSON.stringify(acts);
   if(tyyppi==='kauppa'&&tila){const prev=p.vaihe;const normTila=normalizeKauppaVaihe(tila);p.vaihe=normTila;if(prev!==normTila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${normTila}`,tekija);}
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
@@ -5589,7 +5621,8 @@ function renderTaskList(p) {
       <div class="task-card-hdr">
         <span style="font-size:13px">${TASK_ICON[t.tyyppi]||'📝'}</span>
         <span class="task-card-type">${TASK_LABEL[t.tyyppi]}</span>
-        ${t.arvo?`<span style="font-size:11px;color:${arvoColor};font-weight:700">${Number(t.arvo).toLocaleString('fi')} €</span>`:''}
+        ${t.arvo?`<span style="font-size:11px;color:${arvoColor};font-weight:700">Kerta ${fmtEur(Number(t.arvo))}</span>`:''}
+        ${t.arr?`<span style="font-size:11px;color:${arvoColor};font-weight:700">ARR ${fmtEur(Number(t.arr))}/v · MRR ${fmtEur(Number(t.arr)/12)}/kk</span>`:''}
       </div>
       <div class="task-card-aihe">${esc(t.aihe)||'–'}</div>
       ${threadBadge}
@@ -5839,7 +5872,8 @@ function timelineCardHtml(item,index) {
   }
   if(isTicketStateEntry&&item.isTask&&task.muistiinpanot&&task.muistiinpanot!==text) details.push(`<div class="timeline-detail-row"><span>Muistiinpanot</span><strong>${esc(task.muistiinpanot)}</strong></div>`);
   if(isTicketStateEntry&&item.isTask&&task.due_date) details.push(`<div class="timeline-detail-row"><span>Eräpäivä</span><strong>${esc(new Date(task.due_date+'T12:00:00').toLocaleDateString('fi-FI'))}</strong></div>`);
-  if(isTicketStateEntry&&item.isTask&&task.arvo) details.push(`<div class="timeline-detail-row"><span>Arvo</span><strong>${Number(task.arvo).toLocaleString('fi-FI')} €</strong></div>`);
+  if(isTicketStateEntry&&item.isTask&&task.arvo) details.push(`<div class="timeline-detail-row"><span>Kertaluonteinen arvo</span><strong>${fmtEur(Number(task.arvo))}</strong></div>`);
+  if(isTicketStateEntry&&item.isTask&&task.arr) details.push(`<div class="timeline-detail-row"><span>Jatkuva laskutus</span><strong>ARR ${fmtEur(Number(task.arr))}/v · MRR ${fmtEur(Number(task.arr)/12)}/kk</strong></div>`);
   details.push(`<div class="timeline-detail-row"><span>${t?'Lähettäjä':'Käsittelijä'}</span><strong>${esc(actor)}</strong></div>`);
   if(isTicketStateEntry&&item.isTask&&task.id) details.push(`<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="openTimelineTask(${index})">✏️ Avaa tehtävä</button>`);
   // Sparan viestit ja kaikki muu ei-sähköposti-aktiviteetti aina samalla
@@ -6101,7 +6135,8 @@ async function fetchAndFillYTJ(context) {
 }
 
 // ── Dashboard: seuraavat toimenpiteet, priorisoituna ────────────────────────
-// Tilin oma paras (arvokkain) avoin kauppa-tehtävä — käytetään arvon
+// Tilin oma paras (arvokkain) avoin kauppa-tehtävä — ensimmäisen vuoden
+// kokonaisarvo = kertaluonteinen arvo + ARR. Käytetään arvon
 // paikkamerkkinä kun näytettävä tehtävä itse ei ole kauppa-tyyppiä (esim.
 // soitto), jotta esim. "soita Ville Vastaaville" ei näytä arvottomalta
 // pelkästään koska arvo on kirjattu tilin toiselle, kauppa-tyyppiselle
@@ -6109,7 +6144,7 @@ async function fetchAndFillYTJ(context) {
 function bestOpenDealValue(p) {
   const arvot=parseActs(p).map(normalizeTask)
     .filter(t=>t.tyyppi==='kauppa'&&!taskIsDone(t))
-    .map(t=>Number(t.arvo)||0);
+    .map(t=>(Number(t.arvo)||0)+(Number(t.arr)||0));
   return arvot.length?Math.max(...arvot):0;
 }
 // Painotettu pistemäärä yhdelle avoimelle tehtävälle. Neljä tekijää:
@@ -6139,7 +6174,7 @@ function taskPriorityScore(task, p, maxDealValue) {
     const daysUntil=(Date.parse(task.due_date)-Date.parse(today))/86400000;
     urgency=Math.max(0,1-daysUntil/14);
   }
-  const dealValue=task.tyyppi==='kauppa'?(Number(task.arvo)||0):bestOpenDealValue(p);
+  const dealValue=task.tyyppi==='kauppa'?((Number(task.arvo)||0)+(Number(task.arr)||0)):bestOpenDealValue(p);
   const valueScore=maxDealValue>0?Math.min(dealValue/maxDealValue,1):0;
   const stageScore=VAIHE_TN[normalizeKauppaVaihe(p.vaihe)]||0;
   const qualityScore=p.pisteet!=null?p.pisteet/100:0;
@@ -6194,7 +6229,8 @@ function renderDashboardUpcoming() {
     const dateLabel=task.due_date?new Date(task.due_date+'T12:00:00').toLocaleDateString('fi-FI',{day:'numeric',month:'numeric'}):'–';
     const reasons=[];
     if (overdue) reasons.push('⏰ erääntynyt');
-    if (task.tyyppi==='kauppa'&&task.arvo) reasons.push(fmtEur(Number(task.arvo)));
+    if (task.tyyppi==='kauppa'&&task.arvo) reasons.push('kerta '+fmtEur(Number(task.arvo)));
+    if (task.tyyppi==='kauppa'&&task.arr) reasons.push('ARR '+fmtEur(Number(task.arr))+'/v');
     if (p.prioriteetti==='A') reasons.push('A-prioriteetti');
     return `<div class="dash-item" onclick="openModal('${p.spara_id}')">
         <div class="dash-item-date"${overdue?` style="color:${dashboardTheme()==='spara'?'var(--spara-gold)':'var(--red)'}"`:''}>${dateLabel}</div>
@@ -6223,8 +6259,9 @@ function pipelineBoxesHtml(st) {
     const s=st[v];
     return `<div class="pipeline-stage"><div class="pipeline-count" style="color:${V_COLORS[v]}">${s.n}</div>
       <div class="pipeline-label">${v}</div>
-      <div style="font-size:11px;font-weight:700;margin-top:4px">${fmtEur(s.sum)}</div>
-      <div style="font-size:10px;color:var(--text2)">vaihepaino ${Math.round(VAIHE_TN[v]*100)} % → ${fmtEur(s.sum*VAIHE_TN[v])}</div>
+      <div style="font-size:11px;font-weight:700;margin-top:4px">Kerta ${fmtEur(s.sum)}</div>
+      <div style="font-size:11px;font-weight:700;margin-top:2px">ARR ${fmtEur(s.arr)}/v</div>
+      <div style="font-size:10px;color:var(--text2)">vaihepaino ${Math.round(VAIHE_TN[v]*100)} % → kerta ${fmtEur(s.sum*VAIHE_TN[v])} · ARR ${fmtEur(s.arr*VAIHE_TN[v])}</div>
     </div>`;
   }).join('');
 }
@@ -6240,8 +6277,8 @@ function pipelineFunnelHtml(st) {
     return `<div class="spara-funnel-row${isLost?' is-lost':''}">
       <div class="spara-funnel-name">${v}<span class="n">${s.n}</span></div>
       <div class="spara-funnel-track"><div class="spara-funnel-fill${isLost?' is-lost':''}" style="width:${pct}%"></div></div>
-      <div class="spara-funnel-count">${fmtEur(s.sum)}</div>
-      <div class="spara-funnel-forecast">vaihepaino ${Math.round(VAIHE_TN[v]*100)} % → <strong>${fmtEur(s.sum*VAIHE_TN[v])}</strong></div>
+      <div class="spara-funnel-count"><div>Kerta ${fmtEur(s.sum)}</div><div style="font-size:11px;color:var(--spara-ink-faint)">ARR ${fmtEur(s.arr)}/v</div></div>
+      <div class="spara-funnel-forecast">vaihepaino ${Math.round(VAIHE_TN[v]*100)} %<br><strong>Kerta ${fmtEur(s.sum*VAIHE_TN[v])}<br>ARR ${fmtEur(s.arr*VAIHE_TN[v])}</strong></div>
     </div>`;
   }).join('');
 }
@@ -6269,6 +6306,27 @@ function dashKpisSparaHtml(openSum, openN, st, conv) {
     kpi('Historiapohjainen ennuste',fmtEur(conv.historicalForecast),false,'avoin potentiaali × win rate')+
     kpi('Voitetut',String(st['Sopimus syntynyt'].n),false,fmtEur(st['Sopimus syntynyt'].sum))+
     kpi('Hävityt / Ei juuri nyt',String(st['Ei juuri nyt'].n),true,fmtEur(st['Ei juuri nyt'].sum));
+}
+
+function dashboardRecurringRevenueStats(st,conv) {
+  const openArr=VAIHE_AVOIN.reduce((sum,v)=>sum+st[v].arr,0);
+  const wonArr=st['Sopimus syntynyt'].arr;
+  return {openArr,openMrr:openArr/12,forecastArr:openArr*conv.winRate,wonArr,wonMrr:wonArr/12};
+}
+function dashboardRecurringKpisHtml(theme,st,conv) {
+  const r=dashboardRecurringRevenueStats(st,conv);
+  if(theme==='spara') {
+    const kpi=(label,val,sub)=>`<div class="spara-kpi-cell"><span class="spara-kpi-eyebrow">${label}</span><div class="spara-kpi-num">${val}</div><div class="spara-kpi-sub">${sub}</div></div>`;
+    return kpi('Avoin ARR',fmtEur(r.openArr)+'/v','avoin jatkuva vuosilaskutus')+
+      kpi('Avoin MRR',fmtEur(r.openMrr)+'/kk','ARR ÷ 12')+
+      kpi('ARR-ennuste',fmtEur(r.forecastArr)+'/v','avoin ARR × win rate')+
+      kpi('Voitettu ARR',fmtEur(r.wonArr)+'/v','MRR '+fmtEur(r.wonMrr)+'/kk');
+  }
+  const kpi=(label,val,sub)=>`<div class="card"><div class="card-label">${label}</div><div class="card-value" style="color:var(--purple)">${val}</div><div style="font-size:10px;color:var(--text2);margin-top:2px">${sub}</div></div>`;
+  return kpi('Avoin ARR',fmtEur(r.openArr)+'/v','avoin jatkuva vuosilaskutus')+
+    kpi('Avoin MRR',fmtEur(r.openMrr)+'/kk','ARR ÷ 12')+
+    kpi('ARR-ennuste',fmtEur(r.forecastArr)+'/v','avoin ARR × win rate')+
+    kpi('Voitettu ARR',fmtEur(r.wonArr)+'/v','MRR '+fmtEur(r.wonMrr)+'/kk');
 }
 
 // Jaettu datalaskenta (segmentointi vaiheittain per projekti) — vain
@@ -6366,6 +6424,8 @@ function dashboardActivityKpisHtml() {
 
 function dashboardShellClassicHtml() {
   return `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px" id="dash-kpis"></div>
+    <div class="dash-section-title">Jatkuva laskutus</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px" id="dash-recurring-kpis"></div>
     <div class="dash-section-title">Aktiviteetit</div>
     <div class="activity-kpi-grid" id="dash-activity-kpis"></div>
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px">
@@ -6389,6 +6449,8 @@ function dashboardShellClassicHtml() {
 }
 function dashboardShellSparaHtml() {
   return `<div class="spara-kpi-row" id="dash-kpis"></div>
+    <div class="spara-section-title">Jatkuva laskutus</div>
+    <div class="spara-kpi-row" id="dash-recurring-kpis"></div>
     <div class="spara-section-title">Aktiviteetit</div>
     <div class="activity-kpi-grid" id="dash-activity-kpis"></div>
     <div class="spara-section-title">Myyntiputki vaiheittain</div>
@@ -6412,7 +6474,7 @@ function dashboardShellSparaHtml() {
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 // #dash-body:in sisältö rakennetaan aina teeman mukaan täysin uudelleen —
 // molemmat kuoret (classic/spara) emittoivat SAMAT mount-point-id:t
-// (dash-kpis/dash-activity-kpis/dash-pipeline/dash-upcoming/dash-projects), minkä ansiosta
+// (dash-kpis/dash-recurring-kpis/dash-activity-kpis/dash-pipeline/dash-upcoming/dash-projects), minkä ansiosta
 // loppuosa tästä funktiosta — ja erityisesti renderDashboardUpcoming():in
 // sivutuslogiikka — ei tarvitse mitään teematietoisuutta ollenkaan.
 function renderDashboard() {
@@ -6432,6 +6494,9 @@ function renderDashboard() {
   if (kpiEl) kpiEl.innerHTML = theme==='spara'
     ? dashKpisSparaHtml(openSum, openN, st, conv)
     : dashKpisClassicHtml(openSum, openN, st, conv);
+
+  const recurringKpiEl=document.getElementById('dash-recurring-kpis');
+  if(recurringKpiEl) recurringKpiEl.innerHTML=dashboardRecurringKpisHtml(theme,st,conv);
 
   const activityKpiEl=document.getElementById('dash-activity-kpis');
   if (activityKpiEl) activityKpiEl.innerHTML=dashboardActivityKpisHtml();
@@ -6922,7 +6987,7 @@ async function createProspectAccountsBatch(candidates, opts) {
     }
     if (opts.wantDeal) {
       acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
-        tyyppi:'kauppa',tila:'Tietojenkeruu',aihe:opts.kampanja,arvo:0,tekija:null,
+        tyyppi:'kauppa',tila:'Tietojenkeruu',aihe:opts.kampanja,arvo:0,arr:0,tekija:null,
         muistiinpanot:signaali||null,created_at:ts,due_date:null,done:false});
       p.vaihe='Tietojenkeruu';
     }
@@ -8557,7 +8622,7 @@ async function saveNewTili() {
     // nyt samalla kertaa muiden kahden luontipolun (initVirtualKaupat,
     // createProspectAccountsBatch) kanssa yhtenäiseksi.
     const kauppa = {id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
-      tyyppi:'kauppa',tila:'Tietojenkeruu',aihe:kampanja,arvo:0,tekija:null,muistiinpanot:p.signaali||null,
+      tyyppi:'kauppa',tila:'Tietojenkeruu',aihe:kampanja,arvo:0,arr:0,tekija:null,muistiinpanot:p.signaali||null,
       created_at:new Date().toISOString(),due_date:null,done:false};
     p.aktiviteetit=JSON.stringify([kauppa]);
     p.vaihe='Tietojenkeruu';
@@ -9551,6 +9616,9 @@ function openGlobalTask() {
   sel.innerHTML=sorted.map(p=>`<option value="${p.spara_id}">${esc(p.yritys_nimi)}</option>`).join('');
   document.getElementById('gt-input').value='';
   document.getElementById('gt-due').value='';
+  document.getElementById('gt-arvo').value='';
+  document.getElementById('gt-arr').value='';
+  updateGlobalTaskMrrHint();
   updateGtTilaOptions();
   document.getElementById('addtask-modal').classList.remove('hidden');
 }
@@ -9564,13 +9632,15 @@ async function saveGlobalTask() {
   const due_date=document.getElementById('gt-due')?.value||'';
   const arvoRaw=tyyppi==='kauppa'?(document.getElementById('gt-arvo')?.value||''):'';
   const arvo=arvoRaw?parseFloat(arvoRaw):null;
+  const arrRaw=tyyppi==='kauppa'?(document.getElementById('gt-arr')?.value||''):'';
+  const arr=arrRaw?parseFloat(arrRaw):null;
   if(!tiliId||!due_date){showToast('Tili ja päivämäärä ovat pakollisia','error');return;}
   const p=allProspects.find(x=>x.spara_id===tiliId); if(!p) return;
   const done=(TASK_DONE[tyyppi]||[]).includes(tila);
   const tekija=currentUser.nimi||currentUserEmail||null;
   const acts=parseActs(p);
   const created_at=new Date().toISOString();
-  acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,tekija,created_at,due_date,done,completed_at:done?created_at:null});
+  acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,arr,tekija,created_at,due_date,done,completed_at:done?created_at:null});
   p.aktiviteetit=JSON.stringify(acts);
   if(tyyppi==='kauppa'&&tila){const prev=p.vaihe;p.vaihe=tila;if(prev!==tila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${tila}`,tekija);}
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
@@ -9626,7 +9696,12 @@ async function saveGlobalTask() {
         </div>
         <div class="form-group"><label>Tila</label><select class="form-control" id="gt-tila"></select></div>
         <div class="form-group full"><label>Aihe</label><input class="form-control" id="gt-input" placeholder="Aihe…"></div>
-        <div class="form-group" id="gt-arvo-wrap"><label>Arvo €</label><input class="form-control" id="gt-arvo" type="number" min="0" placeholder="0"></div>
+        <div class="form-group" id="gt-arvo-wrap"><label>Kertaluonteinen arvo (€)</label><input class="form-control" id="gt-arvo" type="number" min="0" placeholder="0"></div>
+        <div class="form-group" id="gt-arr-wrap">
+          <label>Jatkuva vuosilaskutus – ARR (€/v)</label>
+          <input class="form-control" id="gt-arr" type="number" min="0" placeholder="0" oninput="updateGlobalTaskMrrHint()">
+          <div id="gt-mrr-hint" style="font-size:10px;color:var(--text2);margin-top:4px">MRR: 0 €/kk</div>
+        </div>
         <div class="form-group"><label>Päivämäärä *</label><input class="form-control" id="gt-due" type="date"></div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
