@@ -1395,7 +1395,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-02.2';
+const BUILD_ID = '2026-10-02.3';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2328,10 +2328,16 @@ function renderBulkSegmenttiFilterPanel() {
   // järjestys, sama kuin Kanban/Tilit) — ei uudelleenjärjestystä osuma-
   // määrän mukaan, koska se hajottaisi toisiaan muistuttavat segmenttinimet
   // (esim. "Teollisuus"/"Teollisuuskiinteistöt") kauas toisistaan.
+  // Luku on rajattu BULK_ELIGIBLE_STAGES:iin (Tietojenkeruu/Kontaktoi) samaa
+  // syytä varten kuin itse rajaus bulkEmailCandidateSet():ssa — muuten tämä
+  // "kuinka moni tässä projektissa" -luku lupaisi enemmän kuin valinta
+  // lopulta antaisi, sama hämmennys joka tässä paneelissa jo kerran
+  // korjattiin (ks. yllä).
   const projekti=document.getElementById('bulk-projekti')?.value||'';
   const counts=new Map();
   allProspects.forEach(p=>{
     if (p.kampanja!==projekti) return;
+    if (!BULK_ELIGIBLE_STAGES.has(bulkCurrentDealStage(p))) return;
     const s=(p.segmentti||'').trim(); if (!s) return;
     counts.set(s,(counts.get(s)||0)+1);
   });
@@ -2484,6 +2490,17 @@ function bulkWasAlreadySent(p,c,key) {
     (a.contactId===c.id || (a.bulkRecipientEmail||'').trim().toLowerCase()===email));
 }
 
+// Massalähetys on tarkoitettu ENSIKONTAKTIIN — vain nämä kaksi alkupään
+// vaihetta kelpaavat. Heti kun kauppa etenee (esim. tämän saman
+// massalähetyksen ansiosta — ks. startBulkEmailSend():in "Sovi tapaaminen"
+// -siirto) tai se suljetaan (Sopimus syntynyt/Ei juuri nyt), tili ei enää
+// päädy MIHINKÄÄN uuteen massalähetykseen, vaikka joku myöhempi kampanja/
+// segmentti muuten täsmäisi. Tämä on eri, VAHVEMPI suoja kuin
+// bulkWasAlreadySent (joka estää vain SAMAN kampanjan toiston) — tämä
+// estää MINKÄ TAHANSA massalähetyksen heti kun tili ei enää ole aivan
+// alkuvaiheessa.
+const BULK_ELIGIBLE_STAGES=new Set(['Tietojenkeruu','Kontaktoi']);
+
 // segmentti/key ovat nyt PER TILI (ei enää yksi yhteinen arvo koko
 // joukolle) koska segmenttivalitsin on monivalinta — sama vastaanottaja-
 // joukko voi sisältää tilejä useasta eri segmentistä samalla kertaa, ja
@@ -2496,7 +2513,9 @@ function bulkEmailCandidateSet() {
   const remindersEnabled=!!document.getElementById('bulk-reminders-enabled')?.checked;
   const reminder1TemplateId=remindersEnabled?(document.getElementById('bulk-reminder1-template')?.value||''):'';
   const reminder2TemplateId=remindersEnabled?(document.getElementById('bulk-reminder2-template')?.value||''):'';
-  const accounts=allProspects.filter(p=>p.kampanja===projekti && bulkSegmenttiFilter.has((p.segmentti||'').trim()));
+  const segmentAccounts=allProspects.filter(p=>p.kampanja===projekti && bulkSegmenttiFilter.has((p.segmentti||'').trim()));
+  const accounts=segmentAccounts.filter(p=>BULK_ELIGIBLE_STAGES.has(bulkCurrentDealStage(p)));
+  const excludedByStage=segmentAccounts.length-accounts.length;
   const eligible=[], rejected=[], seenEmails=new Set();
   let accountsWithoutDirect=0, alreadySent=0, duplicateEmails=0;
   accounts.forEach(p=>{
@@ -2523,7 +2542,7 @@ function bulkEmailCandidateSet() {
   const selected=selectedBeforeExclusions.filter(({c})=>!bulkExcludedContactIds.has(c.id));
   const excludedCount=selectedBeforeExclusions.length-selected.length;
   return {projekti,segments:new Set(bulkSegmenttiFilter),templateId,remindersEnabled,reminder1TemplateId,reminder2TemplateId,
-    accounts,eligible,selected,rejected,accountsWithoutDirect,alreadySent,duplicateEmails,excludedCount};
+    accounts,eligible,selected,rejected,accountsWithoutDirect,alreadySent,duplicateEmails,excludedCount,excludedByStage};
 }
 
 function updateBulkEmailPreview() {
@@ -2573,7 +2592,7 @@ function updateBulkEmailPreview() {
     <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px">
       <div style="font-size:13px;font-weight:700;margin-bottom:6px">Lähetykseen valittu ${x.selected.length} / ${x.eligible.length} kelvollista vastaanottajaa</div>
       <div style="font-size:11px;color:var(--text2);line-height:1.55">
-        Valituissa segmenteissä ${x.accounts.length} tiliä · ilman varmennettua henkilökohtaista osoitetta ${x.accountsWithoutDirect} tiliä
+        Valituissa segmenteissä ${x.accounts.length} tiliä Tietojenkeruu/Kontaktoi-vaiheessa${x.excludedByStage?' (+'+x.excludedByStage+' tiliä ohitettu, koska kauppa on jo edennyt pidemmälle tai suljettu)':''} · ilman varmennettua henkilökohtaista osoitetta ${x.accountsWithoutDirect} tiliä
         · sama kampanja jo lähetetty ${x.alreadySent} vastaanottajalle${x.duplicateEmails?' · päällekkäisiä osoitteita ohitettu '+x.duplicateEmails:''}${x.excludedCount?' · käsin poistettu '+x.excludedCount:''}.
       </div>
       ${x.excludedCount?`<button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="restoreBulkExcludedRecipients()">↩ Palauta poistetut (${x.excludedCount})</button>`:''}
@@ -7641,7 +7660,11 @@ async function checkUnverifiedBulkContacts() {
   if (bulkContactCheckRunning) return;
   const projekti=document.getElementById('bulk-projekti')?.value||'';
   if (!projekti||!bulkSegmenttiFilter.size) { showToast('Valitse projekti ja vähintään yksi segmentti','error'); return; }
-  const accounts=allProspects.filter(p=>p.kampanja===projekti && bulkSegmenttiFilter.has((p.segmentti||'').trim()));
+  // Sama Tietojenkeruu/Kontaktoi-rajaus kuin bulkEmailCandidateSet():ssa —
+  // ei ole järkeä kuluttaa AI-tarkistusta tileille jotka eivät silti
+  // kelpaisi massalähetykseen kaupan vaiheen takia.
+  const accounts=allProspects.filter(p=>p.kampanja===projekti && bulkSegmenttiFilter.has((p.segmentti||'').trim())
+    && BULK_ELIGIBLE_STAGES.has(bulkCurrentDealStage(p)));
   const targets=accounts.filter(p=>!allContacts.some(c=>c.tili_id===p.spara_id && isDirectContactEmail(c)));
   if (!targets.length) { showToast('Kaikilla valittujen segmenttien tileillä on jo varmennettu vastaanottaja','success'); return; }
   const batch=targets.slice(0,CONTACT_VERIFY_MAX_PER_RUN);
