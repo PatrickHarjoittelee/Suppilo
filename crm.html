@@ -1395,7 +1395,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-02.1';
+const BUILD_ID = '2026-10-02.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3274,8 +3274,11 @@ async function sendOutlookEmail() {
       if (task) {
         task.thread=task.thread||[];
         task.thread.push(threadEntry);
+        // tekija: viestin lähettäjä on muokannut/edistänyt tätä tikettiä,
+        // joten hänestä tulee sen käsittelijä (sama periaate kuin lomake-/
+        // tilavalinta-/Kanban-muokkauksilla).
         Object.assign(task,{tila:'Toimitettu',done:true,aihe:subject,teksti,bodyHtml:storableBodyHtml,
-          updated_at:threadEntry.ts,completed_at:threadEntry.ts,
+          updated_at:threadEntry.ts,completed_at:threadEntry.ts,tekija,
           contactId:emailDraftContext.contactId||task.contactId||null,
           conversationId:created.conversationId||task.conversationId||null, ticketCode,...reminderFields});
       } else {
@@ -3366,8 +3369,9 @@ async function scheduleOutlookEmail(deferredIso) {
       if (task) {
         task.thread=task.thread||[];
         task.thread.push(threadEntry);
+        // tekija, ks. sama perustelu sendOutlookEmail():ssa.
         Object.assign(task,{tila:'Ajastettu',done:false,aihe:subject,teksti,bodyHtml:storableBodyHtml,completed_at:null,
-          updated_at:nowIso, due_date:dueDateOnly, scheduledSendAt:deferredIso,
+          updated_at:nowIso, due_date:dueDateOnly, scheduledSendAt:deferredIso,tekija,
           contactId:emailDraftContext.contactId||task.contactId||null,
           conversationId:created.conversationId||task.conversationId||null, ticketCode,...reminderFields});
       } else {
@@ -4829,9 +4833,9 @@ function openTaskForm(tyyppi) {
     const el=document.getElementById(id); if(el) el.style.display=tyyppi==='kauppa'?'':'none';
   });
   document.querySelectorAll('.task-type-btn').forEach(b=>b.classList.toggle('active',b.dataset.type===tyyppi));
-  // Automaattivalinta: uudelle tehtävälle käsittelijäksi kirjautunut käyttäjä,
-  // ellei kenttää ole jo täytetty (esim. tyyppiä vaihdettaessa kesken
-  // täytön) — editTask() ylikirjoittaa tämän heti oikealla arvolla.
+  // Automaattivalinta: uudelle (ja muokattavalle, ks. editTask()) tehtävälle
+  // käsittelijäksi kirjautunut käyttäjä, ellei kenttää ole jo täytetty (esim.
+  // tyyppiä vaihdettaessa kesken täytön).
   const tekijaEl=document.getElementById('task-tekija');
   populateHandlerSelect(tekijaEl?.value||defaultHandlerName());
   const form=document.getElementById('task-add-form');
@@ -5125,12 +5129,16 @@ async function moveKauppaVaihe(sid, taskId, newVaihe) {
   const acts=parseActs(p); const task=acts.find(a=>a.id===taskId); if(!task) return;
   if (task.tila===newVaihe) return;
   const prev=task.tila||'–';
+  // Kanban-siirto on muokkaus siinä missä lomake/tilavalinta/valmistuminenkin
+  // — kirjautunut käyttäjä merkitään käsittelijäksi.
+  const tekija=currentUser.nimi||currentUserEmail||task.tekija||null;
   task.tila=newVaihe;
   task.done=(TASK_DONE.kauppa||[]).includes(newVaihe);
   task.updated_at=new Date().toISOString();
   task.completed_at=task.done?task.updated_at:null;
+  task.tekija=tekija;
   p.aktiviteetit=JSON.stringify(acts);
-  addActToProspect(p,'vaihe_muutos',`${task.aihe||'Kauppa'}: ${prev} → ${newVaihe}`,task.tekija);
+  addActToProspect(p,'vaihe_muutos',`${task.aihe||'Kauppa'}: ${prev} → ${newVaihe}`,tekija);
   p.vaihe=newVaihe;
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
   try {
@@ -5364,8 +5372,13 @@ function editTask(taskId) {
   const arvo=document.getElementById('task-arvo'); if(arvo) arvo.value=t.arvo??'';
   const arr=document.getElementById('task-arr'); if(arr) arr.value=t.arr??'';
   updateTaskMrrHint();
-  populateHandlerSelect(t.tekija||'');
-  const tek=document.getElementById('task-tekija'); if(tek) tek.value=t.tekija||'';
+  // Oletuksena KIRJAUTUNUT käyttäjä, ei tehtävän aiempi (mahdollisesti jonkun
+  // toisen) käsittelijä — muokkaaja ottaa näin automaattisesti tapauksen
+  // itselleen ellei erikseen valitse toista, samalla periaatteella kuin
+  // uuden tehtävän oletusarvo (openTaskForm). Alkuperäinen käsittelijä pysyy
+  // silti valittavissa pudotusvalikossa (populateHandlerSelect listaa kaikki
+  // allUsers-käyttäjät riippumatta tästä oletuksesta).
+  populateHandlerSelect(defaultHandlerName());
   const due=document.getElementById('task-due'); if(due) due.value=t.due_date||'';
   const nota=document.getElementById('task-muistiinpanot'); if(nota) nota.value=t.muistiinpanot||'';
   // Näytetään viimeisimmän viestin sisältö (ei koko threadia — täydellinen
@@ -5525,7 +5538,12 @@ async function updateTaskEdit(taskId, overrides) {
     done,updated_at:new Date().toISOString(),completed_at:done?(wasDone?task.completed_at||new Date().toISOString():new Date().toISOString()):null});
   if(tyyppi==='kauppa'&&tila&&tila!==prevTila){
     const prev=p.vaihe; p.vaihe=normalizeKauppaVaihe(tila);
-    if(prev!==p.vaihe) addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${p.vaihe}`,tekija);
+    // Suoraan acts.push (ei addActToProspect) — se lukisi p.aktiviteetit:in
+    // tuoreeltaan JA kirjoittaisi heti, ennen kuin tämän funktion yllä oleva
+    // Object.assign(task,...)-muutos on koskaan tallennettu sinne (vasta alla
+    // olevalla rivillä) — vaihe_muutos-merkintä katoaisi heti seuraavan
+    // p.aktiviteetit=JSON.stringify(acts)-kirjoituksen alle.
+    if(prev!==p.vaihe) acts.push({tyyppi:'vaihe_muutos',teksti:`Vaihe: ${prev} → ${p.vaihe}`,tekija:tekija||null,created_at:new Date().toISOString()});
   }
   p.aktiviteetit=JSON.stringify(acts);
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
@@ -5651,9 +5669,22 @@ async function updateTaskTila(taskId, newTila) {
   const acts=parseActs(p); const task=acts.find(a=>a.id===taskId); if(!task) return;
   const wasDone=taskIsDone(normalizeTask(task));
   if (task.tyyppi==='kauppa') newTila=normalizeKauppaVaihe(newTila);
+  // Tilavalinta (Tehtävät-listan pudotusvalikko) on muokkaus siinä missä
+  // lomakekin — kirjautunut käyttäjä otetaan käsittelijäksi, ellei tehtävällä
+  // vielä ole ketään (ei ylikirjoiteta jo tyhjäksi/olemattomaksi jäänyttä
+  // tilannetta tyhjällä).
+  const tekija=currentUser.nimi||currentUserEmail||task.tekija||null;
   task.tila=newTila; task.done=(TASK_DONE[task.tyyppi]||[]).includes(newTila); task.updated_at=new Date().toISOString();
   task.completed_at=task.done?(wasDone?task.completed_at||task.updated_at:task.updated_at):null;
-  if(task.tyyppi==='kauppa'){const prev=p.vaihe;p.vaihe=newTila;if(prev!==newTila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${newTila}`,p.omistaja);}
+  task.tekija=tekija;
+  if(task.tyyppi==='kauppa'){
+    const prev=p.vaihe;p.vaihe=newTila;
+    // Suoraan acts.push (ei addActToProspect) — ks. sama perustelu
+    // updateTaskEdit():ssä: addActToProspect lukisi/kirjoittaisi
+    // p.aktiviteetit:in ennen kuin yllä oleva task.tila-muutos on koskaan
+    // tallennettu sinne, ja merkintä katoaisi alla olevan kirjoituksen alle.
+    if(prev!==newTila)acts.push({tyyppi:'vaihe_muutos',teksti:`Vaihe: ${prev} → ${newTila}`,tekija,created_at:new Date().toISOString()});
+  }
   p.aktiviteetit=JSON.stringify(acts);
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
   try{
@@ -5671,10 +5702,19 @@ async function completeTask(taskId) {
   if(!currentId) return;
   const p=allProspects.find(x=>x.spara_id===currentId); if(!p) return;
   const acts=parseActs(p); const task=acts.find(a=>a.id===taskId); if(!task) return;
+  // Valmistuminen on muokkaus siinä missä lomake/tilavalinta/Kanban-siirtokin
+  // — kirjautunut käyttäjä merkitään käsittelijäksi.
+  const tekija=currentUser.nimi||currentUserEmail||task.tekija||null;
   task.done=true; task.updated_at=new Date().toISOString(); task.completed_at=task.completed_at||task.updated_at;
+  task.tekija=tekija;
   const doneStates=TASK_DONE[task.tyyppi]||[];
   if(doneStates.length&&!doneStates.includes(task.tila)) task.tila=doneStates[doneStates.length-1];
-  if(task.tyyppi==='kauppa'){const prev=p.vaihe;p.vaihe=normalizeKauppaVaihe(task.tila);if(prev!==p.vaihe)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${p.vaihe}`,p.omistaja);}
+  if(task.tyyppi==='kauppa'){
+    const prev=p.vaihe;p.vaihe=normalizeKauppaVaihe(task.tila);
+    // Suoraan acts.push (ei addActToProspect) — sama write-ordering-syy kuin
+    // updateTaskEdit():ssa ja updateTaskTila():ssa.
+    if(prev!==p.vaihe)acts.push({tyyppi:'vaihe_muutos',teksti:`Vaihe: ${prev} → ${p.vaihe}`,tekija,created_at:new Date().toISOString()});
+  }
   p.aktiviteetit=JSON.stringify(acts);
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
   document.getElementById('e-toimenpide').value=p.seuraava_toimenpide||'';
@@ -6986,8 +7026,12 @@ async function createProspectAccountsBatch(candidates, opts) {
       });
     }
     if (opts.wantDeal) {
+      // tekija: käyttäjä joka käynnisti tämän prospektointierän on luonut
+      // kaupan, samalla periaatteella kuin manuaalinen "Lisää tili" (ks.
+      // saveNewTili) — eri tilanne kuin initVirtualKaupat():in passiivinen
+      // taustatäyttö, jolle ei ole ketään konkreettista tekijää nimettävissä.
       acts.push({id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
-        tyyppi:'kauppa',tila:'Tietojenkeruu',aihe:opts.kampanja,arvo:0,arr:0,tekija:null,
+        tyyppi:'kauppa',tila:'Tietojenkeruu',aihe:opts.kampanja,arvo:0,arr:0,tekija:currentUser.nimi||currentUserEmail||null,
         muistiinpanot:signaali||null,created_at:ts,due_date:null,done:false});
       p.vaihe='Tietojenkeruu';
     }
@@ -8621,8 +8665,9 @@ async function saveNewTili() {
     // normalisointi luvun yhteydessä on piilottanut tämän. Korjattu
     // nyt samalla kertaa muiden kahden luontipolun (initVirtualKaupat,
     // createProspectAccountsBatch) kanssa yhtenäiseksi.
+    // tekija: käyttäjä joka juuri täytti tämän lomakkeen on kaupan luoja.
     const kauppa = {id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
-      tyyppi:'kauppa',tila:'Tietojenkeruu',aihe:kampanja,arvo:0,arr:0,tekija:null,muistiinpanot:p.signaali||null,
+      tyyppi:'kauppa',tila:'Tietojenkeruu',aihe:kampanja,arvo:0,arr:0,tekija:currentUser.nimi||currentUserEmail||null,muistiinpanot:p.signaali||null,
       created_at:new Date().toISOString(),due_date:null,done:false};
     p.aktiviteetit=JSON.stringify([kauppa]);
     p.vaihe='Tietojenkeruu';
