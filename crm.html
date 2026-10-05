@@ -1104,7 +1104,16 @@
               <div id="task-mrr-hint" style="font-size:10px;color:var(--text2);margin-top:4px">MRR: 0 €/kk</div>
             </div>
             <select class="form-control" id="task-tekija" aria-label="Käsittelijä"></select>
-            <input class="form-control" id="task-due" type="date">
+            <div class="form-group full" style="display:flex;flex-direction:row;gap:8px">
+              <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+                <label>Päivämäärä</label>
+                <input class="form-control" id="task-due" type="date">
+              </div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:4px" id="task-aika-wrap">
+                <label>Kellonaika <span style="font-weight:400;color:var(--text2)">(valinnainen)</span></label>
+                <input class="form-control" id="task-aika" type="time">
+              </div>
+            </div>
             <div id="task-email-preview-wrap" style="display:none;grid-column:1/-1">
               <div class="cs-title" style="margin-bottom:4px">Viestin sisältö</div>
               <div class="form-control" id="task-email-preview" style="white-space:pre-wrap;max-height:160px;overflow-y:auto;color:var(--text2);font-size:12px;cursor:default"></div>
@@ -1395,7 +1404,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-02.3';
+const BUILD_ID = '2026-10-02.4';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -4851,6 +4860,11 @@ function openTaskForm(tyyppi) {
   ['task-arvo-wrap','task-arr-wrap'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display=tyyppi==='kauppa'?'':'none';
   });
+  // Kellonaika on järkevä vain kertaluontoiselle, ajoitetulle tekemiselle
+  // (soitto/sähköposti/muu) — kauppa on moniviikkoinen putkivaihe, ei
+  // kellonaikaan sidottu tapahtuma, joten sille näytetään vain päivämäärä
+  // kuten ennenkin.
+  const aikaWrap=document.getElementById('task-aika-wrap'); if(aikaWrap) aikaWrap.style.display=tyyppi==='kauppa'?'none':'';
   document.querySelectorAll('.task-type-btn').forEach(b=>b.classList.toggle('active',b.dataset.type===tyyppi));
   // Automaattivalinta: uudelle (ja muokattavalle, ks. editTask()) tehtävälle
   // käsittelijäksi kirjautunut käyttäjä, ellei kenttää ole jo täytetty (esim.
@@ -4889,6 +4903,7 @@ function closeTaskForm() {
   document.querySelectorAll('.task-type-btn').forEach(b=>b.classList.remove('active'));
   const aihe=document.getElementById('task-aihe'); if(aihe) aihe.value='';
   const due=document.getElementById('task-due'); if(due) due.value='';
+  const aika=document.getElementById('task-aika'); if(aika) aika.value='';
   const arvo=document.getElementById('task-arvo'); if(arvo) arvo.value='';
   const arr=document.getElementById('task-arr'); if(arr) arr.value='';
   ['task-arvo-wrap','task-arr-wrap'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
@@ -4912,6 +4927,10 @@ function updateGtTilaOptions() {
   if(wrap) wrap.style.display=tyyppi==='kauppa'?'':'none';
   const arrWrap=document.getElementById('gt-arr-wrap');
   if(arrWrap) arrWrap.style.display=tyyppi==='kauppa'?'':'none';
+  // Kellonaika vain kertaluontoiselle, ajoitetulle tekemiselle — ks. sama
+  // perustelu openTaskForm():ssa.
+  const aikaWrap=document.getElementById('gt-aika-wrap');
+  if(aikaWrap) aikaWrap.style.display=tyyppi==='kauppa'?'none':'';
 }
 function taskIsDone(t){return t.done||(TASK_DONE[t.tyyppi]||[]).includes(t.tila);}
 function normalizeTask(a){
@@ -4919,7 +4938,7 @@ function normalizeTask(a){
   const tila=a.tila ? (tyyppi==='kauppa'?normalizeKauppaVaihe(a.tila):a.tila) : (tyyppi==='kauppa'?'Tarjous työn alla':'Uusi');
   return {...a,aihe:a.aihe||a.teksti||'',tila,tyyppi};
 }
-function nearestTask(p){return parseActs(p).map(normalizeTask).filter(a=>a.due_date&&!taskIsDone(a)).sort((a,b)=>a.due_date.localeCompare(b.due_date))[0];}
+function nearestTask(p){return parseActs(p).map(normalizeTask).filter(a=>a.due_date&&!taskIsDone(a)).sort((a,b)=>a.due_date.localeCompare(b.due_date)||(a.due_time||'').localeCompare(b.due_time||''))[0];}
 
 // ── Kanban: monivalintainen projektisuodatin ────────────────────────────────
 // Käyttäjä pyysi nimenomaan mahdollisuutta suodattaa Kanban useammalla
@@ -5399,6 +5418,7 @@ function editTask(taskId) {
   // allUsers-käyttäjät riippumatta tästä oletuksesta).
   populateHandlerSelect(defaultHandlerName());
   const due=document.getElementById('task-due'); if(due) due.value=t.due_date||'';
+  const aika=document.getElementById('task-aika'); if(aika) aika.value=t.due_time||'';
   const nota=document.getElementById('task-muistiinpanot'); if(nota) nota.value=t.muistiinpanot||'';
   // Näytetään viimeisimmän viestin sisältö (ei koko threadia — täydellinen
   // ketju on jo nähtävissä Historia-välilehdellä, ks. timelineCardHtml).
@@ -5486,12 +5506,14 @@ async function saveTaskForm() {
 
 // Kertaluonteinen "tallenna muistutus kalenteriin" tehtävän eräpäivälle
 // (Tehtävät-lista, task-card-actions) — POST /me/events (vaatii
-// Calendars.ReadWrite, ks. MS_GRAPH_SCOPES). Kellonaika on kiinteä 09:00
-// (browserin paikallinen aika, sama ECMA-262-tulkinta kuin scheduleOutlookEmail-
-// ajastuksella) koska due_date tallentaa VAIN päivämäärän, ei kellonaikaa.
+// Calendars.ReadWrite, ks. MS_GRAPH_SCOPES). Kellonaika tulee tehtävän
+// due_time-kentästä jos sellainen on asetettu (soitto/sähköposti/muu, ks.
+// openTaskForm) — klo 09:00 vain fallbackina (esim. kauppa, jolla ei ole
+// kellonaikakenttää lainkaan, tai vanha tehtävä ennen tätä ominaisuutta).
 // Kertaluontoinen: tallentaa luodun tapahtuman id:n/webLinkin tehtävään eikä
-// tarjoa myöhempää päivitystä — jos eräpäivä muuttuu, aiempi kalenteri-
-// tapahtuma pitää siirtää/poistaa itse Outlookissa (webLink vie sinne).
+// tarjoa myöhempää päivitystä — jos eräpäivä/kellonaika muuttuu, aiempi
+// kalenteritapahtuma pitää siirtää/poistaa itse Outlookissa (webLink vie
+// sinne).
 async function addTaskCalendarReminder(taskId) {
   if (!currentId) return;
   if (!microsoftAccount) { showToast('Yhdistä Outlook-tili Asetuksista ensin','error'); return; }
@@ -5503,7 +5525,7 @@ async function addTaskCalendarReminder(taskId) {
   if (btn) { btn.disabled=true; btn.textContent='Lisätään…'; }
   try {
     const token=await microsoftAccessToken();
-    const start=new Date(t.due_date+'T09:00:00'); // paikallinen aika, ei UTC-merkintää
+    const start=new Date(t.due_date+'T'+(t.due_time||'09:00')+':00'); // paikallinen aika, ei UTC-merkintää
     const end=new Date(start.getTime()+30*60000);
     const toGraphIso=d=>d.toISOString().slice(0,19);
     const bodyLines=[];
@@ -5549,10 +5571,14 @@ async function updateTaskEdit(taskId, overrides) {
   const tekija=(document.getElementById('task-tekija')?.value||'').trim()||null;
   const taskNote=(document.getElementById('task-muistiinpanot')?.value||'').trim()||null;
   const contactId=overrides?.contactId ?? (tyyppi==='soitto' ? soittoContactIdFromForm(tyyppi) : (task.contactId ?? null));
+  // due_time: valinnainen kellonaika (soitto/sähköposti/muu) — ei kaupalle
+  // (ks. openTaskForm). Ei pudota vanhaan arvoon jos kenttä tyhjennetään
+  // tarkoituksella, toisin kuin pakollinen due_date.
+  const due_time=overrides?.due_time ?? (tyyppi!=='kauppa'?(document.getElementById('task-aika')?.value||null):null);
   const prevTila=task.tila;
   const wasDone=taskIsDone(normalizeTask(task));
   const done=(TASK_DONE[tyyppi]||[]).includes(tila);
-  Object.assign(task,{tyyppi,tila,aihe,arvo,arr,tekija,muistiinpanot:taskNote,contactId,
+  Object.assign(task,{tyyppi,tila,aihe,arvo,arr,tekija,muistiinpanot:taskNote,contactId,due_time,
     due_date:overrides?.due_date ?? (document.getElementById('task-due')?.value||task.due_date||null),
     done,updated_at:new Date().toISOString(),completed_at:done?(wasDone?task.completed_at||new Date().toISOString():new Date().toISOString()):null});
   if(tyyppi==='kauppa'&&tila&&tila!==prevTila){
@@ -5596,11 +5622,13 @@ async function addTask(overrides) {
   const tekija=(document.getElementById('task-tekija')?.value||'').trim()||null;
   const taskNote=(document.getElementById('task-muistiinpanot')?.value||'').trim()||null;
   const contactId=overrides?.contactId ?? soittoContactIdFromForm(tyyppi);
+  // due_time, ks. sama perustelu updateTaskEdit():ssä.
+  const due_time=overrides?.due_time ?? (tyyppi!=='kauppa'?(document.getElementById('task-aika')?.value||null):null);
   const done=(TASK_DONE[tyyppi]||[]).includes(tila);
   const acts=parseActs(p);
   const created_at=new Date().toISOString();
   const id='TK'+Date.now();
-  acts.push({id,tyyppi,tila,aihe,arvo,arr,tekija,muistiinpanot:taskNote,created_at,due_date,done,completed_at:done?created_at:null,contactId});
+  acts.push({id,tyyppi,tila,aihe,arvo,arr,tekija,muistiinpanot:taskNote,created_at,due_date,due_time,done,completed_at:done?created_at:null,contactId});
   p.aktiviteetit=JSON.stringify(acts);
   if(tyyppi==='kauppa'&&tila){const prev=p.vaihe;const normTila=normalizeKauppaVaihe(tila);p.vaihe=normTila;if(prev!==normTila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${normTila}`,tekija);}
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
@@ -5632,7 +5660,7 @@ function renderTaskList(p) {
     if(!a.due_date&&!b.due_date) return 0;
     if(!a.due_date) return -1;
     if(!b.due_date) return 1;
-    return a.due_date.localeCompare(b.due_date);
+    return a.due_date.localeCompare(b.due_date) || (a.due_time||'').localeCompare(b.due_time||'');
   });
   const el=document.getElementById('task-list'); if(!el) return;
   if(!tasks.length){el.innerHTML='<div style="text-align:center;padding:18px 0;font-size:12px;color:var(--text2)">Ei tehtäviä</div>';return;}
@@ -5667,7 +5695,7 @@ function renderTaskList(p) {
         ${done
           ?`<span class="badge" style="background:rgba(76,175,80,.2);color:#81C784;font-size:10px">✓ ${esc(t.tila)}</span>`
           :`<select class="form-control task-tila-sel" onchange="updateTaskTila('${t.id}',this.value)">${tilaOpts}</select>`}
-        ${t.due_date?`<span style="margin-left:auto;font-size:11px;font-weight:700;color:${dueColor}">${t.due_date}</span>`:''}
+        ${t.due_date?`<span style="margin-left:auto;font-size:11px;font-weight:700;color:${dueColor}">${t.due_date}${t.due_time?' klo '+esc(t.due_time):''}</span>`:''}
       </div>
       ${(t.tekija||t.muistiinpanot)?`<div style="font-size:11px;color:var(--text2);margin-top:5px;line-height:1.4">${t.tekija?`👤 ${esc(t.tekija)} `:''} ${t.muistiinpanot?`<em>${esc(t.muistiinpanot)}</em>`:''}</div>`:''}
       <div class="task-card-actions">
@@ -9684,6 +9712,7 @@ function openGlobalTask() {
   sel.innerHTML=sorted.map(p=>`<option value="${p.spara_id}">${esc(p.yritys_nimi)}</option>`).join('');
   document.getElementById('gt-input').value='';
   document.getElementById('gt-due').value='';
+  document.getElementById('gt-aika').value='';
   document.getElementById('gt-arvo').value='';
   document.getElementById('gt-arr').value='';
   updateGlobalTaskMrrHint();
@@ -9702,13 +9731,14 @@ async function saveGlobalTask() {
   const arvo=arvoRaw?parseFloat(arvoRaw):null;
   const arrRaw=tyyppi==='kauppa'?(document.getElementById('gt-arr')?.value||''):'';
   const arr=arrRaw?parseFloat(arrRaw):null;
+  const due_time=tyyppi!=='kauppa'?(document.getElementById('gt-aika')?.value||null):null;
   if(!tiliId||!due_date){showToast('Tili ja päivämäärä ovat pakollisia','error');return;}
   const p=allProspects.find(x=>x.spara_id===tiliId); if(!p) return;
   const done=(TASK_DONE[tyyppi]||[]).includes(tila);
   const tekija=currentUser.nimi||currentUserEmail||null;
   const acts=parseActs(p);
   const created_at=new Date().toISOString();
-  acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,arr,tekija,created_at,due_date,done,completed_at:done?created_at:null});
+  acts.push({id:'TK'+Date.now(),tyyppi,tila,aihe,arvo,arr,tekija,created_at,due_date,due_time,done,completed_at:done?created_at:null});
   p.aktiviteetit=JSON.stringify(acts);
   if(tyyppi==='kauppa'&&tila){const prev=p.vaihe;p.vaihe=tila;if(prev!==tila)addActToProspect(p,'vaihe_muutos',`Vaihe: ${prev} → ${tila}`,tekija);}
   const near=nearestTask(p); p.seuraava_toimenpide=near?near.aihe||near.tyyppi:null; p.seuraava_pvm=near?.due_date||null;
@@ -9771,6 +9801,7 @@ async function saveGlobalTask() {
           <div id="gt-mrr-hint" style="font-size:10px;color:var(--text2);margin-top:4px">MRR: 0 €/kk</div>
         </div>
         <div class="form-group"><label>Päivämäärä *</label><input class="form-control" id="gt-due" type="date"></div>
+        <div class="form-group" id="gt-aika-wrap"><label>Kellonaika <span style="font-weight:400;color:var(--text2)">(valinnainen)</span></label><input class="form-control" id="gt-aika" type="time"></div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
         <button class="btn btn-ghost" onclick="closeGlobalTask()">Peruuta</button>
