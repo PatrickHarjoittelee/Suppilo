@@ -1404,7 +1404,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-02.4';
+const BUILD_ID = '2026-10-02.5';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -4852,7 +4852,45 @@ function updateGlobalTaskMrrHint() {
   const hint=document.getElementById('gt-mrr-hint');
   if(hint) hint.textContent='MRR: '+fmtEur(arr/12)+'/kk';
 }
+// Tyhjentää tehtävälomakkeen jaetut kentät (aihe/eräpäivä/kellonaika/arvo/
+// ARR/käsittelijä/muistiinpanot/liitetty yhteyshenkilö/task-edit-id).
+// closeTaskForm() käyttää tätä aina. openTaskForm() käyttää tätä VAIN kun
+// lomake oli juuri edellisen tehtävän MUOKKAUKSESSA (ks. kommentti
+// openTaskForm():n alussa) — muuten tyypin vaihtaminen kesken UUDEN
+// tehtävän täyttämisen hukkaisi juuri syötetyt tiedot.
+function resetTaskFormFields() {
+  const aihe=document.getElementById('task-aihe'); if(aihe) aihe.value='';
+  const due=document.getElementById('task-due'); if(due) due.value='';
+  const aika=document.getElementById('task-aika'); if(aika) aika.value='';
+  const arvo=document.getElementById('task-arvo'); if(arvo) arvo.value='';
+  const arr=document.getElementById('task-arr'); if(arr) arr.value='';
+  ['task-arvo-wrap','task-arr-wrap'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  updateTaskMrrHint();
+  const tekija=document.getElementById('task-tekija'); if(tekija) tekija.value='';
+  const nota=document.getElementById('task-muistiinpanot'); if(nota) nota.value='';
+  const preview=document.getElementById('task-email-preview'); if(preview) preview.textContent='';
+  const previewWrap=document.getElementById('task-email-preview-wrap'); if(previewWrap) previewWrap.style.display='none';
+  const eid=document.getElementById('task-edit-id'); if(eid) eid.value='';
+  const sav=document.getElementById('task-save-btn'); if(sav) sav.textContent='+ Lisää';
+  const delBtn=document.getElementById('task-del-btn'); if(delBtn) delBtn.style.display='none';
+  const emailBtn=document.getElementById('task-email-btn'); if(emailBtn) emailBtn.style.display='none';
+  const soittoSel=document.getElementById('task-soitto-contact'); if(soittoSel){soittoSel.style.display='none';soittoSel.value='';}
+  const soittoBtn=document.getElementById('task-soitto-now-btn'); if(soittoBtn) soittoBtn.style.display='none';
+}
 function openTaskForm(tyyppi) {
+  // KRIITTINEN: jos lomake oli äsken OLEMASSA OLEVAN tehtävän muokkauksessa
+  // (task-edit-id asetettu editTask():ssa) ja käyttäjä klikkaa tässä jotain
+  // tyyppipainiketta (esim. "📞 Soitto") luodakseen UUDEN, ERILLISEN
+  // tehtävän, pelkkä tyypin vaihto EI riitä — jos task-edit-id jää vanhaan
+  // arvoon, saveTaskForm() päätyy päivittämään (updateTaskEdit) sen VANHAN
+  // tehtävän tyypiksi uuden, eli esim. Kauppa muuttuu paikan päällä Soitoksi
+  // ja katoaa siksi Kanbanista (joka näyttää vain tyyppi:'kauppa'-tehtävät).
+  // Nollataan tässä tapauksessa koko lomake ja aloitetaan aidosti uusi
+  // tehtävä. Jos edit-id oli JO tyhjä — ollaan vasta täyttämässä uutta
+  // tehtävää ja käyttäjä vaihtaa tyyppiä kesken täytön — säilytetään jo
+  // syötetyt kentät (ks. käsittelijän automaattivalinnan kommentti alla).
+  const wasEditing=!!document.getElementById('task-edit-id')?.value;
+  if (wasEditing) resetTaskFormFields();
   document.getElementById('task-type').value=tyyppi;
   document.getElementById('task-form-label').textContent=`${TASK_ICON[tyyppi]} ${TASK_LABEL[tyyppi]}`;
   const sel=document.getElementById('task-tila');
@@ -4901,23 +4939,7 @@ function openTaskForm(tyyppi) {
 function closeTaskForm() {
   document.getElementById('task-add-form').style.display='none';
   document.querySelectorAll('.task-type-btn').forEach(b=>b.classList.remove('active'));
-  const aihe=document.getElementById('task-aihe'); if(aihe) aihe.value='';
-  const due=document.getElementById('task-due'); if(due) due.value='';
-  const aika=document.getElementById('task-aika'); if(aika) aika.value='';
-  const arvo=document.getElementById('task-arvo'); if(arvo) arvo.value='';
-  const arr=document.getElementById('task-arr'); if(arr) arr.value='';
-  ['task-arvo-wrap','task-arr-wrap'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
-  updateTaskMrrHint();
-  const tekija=document.getElementById('task-tekija'); if(tekija) tekija.value='';
-  const nota=document.getElementById('task-muistiinpanot'); if(nota) nota.value='';
-  const preview=document.getElementById('task-email-preview'); if(preview) preview.textContent='';
-  const previewWrap=document.getElementById('task-email-preview-wrap'); if(previewWrap) previewWrap.style.display='none';
-  const eid=document.getElementById('task-edit-id'); if(eid) eid.value='';
-  const sav=document.getElementById('task-save-btn'); if(sav) sav.textContent='+ Lisää';
-  const delBtn=document.getElementById('task-del-btn'); if(delBtn) delBtn.style.display='none';
-  const emailBtn=document.getElementById('task-email-btn'); if(emailBtn) emailBtn.style.display='none';
-  const soittoSel=document.getElementById('task-soitto-contact'); if(soittoSel){soittoSel.style.display='none';soittoSel.value='';}
-  const soittoBtn=document.getElementById('task-soitto-now-btn'); if(soittoBtn) soittoBtn.style.display='none';
+  resetTaskFormFields();
 }
 function updateGtTilaOptions() {
   const tyyppi=document.getElementById('gt-type')?.value||'kauppa';
