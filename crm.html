@@ -1406,7 +1406,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-06.1';
+const BUILD_ID = '2026-10-06.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2656,6 +2656,44 @@ function activeKauppaTask(acts) {
   const active=deals.filter(a=>!taskIsDone(normalizeTask(a)));
   return active.length?active[active.length-1]:(deals.length?deals[deals.length-1]:null);
 }
+// Siirtää tilin aktiivisen kaupan "Sovi tapaaminen" -vaiheeseen kun
+// ensikontakti on lähtenyt — MISTÄ TAHANSA lähetysreitistä (massalähetys,
+// yksittäinen "Kirjoita ja lähetä", tai sen ajastus), EI VAIN massalähetyk-
+// sestä, kuten ennen tätä korjausta. Aiemmin tämä logiikka oli vain
+// startBulkEmailSend():ssa — yksittäiset sähköpostit eivät KOSKAAN siirtäneet
+// korttia, jolloin se jäi näennäisesti jumiin Kontaktoi/Tietojenkeruu-
+// vaiheeseen vaikka viesti oli tosiasiassa jo lähtenyt. Tämä itsessään oli jo
+// hämmentävää, mutta sillä oli myös vakavampi sivuvaikutus: kun käyttäjä
+// huomasi virheen ja siirsi kortin KÄSIN Kanbanissa, processOverdueReminders
+// (ks. sen "peruuta jos kaupan vaihe muuttuu" -vertailu baseline_stage:a
+// vasten) tulkitsi tämän käsin tehdyn KORJAUKSEN aidoksi, itsenäiseksi
+// vaiheenmuutokseksi ja perui juuri ajastetut +3/+10 pv -muistutukset
+// virheellisesti — vaikka asiakas ei ollut vastannut eikä kauppa ollut oikeasti
+// edennyt mihinkään.
+//
+// EI KOSKAAN taaksepäin: jos kauppa on jo edennyt pidemmälle (esim. Tarjous
+// työn alla) tai se on jo päätetty (Sopimus syntynyt/Ei juuri nyt), sitä ei
+// kosketa — automaattinen viesti ei saa nollata jo tehtyä myyntityötä eikä
+// avata suljettua kauppaa uudelleen.
+//
+// TÄYTYY kutsua ENNEN baselineStage:n laskentaa kutsupaikoissa (ks.
+// enqueueReminderSeries-kutsut) — muuten muistutusten peruutusvertailu
+// laukeaisi virheellisesti heti TÄSTÄ omasta muutoksesta eikä vain
+// myöhemmästä aidosta muutoksesta.
+function advanceDealToSoviTapaaminen(p,acts,nowIso,reasonLabel) {
+  const dealTask=activeKauppaTask(acts);
+  if (!dealTask) return;
+  const currentTila=normalizeKauppaVaihe(dealTask.tila);
+  const dealIdx=VAIHEET.indexOf(currentTila);
+  const soviIdx=VAIHEET.indexOf('Sovi tapaaminen');
+  const dealDone=dealTask.done||(TASK_DONE.kauppa||[]).includes(currentTila);
+  if (dealDone || dealIdx<0 || dealIdx>=soviIdx) return;
+  const prevVaihe=p.vaihe;
+  dealTask.tila='Sovi tapaaminen'; dealTask.done=false; dealTask.completed_at=null; dealTask.updated_at=nowIso;
+  p.vaihe='Sovi tapaaminen';
+  acts.push({tyyppi:'vaihe_muutos',teksti:`Vaihe: ${prevVaihe} → Sovi tapaaminen (${reasonLabel})`,
+    tekija:currentUser.nimi||currentUserEmail||null, created_at:nowIso});
+}
 function bulkCurrentDealStage(p,actsOverride) {
   const acts=actsOverride||parseActs(p);
   const chosen=activeKauppaTask(acts);
@@ -2868,38 +2906,11 @@ async function startBulkEmailSend() {
       const now=new Date().toISOString();
       const acts=parseActs(p);
 
-      // Massalähetys siirtää kaupan "Sovi tapaaminen" -vaiheeseen — mutta EI
-      // KOSKAAN taaksepäin: jos kauppa on jo edennyt pidemmälle (esim.
-      // Tarjous työn alla) tai se on jo päätetty (Sopimus syntynyt/Ei juuri
-      // nyt), sitä ei kosketa. Automaattinen massaviesti ei saa nollata jo
-      // tehtyä myyntityötä eikä avata suljettua kauppaa uudelleen. TÄYTYY
-      // tapahtua ENNEN baselineStage:n laskentaa (heti alla) — muuten
-      // muistutusten "peruuta jos kaupan vaihe muuttuu" -vertailu laukeaisi
-      // virheellisesti heti TÄSTÄ omasta muutoksesta eikä vain myöhemmästä
-      // aidosta muutoksesta. Jos samalla tilillä on useampi vastaanottaja
-      // tässä samassa erässä, toisen kierroksen acts on jo edellisen
-      // kierroksen päivittämä, joten vaihetta ei yritetä siirtää enää
-      // uudelleen (dealIdx<soviIdx ei enää päde).
-      const dealTask=activeKauppaTask(acts);
-      if (dealTask) {
-        const currentTila=normalizeKauppaVaihe(dealTask.tila);
-        const dealIdx=VAIHEET.indexOf(currentTila);
-        const soviIdx=VAIHEET.indexOf('Sovi tapaaminen');
-        const dealDone=dealTask.done||(TASK_DONE.kauppa||[]).includes(currentTila);
-        if (!dealDone && dealIdx>=0 && dealIdx<soviIdx) {
-          const prevVaihe=p.vaihe;
-          dealTask.tila='Sovi tapaaminen'; dealTask.done=false; dealTask.completed_at=null; dealTask.updated_at=now;
-          p.vaihe='Sovi tapaaminen';
-          // Suoraan acts.push (ei addActToProspect) — se lukisi p.aktiviteetit:in
-          // tuoreeltaan JA kirjoittaisi heti, jolloin tämän silmukkakierroksen
-          // vielä tallentamattomat muutokset (tämä vaihemuutos + kohta lisättävä
-          // sähköpostitiketti) katoaisivat kun tämän funktion oma
-          // p.aktiviteetit=JSON.stringify(acts) suorittaisi lopuksi.
-          acts.push({tyyppi:'vaihe_muutos',
-            teksti:`Vaihe: ${prevVaihe} → Sovi tapaaminen (massalähetys)`,
-            tekija:currentUser.nimi||currentUserEmail||null, created_at:now});
-        }
-      }
+      // Jos samalla tilillä on useampi vastaanottaja tässä samassa erässä,
+      // toisen kierroksen acts on jo edellisen kierroksen päivittämä, joten
+      // vaihetta ei yritetä siirtää enää uudelleen (ks. advanceDealToSovi
+      // Tapaaminen():n dealIdx<soviIdx-ehto, joka ei enää päde).
+      advanceDealToSoviTapaaminen(p,acts,now,'massalähetys');
 
       const threadEntry={dir:'out',graphId:created.id,ts:now,subject:rendered.subject,
         preview:truncateEmailBody(htmlToPlainText(rendered.bodyHtml))};
@@ -2985,9 +2996,20 @@ async function processOverdueReminders() {
       // (dir:'in'), joten yhdenkin löytyminen riittää.
       if (ticket?.thread?.some(t=>t.dir==='in')) { await markReminderRow(r,'cancelled',{cancelReason:'customer_replied'}); cancelled++; continue; }
       // Kauppa on edennyt (tai suljettu) sen jälkeen kun baseline_stage
-      // tallennettiin muistutusta ajastettaessa.
+      // tallennettiin muistutusta ajastettaessa. Poikkeus: "nyt Sovi
+      // tapaaminen, baseline jotain muuta" EI peru — ennen advanceDealToSovi
+      // Tapaaminen():n lisäämistä yksittäiset (ei-massa-)lähetykset eivät
+      // koskaan siirtäneet korttia, jolloin vanhoilla, jo jonossa olevilla
+      // riveillä baseline_stage jäi virheellisesti Kontaktoi/Tietojenkeruu-
+      // tasolle. Ilman tätä poikkeusta käyttäjän KÄSIN Kanbanissa tekemä
+      // korjaus (siirto Sovi tapaamiseen, koska se ei siirtynyt itsestään)
+      // peruisi virheellisesti juuri ne muistutukset jotka pitäisi yhä
+      // lähettää — vaikka asiakas ei ollut vastannut eikä kauppa ollut
+      // oikeasti edennyt mihinkään. Sovi tapaamisesta ETEENPÄIN eteneminen
+      // (tai minkä tahansa baselinen suljettu tila) peruu yhä normaalisti.
       const currentStage=bulkCurrentDealStage(p,acts);
-      if (r.baseline_stage && currentStage!==r.baseline_stage) { await markReminderRow(r,'cancelled',{cancelReason:'deal_stage_changed'}); cancelled++; continue; }
+      const isExpectedFirstTouchProgression=currentStage==='Sovi tapaaminen' && r.baseline_stage!=='Sovi tapaaminen';
+      if (r.baseline_stage && currentStage!==r.baseline_stage && !isExpectedFirstTouchProgression) { await markReminderRow(r,'cancelled',{cancelReason:'deal_stage_changed'}); cancelled++; continue; }
       const template=emailTemplates.find(t=>t.id===r.template_id);
       if (!template?.aihe?.trim() || !template?.sisalto?.trim()) { await markReminderRow(r,'failed',{lastError:'Viestipohja puuttuu tai on tyhjä'}); failed++; continue; }
       const c=allContacts.find(x=>x.id===r.contact_id)||{nimi:''};
@@ -3533,6 +3555,10 @@ async function sendOutlookEmail() {
           conversationId:created.conversationId||null,ticketCode,thread:[threadEntry],...reminderFields};
         acts.push(sentTask);
       }
+      // Sama "siirrä Sovi tapaaminen -vaiheeseen ensikontaktista" -logiikka
+      // kuin massalähetyksellä (ks. advanceDealToSoviTapaaminen) — TÄYTYY
+      // tapahtua ENNEN baselineStage:n laskentaa alla, samasta syystä.
+      advanceDealToSoviTapaaminen(p,acts,threadEntry.ts,'sähköposti');
       p.aktiviteetit=JSON.stringify(acts);
       await saveCrmState(p);
       if (reminderConfig.enabled) {
@@ -3545,6 +3571,7 @@ async function sendOutlookEmail() {
         } catch(queueError) { reminderQueueError=queueError; console.error('Muistutusjonon tallennus epäonnistui',queueError); }
       }
       if (currentId===p.spara_id) { renderActivities(p); renderTaskList(p); }
+      if (document.getElementById('tab-kanban')?.classList.contains('active')) renderKanban();
     }
     closeTaskForm();
     closeEmailComposer();
@@ -3626,6 +3653,14 @@ async function scheduleOutlookEmail(deferredIso) {
           conversationId:created.conversationId||null,ticketCode,...reminderFields};
         acts.push(sentTask);
       }
+      // Sama "siirrä Sovi tapaaminen -vaiheeseen ensikontaktista" -logiikka
+      // kuin sendOutlookEmail():ssa/massalähetyksellä — ajastushetkellä, ei
+      // vasta toimitushetkellä, koska jälkimmäistä tämä sovellus ei voi
+      // havaita (Exchange toimittaa deferred-send-viestin itsenäisesti,
+      // ilman mitään webhookia takaisin tänne) — sama rajoitus jonka
+      // enqueueReminderSeries jo hyväksyy alla (reminderien +3/+10 pv
+      // lasketaan myös ajastushetkestä, ei toimitushetkestä).
+      advanceDealToSoviTapaaminen(p,acts,nowIso,'sähköpostin ajastus');
       p.aktiviteetit=JSON.stringify(acts);
       await saveCrmState(p);
       if (reminderConfig.enabled) {
@@ -3638,6 +3673,7 @@ async function scheduleOutlookEmail(deferredIso) {
         } catch(queueError) { reminderQueueError=queueError; console.error('Muistutusjonon tallennus epäonnistui',queueError); }
       }
       if (currentId===p.spara_id) { renderActivities(p); renderTaskList(p); }
+      if (document.getElementById('tab-kanban')?.classList.contains('active')) renderKanban();
     }
     closeTaskForm();
     closeEmailComposer();
