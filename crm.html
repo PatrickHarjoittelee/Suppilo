@@ -1406,7 +1406,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-02.7';
+const BUILD_ID = '2026-10-06.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2029,6 +2029,22 @@ async function microsoftAccessToken() {
   } catch(_) {
     return (await app.acquireTokenPopup({scopes:MS_GRAPH_SCOPES,account:microsoftAccount})).accessToken;
   }
+}
+// Käytetään VAIN processOverdueReminders():n automaattisessa, kirjautumisen
+// yhteydessä itsestään käynnistyvässä tarkistuksessa — EI KOSKAAN avaa
+// loginPopup/acquireTokenPopup-ikkunaa, koska selain estäisi sen joka
+// tapauksessa (popup ilman suoraa käyttäjän klikkausta). Jos Outlookia ei
+// ole vielä yhdistetty TÄSSÄ selainistunnossa (MSAL-cache on sessionStorage,
+// ei säily edes saman selaimen eri lataus kertojen yli, ks. initMicrosoft)
+// tai hiljainen token-haku epäonnistuu, palautetaan vain null — erääntyneet
+// muistutukset jäävät odottamaan seuraavaan kirjautumiseen, ei virhettä.
+async function microsoftAccessTokenSilentOnly() {
+  if (!microsoftClientId()) return null;
+  try {
+    const app=await initMicrosoft();
+    if (!microsoftAccount) return null;
+    return (await app.acquireTokenSilent({scopes:MS_GRAPH_SCOPES,account:microsoftAccount})).accessToken;
+  } catch(_) { return null; }
 }
 
 // opts: {contactId} — avattu yhteyshenkilökortilta (vastaanottaja kiinteä), tai
@@ -2657,9 +2673,11 @@ function reminderRowsForTicket(ticketId) {
 // 'processing' näytetään mukana (käyttäjä näkee sen olevan juuri lähdössä)
 // mutta ilman muokkaus/poisto-toimintoja — ks. reminderEditControls: tausta-
 // ajo on jo ottanut rivin käsittelyyn, sen kanssa kilpaileva muokkaus olisi
-// altis race conditionille.
+// altis race conditionille. 'failed' näytetään myös (ks. processOverdue-
+// Reminders) — muuten epäonnistunut automaattilähetys katoaisi näkyvistä
+// kokonaan, vaikka juuri se vaatisi käyttäjän huomiota eniten.
 function accountPendingReminders(p) {
-  return reminderQueue.filter(r=>r.tili_id===p.spara_id && (r.status==='pending'||r.status==='processing'))
+  return reminderQueue.filter(r=>r.tili_id===p.spara_id && (r.status==='pending'||r.status==='processing'||r.status==='failed'))
     .sort((a,b)=>timelineTimestamp(a.due_at)-timelineTimestamp(b.due_at));
 }
 // Tausta-ajon PITÄISI käsitellä rivi heti kun due_at on ohittunut — jos
@@ -2680,7 +2698,7 @@ function reminderIsOverdue(r) {
 function reminderStatusText(r) {
   if (r.status==='sent') return 'lähetetty '+fmtDT(r.processed_at);
   if (r.status==='cancelled') {
-    const reason=r.cancel_reason==='customer_replied'?'asiakas vastasi':r.cancel_reason==='deal_stage_changed'?'kaupan vaihe muuttui':r.cancel_reason==='manual'?'peruttu käsin':r.cancel_reason||'';
+    const reason=r.cancel_reason==='customer_replied'?'asiakas vastasi':r.cancel_reason==='deal_stage_changed'?'kaupan vaihe muuttui':r.cancel_reason==='manual'?'peruttu käsin':r.cancel_reason==='account_missing'?'tiliä ei löytynyt':r.cancel_reason||'';
     return 'peruttu ('+reason+')';
   }
   if (r.status==='processing') return 'käsittelyssä';
@@ -2707,6 +2725,24 @@ function toggleReminderEdit(id,ctx) {
   const el=document.getElementById(`reminder-edit-${ctx}-${id}`); if(!el) return;
   el.style.display = el.style.display==='none' ? 'flex' : 'none';
 }
+// Yhteinen Muistutusjono-rivin kirjoitus — käytetään sekä käsin tehtävälle
+// peruutukselle (cancelReminderRow) että processOverdueReminders():n
+// automaattisille lähetys/peruutus/virhe-päätöksille, ettei J:N-sarakkeiden
+// (status/created_at/claimed_at/processed_at/cancel_reason) kirjoitusta
+// pidetä kahdessa paikassa synkassa. last_error (S) on oma, ei-vierekkäinen
+// sarake, siksi erillinen kirjoitus vain kun sitä ollaan asettamassa.
+async function markReminderRow(r,status,opts) {
+  opts=opts||{};
+  await sheetPut(`${REMINDER_QUEUE_TAB}!J${r._rowIndex}:N${r._rowIndex}`,
+    [[status, r.created_at, r.claimed_at||'', opts.processedAt||r.processed_at||'', opts.cancelReason||r.cancel_reason||'']]);
+  r.status=status;
+  if (opts.processedAt) r.processed_at=opts.processedAt;
+  if (opts.cancelReason) r.cancel_reason=opts.cancelReason;
+  if (opts.lastError!=null) {
+    await sheetPut(`${REMINDER_QUEUE_TAB}!S${r._rowIndex}:S${r._rowIndex}`,[[opts.lastError]]);
+    r.last_error=opts.lastError;
+  }
+}
 async function saveReminderEdit(id,ctx) {
   const r=reminderQueue.find(x=>x.id===id); if(!r||r._rowIndex==null) return;
   const dueRaw=document.getElementById(`reminder-due-${ctx}-${id}`)?.value;
@@ -2716,8 +2752,15 @@ async function saveReminderEdit(id,ctx) {
   if (isNaN(when.getTime())) { showToast('Virheellinen ajankohta','error'); return; }
   const dueIso=when.toISOString();
   try {
-    await sheetPut(`${REMINDER_QUEUE_TAB}!G${r._rowIndex}:I${r._rowIndex}`,[[dueIso,r.order,tplId]]);
-    r.due_at=dueIso; r.template_id=tplId;
+    // Kirjoitetaan myös tila ('pending') tässä samassa, G:J-vierekkäisessä
+    // kirjoituksessa — tämä on ainoa UI-polku jolla käyttäjä voi korjata ja
+    // UUDELLEENYRITTÄÄ epäonnistuneen ('failed') muistutuksen: ilman tätä
+    // tallennus siirtäisi uuden ajankohdan/mallin talteen mutta rivi pysyisi
+    // ikuisesti 'failed'-tilassa eikä processOverdueReminders() löytäisi
+    // sitä enää koskaan uudelleen. Tavallisella (jo pending) muistutuksella
+    // tämä on harmiton no-op.
+    await sheetPut(`${REMINDER_QUEUE_TAB}!G${r._rowIndex}:J${r._rowIndex}`,[[dueIso,r.order,tplId,'pending']]);
+    r.due_at=dueIso; r.template_id=tplId; r.status='pending';
     showToast('Muistutus päivitetty ✓','success');
     const p=allProspects.find(x=>x.spara_id===r.tili_id);
     if (p && currentId===p.spara_id) { renderTaskList(p); renderActivities(p); }
@@ -2727,8 +2770,7 @@ async function cancelReminderRow(id) {
   const r=reminderQueue.find(x=>x.id===id); if(!r||r._rowIndex==null) return;
   if (!confirm('Perutaanko tämä automaattinen muistutus? Sitä ei enää lähetetä.')) return;
   try {
-    await sheetPut(`${REMINDER_QUEUE_TAB}!J${r._rowIndex}:N${r._rowIndex}`,[['cancelled',r.created_at,r.claimed_at,r.processed_at,'manual']]);
-    r.status='cancelled'; r.cancel_reason='manual';
+    await markReminderRow(r,'cancelled',{cancelReason:'manual'});
     showToast('Muistutus peruttu ✓','success');
     const p=allProspects.find(x=>x.spara_id===r.tili_id);
     if (p && currentId===p.spara_id) { renderTaskList(p); renderActivities(p); }
@@ -2903,6 +2945,92 @@ async function startBulkEmailSend() {
   if (document.getElementById('tab-kanban')?.classList.contains('active')) renderKanban();
   renderBulkProgress(sent,failed,x.selected.length,cancelled?'Keskeytetty käyttäjän pyynnöstä':'',true);
   showToast(cancelled?`Lähetys keskeytetty: ${sent} lähetetty`:`Massalähetys valmis: ${sent} lähetetty, ${failed} epäonnistui`,failed?'error':'success');
+}
+
+// Käyttäjä: "en voi lähettää jos selain ei ole auki, palvelut nukkuvat" —
+// Suppilolla ei ole omaa backendiä, joten mikään ei voi lähettää +3/+10 pv
+// -muistutuksia KELLONAIKANA ellei joku selain satu olemaan auki sillä
+// hetkellä. Sen sijaan tarkistetaan erääntyneet AINA kun sovellukseen
+// kirjaudutaan (ks. loadData():n loppu) ja lähetetään ne silloin — "sitä
+// mukaan kun tieto selviää", kuten käyttäjä pyysi.
+//
+// EI koskaan avaa Outlook-kirjautumispopupia itsestään (ks. microsoftAccess-
+// TokenSilentOnly) — jos Outlookia ei ole yhdistetty TÄSSÄ selainistunnossa,
+// rivit jäävät vain odottamaan seuraavaa kirjautumiskertaa, käyttäjälle
+// kerrotaan montako on jonossa.
+//
+// Turvatarkistukset ENNEN lähetystä toistavat täsmälleen sen minkä massa-
+// lähetyksen oma vahvistusdialogi lupaa käyttäjälle ("Muistutukset perutaan,
+// jos asiakas vastaa tai kaupan vaihe muuttuu") — ilman näitä tämä funktio
+// lähettäisi sokeasti jälkiviestin jo vastanneelle tai jo edenneelle
+// kaupalle, mikä olisi täsmälleen se asia minkä koko muistutusjärjestelmä
+// on alun perin tarkoitettu estämään.
+async function processOverdueReminders() {
+  const due=reminderQueue.filter(r=>r.status==='pending' && r.due_at && Date.parse(r.due_at)<=Date.now() && r._rowIndex!=null);
+  if (!due.length) return;
+  const token=await microsoftAccessTokenSilentOnly();
+  if (!token) {
+    showToast(`${due.length} ajastettu muistutus${due.length===1?'':'a'} odottaa lähetystä — yhdistä Outlook Asetuksista`,'error');
+    return;
+  }
+  let sent=0,cancelled=0,failed=0;
+  for (const r of due) {
+    try {
+      const p=allProspects.find(x=>x.spara_id===r.tili_id);
+      if (!p) { await markReminderRow(r,'cancelled',{cancelReason:'account_missing'}); cancelled++; continue; }
+      const acts=parseActs(p);
+      const ticket=acts.find(a=>a.id===r.ticket_id);
+      // Asiakas on vastannut alkuperäiseen tikettiin sen jälkeen kun tämä
+      // muistutus ajastettiin — ketju tallentaa KAIKKI saapuneet viestit
+      // (dir:'in'), joten yhdenkin löytyminen riittää.
+      if (ticket?.thread?.some(t=>t.dir==='in')) { await markReminderRow(r,'cancelled',{cancelReason:'customer_replied'}); cancelled++; continue; }
+      // Kauppa on edennyt (tai suljettu) sen jälkeen kun baseline_stage
+      // tallennettiin muistutusta ajastettaessa.
+      const currentStage=bulkCurrentDealStage(p,acts);
+      if (r.baseline_stage && currentStage!==r.baseline_stage) { await markReminderRow(r,'cancelled',{cancelReason:'deal_stage_changed'}); cancelled++; continue; }
+      const template=emailTemplates.find(t=>t.id===r.template_id);
+      if (!template?.aihe?.trim() || !template?.sisalto?.trim()) { await markReminderRow(r,'failed',{lastError:'Viestipohja puuttuu tai on tyhjä'}); failed++; continue; }
+      const c=allContacts.find(x=>x.id===r.contact_id)||{nimi:''};
+      const rendered=renderBulkTemplate(template,p,c);
+      const ticketCode=newTicketCode();
+      const message={
+        subject:rendered.subject,
+        body:{contentType:'HTML',content:rendered.bodyHtml+ticketTagHtml(ticketCode)},
+        toRecipients:[{emailAddress:{address:r.recipient_email}}]
+      };
+      const created=await createAndSendGraphMessage(token,message);
+      const nowIso=new Date().toISOString();
+      const threadEntry={dir:'out',graphId:created.id,ts:nowIso,subject:rendered.subject,
+        preview:truncateEmailBody(htmlToPlainText(rendered.bodyHtml))};
+      // tekija:null — sama periaate kuin initVirtualKaupat():n passiivisella
+      // taustatäytöllä: tämä on sovelluksen itsensä laukaisema automaattinen
+      // lähetys, ei kenenkään tietoinen "lähetä tämä nyt" -klikkaus, joten
+      // sille ei ole oikeaa ihmiskäsittelijää merkittäväksi.
+      acts.push({id:'TK'+Date.now()+'_r'+r.order,tyyppi:'sahkoposti',tila:'Toimitettu',done:true,
+        aihe:rendered.subject,
+        teksti:`Automaattinen muistutus (+${r.order==='1'?'3':'10'} pv): ${rendered.subject} → ${r.recipient_email}`,
+        tekija:null,muistiinpanot:null,bodyHtml:emailDraftBodyTooLarge(rendered.bodyHtml)?null:rendered.bodyHtml,
+        created_at:nowIso,completed_at:nowIso,due_date:null,contactId:r.contact_id||null,
+        conversationId:created.conversationId||null,ticketCode,thread:[threadEntry]});
+      p.aktiviteetit=JSON.stringify(acts);
+      await saveCrmState(p);
+      await markReminderRow(r,'sent',{processedAt:nowIso});
+      sent++;
+      if (currentId===p.spara_id) { renderActivities(p); renderTaskList(p); }
+    } catch(e) {
+      console.error('Muistutuksen automaattilähetys epäonnistui',r.id,e);
+      try { await markReminderRow(r,'failed',{lastError:String(e?.message||e).slice(0,200)}); } catch(_){}
+      failed++;
+    }
+    await bulkDelay(BULK_EMAIL_DELAY_MS);
+  }
+  updateSummary(); applyFilters(); renderDashboard();
+  if (document.getElementById('tab-kanban')?.classList.contains('active')) renderKanban();
+  const parts=[];
+  if (sent) parts.push(sent+' lähetetty');
+  if (cancelled) parts.push(cancelled+' peruttu (asiakas oli jo vastannut tai kauppa edennyt)');
+  if (failed) parts.push(failed+' epäonnistui');
+  if (parts.length) showToast('Ajastetut muistutukset: '+parts.join(', '),failed?'error':'success');
 }
 
 // Avaa saman lomakkeen tilin Tehtävät-välilehden "✉️ Sähköposti"-tyypin
@@ -4316,6 +4444,12 @@ async function loadData() {
   }
   await initVirtualKaupat();
   buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard(); applyYhFilters(); populateProjektiSelects();
+  // Taustalla, ei odoteta (oma hidas lähetyssilmukka, ks. processOverdue-
+  // Reminders) — UI on jo käytettävissä ylläolevien renderöintien jälkeen.
+  // Kutsutaan joka kerta kun data ladataan (= joka kirjautumiskerta, ks.
+  // loadData():n kutsupaikat), koska Suppilolla ei ole omaa backendiä joka
+  // voisi tehdä tämän tarkistuksen millään muulla hetkellä.
+  processOverdueReminders().catch(e=>console.error('Ajastettujen muistutusten automaattitarkistus epäonnistui',e));
 }
 
 async function initVirtualKaupat() {
@@ -5772,7 +5906,10 @@ async function addTask(overrides) {
 // aina sen version joka sattuu olemaan ENSIN DOM:ssa — ks. toggleReminder-
 // Edit():n kommentti.
 function reminderEditControls(r,ctx) {
-  if (r.status!=='pending') return '';
+  // 'failed' sallitaan myös — muokkaus+tallennus on ainoa tapa yrittää
+  // epäonnistunutta muistutusta uudelleen (ks. saveReminderEdit, joka
+  // nollaa tilan takaisin 'pending':ksi tallennuksen yhteydessä).
+  if (r.status!=='pending' && r.status!=='failed') return '';
   if (r._rowIndex==null) return `<div style="font-size:11px;color:var(--text2);margin-top:8px">Juuri luotu — päivitä sivu, niin tätä voi muokata tai perua.</div>`;
   return `<div id="reminder-edit-${ctx}-${r.id}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);flex-direction:column;gap:6px">
       <input class="form-control" type="datetime-local" id="reminder-due-${ctx}-${r.id}" value="${esc(isoToLocalDatetimeInput(r.due_at))}">
@@ -5790,7 +5927,7 @@ function reminderEditControls(r,ctx) {
 function reminderTaskCardHtml(r) {
   const tpl=emailTemplates.find(t=>t.id===r.template_id);
   const label=r.order==='1'?'+3 pv':'+10 pv';
-  const overdue=reminderIsOverdue(r);
+  const alert=reminderIsOverdue(r)||r.status==='failed';
   return `<div class="task-card" style="border-top:2px solid var(--accent)">
       <div class="task-card-hdr">
         <span style="font-size:13px">⏰</span>
@@ -5798,7 +5935,7 @@ function reminderTaskCardHtml(r) {
       </div>
       <div class="task-card-aihe">${esc(tpl?.nimi||'(malli puuttuu)')} → ${esc(r.recipient_email)}</div>
       <div class="task-card-foot">
-        <span class="badge" style="background:${overdue?'rgba(244,67,54,.18)':'rgba(255,255,255,.08)'};color:${overdue?'var(--red)':'var(--text2)'};font-size:10px">${esc(reminderStatusBadge(r))}</span>
+        <span class="badge" style="background:${alert?'rgba(244,67,54,.18)':'rgba(255,255,255,.08)'};color:${alert?'var(--red)':'var(--text2)'};font-size:10px">${esc(reminderStatusBadge(r))}</span>
         <span style="margin-left:auto;font-size:11px;font-weight:700;color:var(--text2)">${esc(fmtDT(r.due_at))}</span>
       </div>
       ${reminderEditControls(r,'task')}
@@ -6110,12 +6247,12 @@ function emailThreadCounterpartName(a) {
 function reminderTimelineCardHtml(r,index) {
   const tpl=emailTemplates.find(t=>t.id===r.template_id);
   const label=(r.order==='1'?'+3 pv':'+10 pv')+' muistutus';
-  // Erääntynyt (ks. reminderIsOverdue) ylikirjoittaa teeman normaalin
-  // "tuleva"-värin punaisella — sama --timeline-color ohjaa myös alla
-  // olevan timeline-badge-pillerin väriä (ks. sen CSS: color-mix(...
+  // Erääntynyt TAI epäonnistunut lähetys (ks. reminderIsOverdue) ylikirjoittaa
+  // teeman normaalin "tuleva"-värin punaisella — sama --timeline-color ohjaa
+  // myös alla olevan timeline-badge-pillerin väriä (ks. sen CSS: color-mix(...
   // var(--timeline-color)...)), joten badge näyttää automaattisesti
-  // "ERÄÄNTYNYT" punaisena ilman erillistä badge-kohtaista väritystä.
-  const color=reminderIsOverdue(r)?'var(--red)':(dashboardTheme()==='spara'?'var(--spara-lavender-deep)':'var(--accent)');
+  // "ERÄÄNTYNYT"/"VIRHE" punaisena ilman erillistä badge-kohtaista väritystä.
+  const color=(reminderIsOverdue(r)||r.status==='failed')?'var(--red)':(dashboardTheme()==='spara'?'var(--spara-lavender-deep)':'var(--accent)');
   const body=`<div class="timeline-detail-row"><span>Vastaanottaja</span><strong>${esc(r.recipient_email)}</strong></div>`
     +`<div class="timeline-detail-row"><span>Viestipohja</span><strong>${esc(tpl?.nimi||'(malli puuttuu)')}</strong></div>`
     +`<div class="timeline-detail-row"><span>Tila</span><strong>${esc(reminderStatusText(r))}</strong></div>`
