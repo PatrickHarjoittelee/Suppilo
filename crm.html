@@ -1133,6 +1133,8 @@
         <!-- Tehtäväkortit -->
         <div class="cs-title">Tehtävät</div>
         <div id="task-list"></div>
+        <!-- Ajastetut +3/+10 pv -automaattimuistutukset, ks. renderReminderList -->
+        <div id="reminder-list"></div>
       </div>
       <div class="mtab-content" id="mt-historia">
         <div class="act-log" id="act-log"><div class="empty">Ei merkintöjä</div></div>
@@ -1404,7 +1406,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-02.5';
+const BUILD_ID = '2026-10-02.6';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2645,6 +2647,72 @@ function bulkCurrentDealStage(p,actsOverride) {
 }
 function reminderRowsForTicket(ticketId) {
   return reminderQueue.filter(r=>r.ticket_id===ticketId).sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0));
+}
+// Tilin KESKENERÄISET (ei vielä lähetetyt/perutut) automaattimuistutukset,
+// vanhin ensin — käytetään sekä Tehtävät-välilehden "⏰ Ajastettu"-listassa
+// että Historia-välilehden "Tulevat tehtävät" -ryhmässä (ks. timelineItems).
+// Nämä olivat aiemmin näkyvissä VAIN alkuperäisen sähköpostitehtävän oman
+// aikajanakortin sisällä piilotettuna rivinä (ks. timelineCardHtml) — ei
+// omana, selattavana/muokattavana kohteenaan kummallakaan välilehdellä.
+// 'processing' näytetään mukana (käyttäjä näkee sen olevan juuri lähdössä)
+// mutta ilman muokkaus/poisto-toimintoja — ks. reminderEditControls: tausta-
+// ajo on jo ottanut rivin käsittelyyn, sen kanssa kilpaileva muokkaus olisi
+// altis race conditionille.
+function accountPendingReminders(p) {
+  return reminderQueue.filter(r=>r.tili_id===p.spara_id && (r.status==='pending'||r.status==='processing'))
+    .sort((a,b)=>timelineTimestamp(a.due_at)-timelineTimestamp(b.due_at));
+}
+// Yhteinen tilasanoitus — käytetään sekä tässä uudessa omana korttina
+// näkyvässä muistutuksessa että timelineCardHtml():n alkuperäisen sähköposti-
+// tehtävän "Muistutukset"-rivillä (ks. alempana), ettei sama viisi tilaa
+// kattava switch-logiikka eriydy kahdeksi erilliseksi, ajan myötä eroavaksi
+// versioksi.
+function reminderStatusText(r) {
+  if (r.status==='sent') return 'lähetetty '+fmtDT(r.processed_at);
+  if (r.status==='cancelled') {
+    const reason=r.cancel_reason==='customer_replied'?'asiakas vastasi':r.cancel_reason==='deal_stage_changed'?'kaupan vaihe muuttui':r.cancel_reason==='manual'?'peruttu käsin':r.cancel_reason||'';
+    return 'peruttu ('+reason+')';
+  }
+  if (r.status==='processing') return 'käsittelyssä';
+  if (r.status==='failed') return 'virhe'+(r.last_error?': '+r.last_error:'');
+  if (r.status==='blocked') return 'estetty';
+  return 'odottaa '+fmtDT(r.due_at);
+}
+// Lyhyt, isolla alkukirjaimella oleva versio kortin badge-pilleriin (ks.
+// reminderStatusText yllä pidemmälle, lauseeseen upotettavalle muodolle).
+function reminderStatusBadge(r) {
+  return {sent:'Lähetetty',cancelled:'Peruttu',processing:'Käsittelyssä',failed:'Virhe',blocked:'Estetty'}[r.status]||'Odottaa';
+}
+function toggleReminderEdit(id) {
+  const el=document.getElementById('reminder-edit-'+id); if(!el) return;
+  el.style.display = el.style.display==='none' ? 'flex' : 'none';
+}
+async function saveReminderEdit(id) {
+  const r=reminderQueue.find(x=>x.id===id); if(!r||r._rowIndex==null) return;
+  const dueRaw=document.getElementById('reminder-due-'+id)?.value;
+  const tplId=document.getElementById('reminder-tpl-'+id)?.value||r.template_id;
+  if (!dueRaw) { showToast('Valitse ajankohta','error'); return; }
+  const when=new Date(dueRaw); // datetime-local ilman aikavyöhykemerkintää -> paikallinen aika (ECMA-262), sama tulkinta kuin confirmScheduleOutlookEmail():ssa
+  if (isNaN(when.getTime())) { showToast('Virheellinen ajankohta','error'); return; }
+  const dueIso=when.toISOString();
+  try {
+    await sheetPut(`${REMINDER_QUEUE_TAB}!G${r._rowIndex}:I${r._rowIndex}`,[[dueIso,r.order,tplId]]);
+    r.due_at=dueIso; r.template_id=tplId;
+    showToast('Muistutus päivitetty ✓','success');
+    const p=allProspects.find(x=>x.spara_id===r.tili_id);
+    if (p && currentId===p.spara_id) { renderTaskList(p); renderActivities(p); }
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
+}
+async function cancelReminderRow(id) {
+  const r=reminderQueue.find(x=>x.id===id); if(!r||r._rowIndex==null) return;
+  if (!confirm('Perutaanko tämä automaattinen muistutus? Sitä ei enää lähetetä.')) return;
+  try {
+    await sheetPut(`${REMINDER_QUEUE_TAB}!J${r._rowIndex}:N${r._rowIndex}`,[['cancelled',r.created_at,r.claimed_at,r.processed_at,'manual']]);
+    r.status='cancelled'; r.cancel_reason='manual';
+    showToast('Muistutus peruttu ✓','success');
+    const p=allProspects.find(x=>x.spara_id===r.tili_id);
+    if (p && currentId===p.spara_id) { renderTaskList(p); renderActivities(p); }
+  } catch(e) { showToast('Virhe: '+e.message,'error'); }
 }
 async function enqueueReminderSeries({p,ticketId,contactId,senderEmail,recipient,originalIso,
   reminder1TemplateId,reminder2TemplateId,conversationId,ticketCode,baselineStage}) {
@@ -5673,7 +5741,64 @@ async function addTask(overrides) {
   } catch(e) { showToast('Virhe: '+e.message,'error'); return null; }
 }
 
+// Muokkaus/poisto-lomake yhdelle ajastetulle muistutukselle — jaettu
+// reminderTaskCardHtml():n (Tehtävät-välilehti) ja reminderTimelineCardHtml:n
+// (Historia-välilehti) kesken, ettei samaa lomaketta pidetä kahdessa
+// paikassa synkassa. Piilossa oletuksena (display:none), ks. toggleReminder-
+// Edit — jokaisen rivin omat id:t (reminder-edit-${r.id} jne.) pitävät rivit
+// toisistaan riippumattomina, EI jaettua lomaketta/piilokenttää joka voisi
+// vuotaa rivien välillä samalla tavalla kuin task-edit-id ennen korjausta.
+function reminderEditControls(r) {
+  if (r.status!=='pending') return '';
+  if (r._rowIndex==null) return `<div style="font-size:11px;color:var(--text2);margin-top:8px">Juuri luotu — päivitä sivu, niin tätä voi muokata tai perua.</div>`;
+  return `<div id="reminder-edit-${r.id}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);flex-direction:column;gap:6px">
+      <input class="form-control" type="datetime-local" id="reminder-due-${r.id}" value="${esc(isoToLocalDatetimeInput(r.due_at))}">
+      <select class="form-control" id="reminder-tpl-${r.id}">${emailTemplates.map(t=>`<option value="${esc(t.id)}"${t.id===r.template_id?' selected':''}>${esc(t.nimi)}</option>`).join('')}</select>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-primary btn-sm" style="flex:1" onclick="saveReminderEdit('${r.id}')">Tallenna</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleReminderEdit('${r.id}')">Peruuta</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center" onclick="toggleReminderEdit('${r.id}')">✏️ Muokkaa</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="cancelReminderRow('${r.id}')" title="Peru muistutus">✕ Poista</button>
+    </div>`;
+}
+function reminderTaskCardHtml(r) {
+  const tpl=emailTemplates.find(t=>t.id===r.template_id);
+  const label=r.order==='1'?'+3 pv':'+10 pv';
+  return `<div class="task-card" style="border-top:2px solid var(--accent)">
+      <div class="task-card-hdr">
+        <span style="font-size:13px">⏰</span>
+        <span class="task-card-type">Muistutus ${esc(label)}</span>
+      </div>
+      <div class="task-card-aihe">${esc(tpl?.nimi||'(malli puuttuu)')} → ${esc(r.recipient_email)}</div>
+      <div class="task-card-foot">
+        <span class="badge" style="background:rgba(255,255,255,.08);color:var(--text2);font-size:10px">${esc(reminderStatusBadge(r))}</span>
+        <span style="margin-left:auto;font-size:11px;font-weight:700;color:var(--text2)">${esc(fmtDT(r.due_at))}</span>
+      </div>
+      ${reminderEditControls(r)}
+    </div>`;
+}
+// "⏰ Ajastettu" -lohko Tehtävät-välilehdellä: tilin KESKENERÄISET (+3/+10 pv)
+// automaattimuistutukset — ks. accountPendingReminders. Piilotetaan lohko
+// kokonaan jos tilillä ei ole yhtään, ettei joka tilille ilmesty tyhjä
+// otsikko. Kutsutaan renderTaskList():n lopusta (ei omana erillisenä call
+// sitenä joka paikassa) — samat 16+ kutsupaikkaa jotka jo päivittävät
+// Tehtävät-listan saavat näin tämänkin ajan tasalle yhdellä rivillä.
+function renderReminderList(p) {
+  const el=document.getElementById('reminder-list'); if (!el) return;
+  const rows=accountPendingReminders(p);
+  if (!rows.length) { el.innerHTML=''; return; }
+  el.innerHTML=`<div class="cs-title" style="margin-top:14px">⏰ Ajastettu</div>
+    <div class="task-cards">${rows.map(reminderTaskCardHtml).join('')}</div>`;
+}
 function renderTaskList(p) {
+  // Ajastetut muistutukset eivät riipu alla olevasta acts-pohjaisesta
+  // tehtävälistasta lainkaan (eri datalähde, ks. accountPendingReminders) —
+  // renderöidään ihan ensimmäisenä, ETTEI tasks.length===0-polun alempi
+  // early return (ks. "Ei tehtäviä") jätä tätä suorittamatta.
+  renderReminderList(p);
   const today=new Date().toISOString().substring(0,10);
   const acts=parseActs(p);
   const tasks=acts.filter(a=>a.due_date||a.tyyppi==='kauppa'||(a.tyyppi==='sahkoposti'&&a.id)).map(normalizeTask).sort((a,b)=>{
@@ -5879,6 +6004,16 @@ function timelineItems(p) {
       out.push({raw,task,isTask,threadEntry:null,isLatestThreadEntry:false,upcoming,dueStamp,historyStamp,sourceIndex});
     }
   });
+  // Ajastetut automaattimuistutukset (+3/+10 pv) EIVÄT asu acts-taulukossa
+  // (ks. REMINDER_QUEUE_TAB) — liitetään silti samaan, jo valmiiksi lajitel-
+  // tuun "Tulevat tehtävät" -joukkoon synteettisinä rivienä, jotta ne
+  // näkyvät oikeassa päivämääräjärjestyksessä muiden avointen tehtävien
+  // seassa eivätkä vain piilossa alkuperäisen sähköpostin korttia avaamalla.
+  accountPendingReminders(p).forEach(r=>{
+    const dueStamp=timelineTimestamp(r.due_at);
+    out.push({raw:null,task:null,isTask:false,threadEntry:null,isLatestThreadEntry:false,
+      upcoming:true,dueStamp,historyStamp:dueStamp,sourceIndex:-1,isReminder:true,reminder:r});
+  });
   return out.sort((a,b)=>{
     if(a.upcoming!==b.upcoming) return a.upcoming?-1:1;
     if(a.upcoming) {
@@ -5941,7 +6076,39 @@ function emailThreadCounterpartName(a) {
   const c=a.contactId?allContacts.find(x=>x.id===a.contactId):null;
   return c?.nimi||null;
 }
+// Ajastetun automaattimuistutuksen oma aikajanakortti "Tulevat tehtävät"
+// -ryhmässä — EI normaalin timelineCardHtml():n kautta (se olettaa acts-
+// taulukon aktiviteettia raw/task-kenttineen, joita muistutusrivillä ei ole)
+// vaan kevyt, erillinen kortti joka käyttää samoja timeline-*-CSS-luokkia
+// visuaalisen yhtenäisyyden vuoksi. Muokkaus/poisto jaettu reminderEdit-
+// Controls():n kanssa Tehtävät-välilehden kortin (reminderTaskCardHtml)
+// kanssa, ettei samaa lomaketta pidetä kahdessa paikassa synkassa.
+function reminderTimelineCardHtml(r,index) {
+  const tpl=emailTemplates.find(t=>t.id===r.template_id);
+  const label=(r.order==='1'?'+3 pv':'+10 pv')+' muistutus';
+  const color=dashboardTheme()==='spara'?'var(--spara-lavender-deep)':'var(--accent)';
+  const body=`<div class="timeline-detail-row"><span>Vastaanottaja</span><strong>${esc(r.recipient_email)}</strong></div>`
+    +`<div class="timeline-detail-row"><span>Viestipohja</span><strong>${esc(tpl?.nimi||'(malli puuttuu)')}</strong></div>`
+    +`<div class="timeline-detail-row"><span>Tila</span><strong>${esc(reminderStatusText(r))}</strong></div>`
+    +reminderEditControls(r);
+  return `<div class="timeline-item timeline-left timeline-upcoming" style="--timeline-color:${color}">
+    <span class="timeline-node" aria-hidden="true"></span>
+    <article class="timeline-card" id="timeline-card-${index}">
+      <div class="timeline-card-stamp">${esc(fmtDT(r.due_at))}</div>
+      <button type="button" class="timeline-card-head" onclick="toggleTimelineCard(${index},this)" aria-expanded="false">
+        <span class="timeline-avatar" title="Automaattinen muistutus">⏰</span>
+        <span class="timeline-card-main">
+          <span class="timeline-card-title">${esc(tpl?.nimi||'Muistutus')}</span>
+          <span class="timeline-card-meta">⏰ ${esc(label)}</span>
+        </span>
+        <span><span class="timeline-badge">${esc(reminderStatusBadge(r))}</span> <span class="timeline-chevron">⌄</span></span>
+      </button>
+      <div class="timeline-card-body">${body}</div>
+    </article>
+  </div>`;
+}
 function timelineCardHtml(item,index) {
+  if (item.isReminder) return reminderTimelineCardHtml(item.reminder,index);
   const a=item.raw, task=item.task, t=item.threadEntry;
   // isTicketStateEntry: tämä merkintä edustaa tiketin NYKYISTÄ tilaa (tila/
   // muistutukset/muistiinpanot/"Avaa tehtävä") — aina true ei-sähköposti-
@@ -5965,10 +6132,7 @@ function timelineCardHtml(item,index) {
   if(isTicketStateEntry&&a.tyyppi==='sahkoposti'&&a.id) {
     const q=reminderRowsForTicket(a.id);
     if(q.length) {
-      const reminderLabel=r=>r.status==='sent'?'lähetetty '+fmtDT(r.processed_at):r.status==='cancelled'
-        ? 'peruttu ('+(r.cancel_reason==='customer_replied'?'asiakas vastasi':r.cancel_reason==='deal_stage_changed'?'kaupan vaihe muuttui':r.cancel_reason||'')+')'
-        : r.status==='processing'?'käsittelyssä':r.status==='failed'?'virhe':r.status==='blocked'?'estetty':'odottaa '+fmtDT(r.due_at);
-      details.push(`<div class="timeline-detail-row"><span>Muistutukset</span><strong>${q.map(r=>'+'+(r.order==='1'?'3':'10')+' pv '+reminderLabel(r)).join(' · ')}</strong></div>`);
+      details.push(`<div class="timeline-detail-row"><span>Muistutukset</span><strong>${q.map(r=>'+'+(r.order==='1'?'3':'10')+' pv '+reminderStatusText(r)).join(' · ')}</strong></div>`);
     }
   }
   // signaaliTila (ks. setSignalTila, Hero-signaalilistan kuittaus/ohitus) —
@@ -9682,6 +9846,16 @@ function arvosanaClass(a) { return a==null?'':a>=8.5?'score-high':a>=7.0?'score-
 function esc(s) { return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'):'–'; }
 function fmtDT(d) { return d?new Date(d).toLocaleString('fi-FI',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):''; }
 function fmtDateShort(d) { const t=d?Date.parse(d):NaN; return Number.isFinite(t)?new Date(t).toLocaleDateString('fi-FI',{day:'2-digit',month:'2-digit',year:'numeric'}):'–'; }
+// ISO-aikaleima -> <input type="datetime-local">:n arvo PAIKALLISESSA ajassa
+// (vrt. confirmScheduleOutlookEmail(), joka tulkitsee saman kentän takaisin
+// samalla ECMA-262-oletuksella). new Date(iso).toISOString() EI käy tähän,
+// koska se palauttaisi UTC-ajan — käyttäjän kello näyttäisi väärää aikaa.
+function isoToLocalDatetimeInput(iso) {
+  const d=iso?new Date(iso):null;
+  if (!d || isNaN(d.getTime())) return '';
+  const pad=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 function showToast(msg,type='') {
   const t=document.createElement('div'); t.className='toast '+type; t.textContent=msg;
   document.getElementById('toast-wrap').appendChild(t); setTimeout(()=>t.remove(),3500);
