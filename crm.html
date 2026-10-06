@@ -1406,7 +1406,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-02.6';
+const BUILD_ID = '2026-10-02.7';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2662,6 +2662,16 @@ function accountPendingReminders(p) {
   return reminderQueue.filter(r=>r.tili_id===p.spara_id && (r.status==='pending'||r.status==='processing'))
     .sort((a,b)=>timelineTimestamp(a.due_at)-timelineTimestamp(b.due_at));
 }
+// Tausta-ajon PITÄISI käsitellä rivi heti kun due_at on ohittunut — jos
+// 'pending' on yhä voimassa senkin jälkeen, tausta-ajo ei ole (vielä)
+// ehtinyt/pystynyt käsittelemään sitä. CRM ei tiedä eikä voi tietää MIKSI
+// (ajossa oleva ongelma vai pelkkä viive), mutta tilan näyttäminen muuten
+// samanlaisena "odottaa"-tekstinä kuin ajallaan olevalla rivillä johti
+// käyttäjän kysymään oliko viesti lähtenyt vai ei — siksi oma, rehellisesti
+// erottuva "erääntynyt" + punainen väritys.
+function reminderIsOverdue(r) {
+  return r.status==='pending' && !!r.due_at && Date.parse(r.due_at)<Date.now();
+}
 // Yhteinen tilasanoitus — käytetään sekä tässä uudessa omana korttina
 // näkyvässä muistutuksessa että timelineCardHtml():n alkuperäisen sähköposti-
 // tehtävän "Muistutukset"-rivillä (ks. alempana), ettei sama viisi tilaa
@@ -2676,21 +2686,31 @@ function reminderStatusText(r) {
   if (r.status==='processing') return 'käsittelyssä';
   if (r.status==='failed') return 'virhe'+(r.last_error?': '+r.last_error:'');
   if (r.status==='blocked') return 'estetty';
-  return 'odottaa '+fmtDT(r.due_at);
+  return (reminderIsOverdue(r)?'erääntynyt, odotti ':'odottaa ')+fmtDT(r.due_at);
 }
 // Lyhyt, isolla alkukirjaimella oleva versio kortin badge-pilleriin (ks.
 // reminderStatusText yllä pidemmälle, lauseeseen upotettavalle muodolle).
 function reminderStatusBadge(r) {
+  if (reminderIsOverdue(r)) return 'Erääntynyt';
   return {sent:'Lähetetty',cancelled:'Peruttu',processing:'Käsittelyssä',failed:'Virhe',blocked:'Estetty'}[r.status]||'Odottaa';
 }
-function toggleReminderEdit(id) {
-  const el=document.getElementById('reminder-edit-'+id); if(!el) return;
+// ctx ('task'/'tl') erottaa Tehtävät- ja Historia-välilehden KORTIT TOISISTAAN
+// DOM:ssa — sama muistutusrivi renderöidään kumpaankin (reminderTaskCardHtml
+// / reminderTimelineCardHtml), ja mt-tehtavat/mt-historia pysyvät molemmat
+// DOM:issa yhtä aikaa (vain toiselta piilotetaan CSS:llä, ks. .mtab-content).
+// Ilman ctx-etuliitettä molemmilla korteilla olisi SAMA id, ja getElementById
+// löytäisi aina ENSIMMÄISEN (Tehtävät-välilehden, DOM-järjestyksessä ennen
+// Historiaa) — Historian puolelta klikattu "Muokkaa" olisi avannut lomakkeen
+// näkymättömiin, piilotetun Tehtävät-välilehden sisään (täsmälleen tämä
+// bugi raportoitiin: "painike ei avaa").
+function toggleReminderEdit(id,ctx) {
+  const el=document.getElementById(`reminder-edit-${ctx}-${id}`); if(!el) return;
   el.style.display = el.style.display==='none' ? 'flex' : 'none';
 }
-async function saveReminderEdit(id) {
+async function saveReminderEdit(id,ctx) {
   const r=reminderQueue.find(x=>x.id===id); if(!r||r._rowIndex==null) return;
-  const dueRaw=document.getElementById('reminder-due-'+id)?.value;
-  const tplId=document.getElementById('reminder-tpl-'+id)?.value||r.template_id;
+  const dueRaw=document.getElementById(`reminder-due-${ctx}-${id}`)?.value;
+  const tplId=document.getElementById(`reminder-tpl-${ctx}-${id}`)?.value||r.template_id;
   if (!dueRaw) { showToast('Valitse ajankohta','error'); return; }
   const when=new Date(dueRaw); // datetime-local ilman aikavyöhykemerkintää -> paikallinen aika (ECMA-262), sama tulkinta kuin confirmScheduleOutlookEmail():ssa
   if (isNaN(when.getTime())) { showToast('Virheellinen ajankohta','error'); return; }
@@ -5745,28 +5765,32 @@ async function addTask(overrides) {
 // reminderTaskCardHtml():n (Tehtävät-välilehti) ja reminderTimelineCardHtml:n
 // (Historia-välilehti) kesken, ettei samaa lomaketta pidetä kahdessa
 // paikassa synkassa. Piilossa oletuksena (display:none), ks. toggleReminder-
-// Edit — jokaisen rivin omat id:t (reminder-edit-${r.id} jne.) pitävät rivit
-// toisistaan riippumattomina, EI jaettua lomaketta/piilokenttää joka voisi
-// vuotaa rivien välillä samalla tavalla kuin task-edit-id ennen korjausta.
-function reminderEditControls(r) {
+// Edit. ctx ('task'/'tl') erottaa nämä kaksi DOM:ssa toisistaan — SAMA
+// muistutus renderöidään molemmille välilehdille yhtä aikaa (mt-tehtavat/
+// mt-historia pysyvät molemmat DOM:issa, vain toinen piilotetaan CSS:llä),
+// joten ilman ctx-etuliitettä id:t törmäisivät ja getElementById löytäisi
+// aina sen version joka sattuu olemaan ENSIN DOM:ssa — ks. toggleReminder-
+// Edit():n kommentti.
+function reminderEditControls(r,ctx) {
   if (r.status!=='pending') return '';
   if (r._rowIndex==null) return `<div style="font-size:11px;color:var(--text2);margin-top:8px">Juuri luotu — päivitä sivu, niin tätä voi muokata tai perua.</div>`;
-  return `<div id="reminder-edit-${r.id}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);flex-direction:column;gap:6px">
-      <input class="form-control" type="datetime-local" id="reminder-due-${r.id}" value="${esc(isoToLocalDatetimeInput(r.due_at))}">
-      <select class="form-control" id="reminder-tpl-${r.id}">${emailTemplates.map(t=>`<option value="${esc(t.id)}"${t.id===r.template_id?' selected':''}>${esc(t.nimi)}</option>`).join('')}</select>
+  return `<div id="reminder-edit-${ctx}-${r.id}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);flex-direction:column;gap:6px">
+      <input class="form-control" type="datetime-local" id="reminder-due-${ctx}-${r.id}" value="${esc(isoToLocalDatetimeInput(r.due_at))}">
+      <select class="form-control" id="reminder-tpl-${ctx}-${r.id}">${emailTemplates.map(t=>`<option value="${esc(t.id)}"${t.id===r.template_id?' selected':''}>${esc(t.nimi)}</option>`).join('')}</select>
       <div style="display:flex;gap:6px">
-        <button class="btn btn-primary btn-sm" style="flex:1" onclick="saveReminderEdit('${r.id}')">Tallenna</button>
-        <button class="btn btn-ghost btn-sm" onclick="toggleReminderEdit('${r.id}')">Peruuta</button>
+        <button class="btn btn-primary btn-sm" style="flex:1" onclick="saveReminderEdit('${r.id}','${ctx}')">Tallenna</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleReminderEdit('${r.id}','${ctx}')">Peruuta</button>
       </div>
     </div>
     <div style="display:flex;gap:6px;margin-top:8px">
-      <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center" onclick="toggleReminderEdit('${r.id}')">✏️ Muokkaa</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center" onclick="toggleReminderEdit('${r.id}','${ctx}')">✏️ Muokkaa</button>
       <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="cancelReminderRow('${r.id}')" title="Peru muistutus">✕ Poista</button>
     </div>`;
 }
 function reminderTaskCardHtml(r) {
   const tpl=emailTemplates.find(t=>t.id===r.template_id);
   const label=r.order==='1'?'+3 pv':'+10 pv';
+  const overdue=reminderIsOverdue(r);
   return `<div class="task-card" style="border-top:2px solid var(--accent)">
       <div class="task-card-hdr">
         <span style="font-size:13px">⏰</span>
@@ -5774,10 +5798,10 @@ function reminderTaskCardHtml(r) {
       </div>
       <div class="task-card-aihe">${esc(tpl?.nimi||'(malli puuttuu)')} → ${esc(r.recipient_email)}</div>
       <div class="task-card-foot">
-        <span class="badge" style="background:rgba(255,255,255,.08);color:var(--text2);font-size:10px">${esc(reminderStatusBadge(r))}</span>
+        <span class="badge" style="background:${overdue?'rgba(244,67,54,.18)':'rgba(255,255,255,.08)'};color:${overdue?'var(--red)':'var(--text2)'};font-size:10px">${esc(reminderStatusBadge(r))}</span>
         <span style="margin-left:auto;font-size:11px;font-weight:700;color:var(--text2)">${esc(fmtDT(r.due_at))}</span>
       </div>
-      ${reminderEditControls(r)}
+      ${reminderEditControls(r,'task')}
     </div>`;
 }
 // "⏰ Ajastettu" -lohko Tehtävät-välilehdellä: tilin KESKENERÄISET (+3/+10 pv)
@@ -6086,11 +6110,16 @@ function emailThreadCounterpartName(a) {
 function reminderTimelineCardHtml(r,index) {
   const tpl=emailTemplates.find(t=>t.id===r.template_id);
   const label=(r.order==='1'?'+3 pv':'+10 pv')+' muistutus';
-  const color=dashboardTheme()==='spara'?'var(--spara-lavender-deep)':'var(--accent)';
+  // Erääntynyt (ks. reminderIsOverdue) ylikirjoittaa teeman normaalin
+  // "tuleva"-värin punaisella — sama --timeline-color ohjaa myös alla
+  // olevan timeline-badge-pillerin väriä (ks. sen CSS: color-mix(...
+  // var(--timeline-color)...)), joten badge näyttää automaattisesti
+  // "ERÄÄNTYNYT" punaisena ilman erillistä badge-kohtaista väritystä.
+  const color=reminderIsOverdue(r)?'var(--red)':(dashboardTheme()==='spara'?'var(--spara-lavender-deep)':'var(--accent)');
   const body=`<div class="timeline-detail-row"><span>Vastaanottaja</span><strong>${esc(r.recipient_email)}</strong></div>`
     +`<div class="timeline-detail-row"><span>Viestipohja</span><strong>${esc(tpl?.nimi||'(malli puuttuu)')}</strong></div>`
     +`<div class="timeline-detail-row"><span>Tila</span><strong>${esc(reminderStatusText(r))}</strong></div>`
-    +reminderEditControls(r);
+    +reminderEditControls(r,'tl');
   return `<div class="timeline-item timeline-left timeline-upcoming" style="--timeline-color:${color}">
     <span class="timeline-node" aria-hidden="true"></span>
     <article class="timeline-card" id="timeline-card-${index}">
