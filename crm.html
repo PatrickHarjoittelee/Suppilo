@@ -546,6 +546,7 @@
     .kc-comm-bar.sent{background:var(--text);border-color:var(--text);}
     .kc-comm-bar.pending{background:var(--bg);border-color:var(--border);}
     .kc-comm-bar.cancelled{background:transparent;border-style:dashed;opacity:.55;}
+    .kc-comm-bar.overdue{background:var(--red);border-color:var(--red);}
     .kb-ready-sort{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);cursor:pointer;white-space:nowrap;}
     .dot-A{background:var(--red);} .dot-B{background:var(--orange);}
 
@@ -1406,7 +1407,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-06.2';
+const BUILD_ID = '2026-10-11.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1479,7 +1480,7 @@ const YH_VERIFY_COLS = ['contact_id','domain','domain_status','email_status','co
 const USERS_TAB = 'Käyttäjät';
 const USERS_COLS = ['email','nimi','puhelin','sahkoposti','updated_at','allekirjoitus','profiilikuva'];
 const TEMPLATES_TAB = 'Sähköpostimallit';
-const TEMPLATES_COLS = ['id','nimi','aihe','sisalto','created_at'];
+const TEMPLATES_COLS = ['id','nimi','aihe','sisalto','created_at','sulkee_kaupan'];
 const BULK_RULES_TAB = 'Massalähetysasetukset';
 const BULK_RULES_COLS = ['id','projekti','segmentti','template_id','updated_at','reminder1_template_id','reminder2_template_id'];
 const REMINDER_QUEUE_TAB = 'Muistutusjono';
@@ -2694,6 +2695,25 @@ function advanceDealToSoviTapaaminen(p,acts,nowIso,reasonLabel) {
   acts.push({tyyppi:'vaihe_muutos',teksti:`Vaihe: ${prevVaihe} → Sovi tapaaminen (${reasonLabel})`,
     tekija:currentUser.nimi||currentUserEmail||null, created_at:nowIso});
 }
+// Sulkee tilin aktiivisen kaupan "Ei juuri nyt" -tilaan — kutsutaan kun
+// lähetetään sähköposti mallilla joka on merkitty sulkee_kaupan-lipulla
+// (ks. emailTemplates[].closesAsLost, asetettavissa mallin muokkauksessa
+// Asetuksissa). Käyttäjän oma idea: kun soittokierros ei ole tuottanut
+// tulosta, viimeinen "luovutus"-viesti kuittaa kaupan virallisesti pois
+// avoimesta putkesta sen sijaan että se jäisi ikuisesti roikkumaan Sovi
+// tapaaminen -vaiheeseen. Ei koskaan kosketa jo päätettyä kauppaa (TASK_DONE.
+// kauppa kattaa sekä voitetun että hävityn) — ei nollaa voittoa luovutukseksi.
+function closeDealAsLost(p,acts,nowIso,reasonLabel) {
+  const dealTask=activeKauppaTask(acts);
+  if (!dealTask) return;
+  const currentTila=normalizeKauppaVaihe(dealTask.tila);
+  if ((TASK_DONE.kauppa||[]).includes(currentTila)) return;
+  const prevVaihe=p.vaihe;
+  dealTask.tila='Ei juuri nyt'; dealTask.done=true; dealTask.completed_at=nowIso; dealTask.updated_at=nowIso;
+  p.vaihe='Ei juuri nyt';
+  acts.push({tyyppi:'vaihe_muutos',teksti:`Vaihe: ${prevVaihe} → Ei juuri nyt (${reasonLabel})`,
+    tekija:currentUser.nimi||currentUserEmail||null, created_at:nowIso});
+}
 function bulkCurrentDealStage(p,actsOverride) {
   const acts=actsOverride||parseActs(p);
   const chosen=activeKauppaTask(acts);
@@ -2976,6 +2996,28 @@ async function startBulkEmailSend() {
 // lähettäisi sokeasti jälkiviestin jo vastanneelle tai jo edenneelle
 // kaupalle, mikä olisi täsmälleen se asia minkä koko muistutusjärjestelmä
 // on alun perin tarkoitettu estämään.
+//
+// Montako "Soittoyritys"-tyyppistä soitto-tehtävää tilillä on jo — käytetään
+// sekä alla (luodaanko ensimmäinen automaattisesti) että openTaskForm():ssa
+// (defaultSoittoyritysAihe, seuraavan numeroiminen kun käyttäjä lisää itse).
+function soittoyritysCount(acts) { return acts.filter(a=>a.tyyppi==='soitto').length; }
+function defaultSoittoyritysAihe(p) { return 'Soittoyritys '+(soittoyritysCount(parseActs(p))+1); }
+// Käyttäjän oma idea: kun koko +3/+10 pv -sähköpostisarja on toimitettu eikä
+// asiakas ole vastannut (muuten reminderi olisi peruttu 'customer_replied'-
+// syyllä jo aiemmin tässä funktiossa), seuraava askel on selkeästi
+// puhelinsoitto — ei neljäs sähköposti. Luo VAIN ensimmäisen "Soittoyritys 1"
+// -tehtävän automaattisesti (ei ketjuta 2:ta/3:a — milloin/pitääkö soittaa
+// uudelleen on ihmisen arvio jota tämä ei voi tietää). Myöhemmät yritykset
+// numeroituvat itsestään kun käyttäjä lisää ne Tehtävät-lomakkeella, ks.
+// defaultSoittoyritysAihe. Kutsutaan vain kun kauppa on YHÄ Sovi tapaaminen
+// -vaiheessa (ei edennyt/sulkeutunut matkalla) — muussa vaiheessa soitto-
+// kehotus olisi vanhentunut heti syntyessään.
+function maybeCreateSoittoyritysTask(p,acts,nowIso,contactId) {
+  if (soittoyritysCount(acts)>0) return;
+  acts.push({id:'TK'+Date.now()+'_call1',tyyppi:'soitto',tila:TASK_TILA.soitto[0],done:false,
+    aihe:'Soittoyritys 1',tekija:null,muistiinpanot:'Automaattiset +3/+10 pv -muistutukset lähetetty, asiakas ei ole vastannut — aika soittaa.',
+    created_at:nowIso,due_date:nowIso.slice(0,10),contactId:contactId||null});
+}
 async function processOverdueReminders() {
   const due=reminderQueue.filter(r=>r.status==='pending' && r.due_at && Date.parse(r.due_at)<=Date.now() && r._rowIndex!=null);
   if (!due.length) return;
@@ -3034,6 +3076,12 @@ async function processOverdueReminders() {
         tekija:null,muistiinpanot:null,bodyHtml:emailDraftBodyTooLarge(rendered.bodyHtml)?null:rendered.bodyHtml,
         created_at:nowIso,completed_at:nowIso,due_date:null,contactId:r.contact_id||null,
         conversationId:created.conversationId||null,ticketCode,thread:[threadEntry]});
+      // +10 pv -muistutus (viimeinen sarjassa) juuri lähti onnistuneesti
+      // eikä asiakas ollut vastannut (muuten tämä rivi olisi peruttu jo
+      // ylempänä) — ks. maybeCreateSoittoyritysTask: käyttäjän oma idea,
+      // seuraava askel on nyt selkeästi puhelinsoitto. Vain jos kauppa on
+      // yhä Sovi tapaamisessa (ei edennyt/sulkeutunut matkalla).
+      if (r.order==='2' && currentStage==='Sovi tapaaminen') maybeCreateSoittoyritysTask(p,acts,nowIso,r.contact_id);
       p.aktiviteetit=JSON.stringify(acts);
       await saveCrmState(p);
       await markReminderRow(r,'sent',{processedAt:nowIso});
@@ -3558,7 +3606,13 @@ async function sendOutlookEmail() {
       // Sama "siirrä Sovi tapaaminen -vaiheeseen ensikontaktista" -logiikka
       // kuin massalähetyksellä (ks. advanceDealToSoviTapaaminen) — TÄYTYY
       // tapahtua ENNEN baselineStage:n laskentaa alla, samasta syystä.
-      advanceDealToSoviTapaaminen(p,acts,threadEntry.ts,'sähköposti');
+      // POIKKEUS: jos käytetty malli on merkitty "sulkee kaupan" (ks.
+      // email-template-picker + emailTemplates[].closesAsLost), kauppa
+      // suljetaan Ei juuri nyt -tilaan sen sijaan että se siirtyisi
+      // eteenpäin — tämä on tarkoituksella luovutusviesti, ei ensikontakti.
+      const usedTemplate=emailTemplates.find(t=>t.id===(document.getElementById('email-template-picker')?.value||''));
+      if (usedTemplate?.closesAsLost) closeDealAsLost(p,acts,threadEntry.ts,'luovutusviesti');
+      else advanceDealToSoviTapaaminen(p,acts,threadEntry.ts,'sähköposti');
       p.aktiviteetit=JSON.stringify(acts);
       await saveCrmState(p);
       if (reminderConfig.enabled) {
@@ -3660,7 +3714,10 @@ async function scheduleOutlookEmail(deferredIso) {
       // ilman mitään webhookia takaisin tänne) — sama rajoitus jonka
       // enqueueReminderSeries jo hyväksyy alla (reminderien +3/+10 pv
       // lasketaan myös ajastushetkestä, ei toimitushetkestä).
-      advanceDealToSoviTapaaminen(p,acts,nowIso,'sähköpostin ajastus');
+      // POIKKEUS: sama "sulkee kaupan" -malliloogikka kuin sendOutlookEmail:ssa.
+      const usedTemplate=emailTemplates.find(t=>t.id===(document.getElementById('email-template-picker')?.value||''));
+      if (usedTemplate?.closesAsLost) closeDealAsLost(p,acts,nowIso,'luovutusviesti');
+      else advanceDealToSoviTapaaminen(p,acts,nowIso,'sähköpostin ajastus');
       p.aktiviteetit=JSON.stringify(acts);
       await saveCrmState(p);
       if (reminderConfig.enabled) {
@@ -4291,6 +4348,10 @@ async function loadData() {
     if (!tabNames.includes(USERS_TAB)) await addSheet(USERS_TAB, USERS_COLS);
     if (!tabNames.includes(PROJEKTIT_TAB)) await addSheet(PROJEKTIT_TAB, PROJEKTIT_COLS);
     if (!tabNames.includes(TEMPLATES_TAB)) await addSheet(TEMPLATES_TAB, TEMPLATES_COLS);
+    else {
+      try { await sheetPut(`${TEMPLATES_TAB}!F1`,[['sulkee_kaupan']]); }
+      catch(e) { console.warn('Sähköpostimallien sulkee_kaupan-otsikon päivitys epäonnistui:',e.message); }
+    }
     if (!tabNames.includes(BULK_RULES_TAB)) await addSheet(BULK_RULES_TAB, BULK_RULES_COLS);
     else {
       try { await sheetPut(`${BULK_RULES_TAB}!F1:G1`,[['reminder1_template_id','reminder2_template_id']]); }
@@ -4457,11 +4518,11 @@ async function loadData() {
     allProspects.filter(p=>p.spara_id?.startsWith('ID') && taloNimet.has(p.kampanja)).forEach(p=>{
       p.sija=parseInt(p.prioriteetti||'0')||null;
     });
-    const tplRows = await sheetGet(`${TEMPLATES_TAB}!A:E`);
+    const tplRows = await sheetGet(`${TEMPLATES_TAB}!A:F`);
     // Sama map-ennen-filter-korjaus kuin allContacts:ssa (ks. kommentti
     // ylempänä) — emailTemplates-poisto (deleteEmailTemplate, tyhjentää
     // rivin) kärsi täsmälleen samasta _rowIndex-korruptiosta.
-    emailTemplates = tplRows.slice(1).map((r,i)=>({id:r[0],nimi:r[1]||'',aihe:r[2]||'',sisalto:r[3]||'',created_at:r[4]||'',_rowIndex:i+2})).filter(t=>t.id);
+    emailTemplates = tplRows.slice(1).map((r,i)=>({id:r[0],nimi:r[1]||'',aihe:r[2]||'',sisalto:r[3]||'',created_at:r[4]||'',closesAsLost:r[5]==='1',_rowIndex:i+2})).filter(t=>t.id);
     const bulkRuleRows = await sheetGet(`${BULK_RULES_TAB}!A:G`);
     bulkEmailRules = bulkRuleRows.slice(1).map((r,i)=>({
       id:r[0]||'', projekti:r[1]||'', segmentti:r[2]||'', template_id:r[3]||'', updated_at:r[4]||'',
@@ -5192,6 +5253,15 @@ function openTaskForm(tyyppi) {
   const soittoSel=document.getElementById('task-soitto-contact');
   if (soittoSel) soittoSel.style.display=tyyppi==='soitto'?'':'none';
   if (tyyppi==='soitto') populateSoittoContactPicker(); else updateSoittoNowButtonVisibility();
+  // Käyttäjän oma idea: soittoyritykset tulisi numeroida selkeästi (1, 2, 3…)
+  // jotta puhelinkierroksen vaihe näkyy heti aiheesta. Ei ylikirjoiteta jo
+  // kirjoitettua aihetta (esim. tyyppiä vaihdettaessa kesken uuden tehtävän
+  // täyttämisen, ks. kommentti ylempänä) — vain tyhjä kenttä saa oletuksen.
+  if (tyyppi==='soitto' && currentId) {
+    const aiheEl=document.getElementById('task-aihe');
+    const p=allProspects.find(x=>x.spara_id===currentId);
+    if (aiheEl && p && !aiheEl.value.trim()) aiheEl.value=defaultSoittoyritysAihe(p);
+  }
   form.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 function closeTaskForm() {
@@ -5340,15 +5410,28 @@ function communicationProgress(p) {
     const row=rows.find(r=>Number(r.order)===item);
     const status=String(row?.status||'').toLowerCase();
     if (['sent','delivered','toimitettu'].includes(status)) return 'sent';
-    if (['pending','processing','queued','scheduled','ajastettu'].includes(status)) return 'pending';
-    if (['cancelled','canceled','peruttu','failed','error'].includes(status)) return 'cancelled';
+    if (['failed','error'].includes(status)) return 'overdue';
+    if (['cancelled','canceled','peruttu'].includes(status)) return 'cancelled';
+    if (['pending','processing','queued','scheduled','ajastettu'].includes(status)) {
+      // Erääntynyt: eräpäivä on jo mennyt mutta processOverdueReminders() ei
+      // ole vielä ehtinyt/onnistunut käsittelemään riviä seuraavalla
+      // kirjautumisella. Ilman tätä erottelua kaikki "vain ensimmäinen
+      // viesti lähtenyt" -kortit näyttivät TÄSMÄLLEEN samalta riippumatta
+      // siitä oliko +3/+10 pv -muistutus vielä aikataulussa vai jumissa —
+      // käyttäjä ei voinut Kanbania silmäilemällä erottaa näitä kahta
+      // tilannetta toisistaan ("näyttää siltä ettei yhtään muistutusta
+      // olisi lähetetty"). 'processing' ei koskaan erääntynyt — tausta-ajo
+      // on jo ottanut sen käsittelyyn juuri nyt.
+      return (status!=='processing' && row?.due_at && Date.parse(row.due_at)<now) ? 'overdue' : 'pending';
+    }
     return 'idle';
   });
   return {delivered:states.filter(x=>x==='sent').length,total:3,
-    hasPending:states.includes('pending'),states};
+    hasPending:states.includes('pending')||states.includes('overdue'),states};
 }
 function communicationProgressHtml(progress) {
-  return `<div class="kc-comm">✉️ ${progress.delivered}/${progress.total} toimitettu
+  const alert=progress.states.includes('overdue');
+  return `<div class="kc-comm"${alert?' style="color:var(--red)"':''}>✉️ ${progress.delivered}/${progress.total} toimitettu${alert?' · erääntynyt':''}
     <div class="kc-comm-bars" aria-label="Viestinnän vaihe ${progress.delivered}/${progress.total}">${progress.states.map(state=>`<span class="kc-comm-bar ${state}"></span>`).join('')}</div>
   </div>`;
 }
@@ -9319,6 +9402,7 @@ function openSettings() {
   const tplNimi=document.getElementById('tpl-uusi-nimi'); if (tplNimi) tplNimi.value='';
   const tplAihe=document.getElementById('tpl-uusi-aihe'); if (tplAihe) tplAihe.value='';
   const tplSisalto=document.getElementById('tpl-uusi-sisalto'); if (tplSisalto) tplSisalto.innerHTML='';
+  const tplSulkee=document.getElementById('tpl-uusi-sulkee'); if (tplSulkee) tplSulkee.checked=false;
   renderTemplatesList();
   document.getElementById('set-ai-provider').value = aiProvider();
   document.getElementById('set-anthropic-key').value = anthropicApiKey();
@@ -9667,11 +9751,16 @@ function renderTemplatesList() {
           </div>
         </div>
         ${t.aihe?`<div style="font-size:11px;color:var(--text2);margin-top:2px">${esc(t.aihe)}</div>`:''}
+        ${t.closesAsLost?`<div style="font-size:11px;color:var(--red);margin-top:2px">⛔ Sulkee kaupan "Ei juuri nyt" -tilaan lähetettäessä</div>`:''}
       </div>
       <div id="tpl-${t.id}-form" style="display:none;margin-top:8px">
         <div class="form-grid">
           <div class="form-group full"><input class="form-control" id="tpl-${t.id}-nimi" value="${esc(t.nimi)}" placeholder="Nimi"></div>
           <div class="form-group full"><input class="form-control" id="tpl-${t.id}-aihe" value="${esc(t.aihe)}" placeholder="Aihe"></div>
+          <div class="form-group full" style="flex-direction:row;align-items:center;gap:6px">
+            <input type="checkbox" id="tpl-${t.id}-sulkee" style="width:auto" ${t.closesAsLost?'checked':''}>
+            <label for="tpl-${t.id}-sulkee" style="margin:0;font-weight:400">Tämä malli sulkee kaupan "Ei juuri nyt" -tilaan kun se lähetetään (esim. luovutusviesti soittokierroksen jälkeen)</label>
+          </div>
           <div class="form-group full">
             <div class="email-toolbar">
               <button type="button" class="btn btn-ghost btn-sm" onclick="emailFormat('bold','tpl-${t.id}-sisalto')"><b>B</b></button>
@@ -9705,16 +9794,18 @@ async function addEmailTemplate() {
   const nimi=(document.getElementById('tpl-uusi-nimi')?.value||'').trim();
   const aihe=(document.getElementById('tpl-uusi-aihe')?.value||'').trim();
   const sisalto=(document.getElementById('tpl-uusi-sisalto')?.innerHTML||'').trim();
+  const closesAsLost=!!document.getElementById('tpl-uusi-sulkee')?.checked;
   if (!nimi) { showToast('Mallin nimi on pakollinen','error'); return; }
   const id='TPL'+Date.now();
-  const row=[id,nimi,aihe,sisalto,new Date().toISOString()];
+  const row=[id,nimi,aihe,sisalto,new Date().toISOString(),closesAsLost?'1':''];
   try {
     const colA=await sheetGet(`${TEMPLATES_TAB}!A:A`);
-    await sheetAppend(`${TEMPLATES_TAB}!A:E`,[row]);
-    emailTemplates.push({id,nimi,aihe,sisalto,created_at:row[4],_rowIndex:colA.length+1});
+    await sheetAppend(`${TEMPLATES_TAB}!A:F`,[row]);
+    emailTemplates.push({id,nimi,aihe,sisalto,created_at:row[4],closesAsLost,_rowIndex:colA.length+1});
     document.getElementById('tpl-uusi-nimi').value='';
     document.getElementById('tpl-uusi-aihe').value='';
     document.getElementById('tpl-uusi-sisalto').innerHTML='';
+    const sulkeeEl=document.getElementById('tpl-uusi-sulkee'); if (sulkeeEl) sulkeeEl.checked=false;
     renderTemplatesList();
     showToast('Malli lisätty: '+nimi,'success');
   } catch(e) { showToast('Virhe: '+e.message,'error'); }
@@ -9724,10 +9815,12 @@ async function saveEmailTemplateEdit(id) {
   const nimi=(document.getElementById(`tpl-${id}-nimi`)?.value||'').trim();
   const aihe=(document.getElementById(`tpl-${id}-aihe`)?.value||'').trim();
   const sisalto=(document.getElementById(`tpl-${id}-sisalto`)?.innerHTML||'').trim();
+  const closesAsLost=!!document.getElementById(`tpl-${id}-sulkee`)?.checked;
   if (!nimi) { showToast('Nimi on pakollinen','error'); return; }
   try {
     await sheetPut(`${TEMPLATES_TAB}!B${t._rowIndex}:D${t._rowIndex}`,[[nimi,aihe,sisalto]]);
-    Object.assign(t,{nimi,aihe,sisalto});
+    await sheetPut(`${TEMPLATES_TAB}!F${t._rowIndex}`,[[closesAsLost?'1':'']]);
+    Object.assign(t,{nimi,aihe,sisalto,closesAsLost});
     renderTemplatesList();
     showToast('Malli päivitetty ✓','success');
   } catch(e) { showToast('Virhe: '+e.message,'error'); }
@@ -9736,7 +9829,7 @@ async function deleteEmailTemplate(id) {
   const t=emailTemplates.find(x=>x.id===id); if (!t) return;
   if (!confirm(`Poistetaanko malli "${t.nimi}"?`)) return;
   try {
-    await sheetPut(`${TEMPLATES_TAB}!A${t._rowIndex}:E${t._rowIndex}`,[['','','','','']]);
+    await sheetPut(`${TEMPLATES_TAB}!A${t._rowIndex}:F${t._rowIndex}`,[['','','','','','']]);
     emailTemplates.splice(emailTemplates.indexOf(t),1);
     renderTemplatesList();
     showToast('Malli poistettu','success');
@@ -10381,6 +10474,10 @@ async function saveGlobalTask() {
         <div class="form-grid">
           <div class="form-group full"><label>Mallin nimi</label><input class="form-control" id="tpl-uusi-nimi" placeholder="Esim. Ensikontakti"></div>
           <div class="form-group full"><label>Aihe</label><input class="form-control" id="tpl-uusi-aihe" placeholder="Voi käyttää: {{etunimi}} {{nimi}} {{yritys}} {{tekija}} {{avausviesti}}"></div>
+          <div class="form-group full" style="flex-direction:row;align-items:center;gap:6px">
+            <input type="checkbox" id="tpl-uusi-sulkee" style="width:auto">
+            <label for="tpl-uusi-sulkee" style="margin:0;font-weight:400">Tämä malli sulkee kaupan "Ei juuri nyt" -tilaan kun se lähetetään (esim. luovutusviesti soittokierroksen jälkeen)</label>
+          </div>
           <div class="form-group full">
             <label>Sisältö</label>
             <div class="email-toolbar">
