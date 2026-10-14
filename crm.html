@@ -8361,12 +8361,52 @@ const PROSPECTING_CHUNK_SIZE=5;
 // Virheenkäsittely createProspectAccountsBatch:n heitolle jätetään
 // tarkoituksella kutsujalle (sen oma try/catch, oma virheteksti) —
 // tämä funktio ei nielaise sitä.
+// Yhdistykset eivät aina näy PRH:n yrityshakupäätepisteessä.
+// Ohitus koskee VAIN ChatGPT-tuontia, ei automaattista yritysprospektointia.
+// Edellytä ry/rf-nimeä, järjestön omaa verkkotunnusta sekä vähintään yhtä
+// lähdeviitettä; puuttuva Y-tunnus jätetään tyhjäksi, ei arvata.
+function isSourcedAssociationCandidate(c) {
+  const name=String(c.name||'').trim();
+  const domain=String(c.domain||'').trim().toLowerCase().replace(/^https?:\/\//,'').replace(/\/.*$/,'');
+  const sources=[...(Array.isArray(c.company_sources)?c.company_sources:[]),
+    ...(Array.isArray(c.sources)?c.sources:[]), c.source_company, c.source_contact].filter(Boolean);
+  const association=/\\b(ry|rf)\\b/i.test(name) || /\\b(yhdistys|liitto)\\b/i.test(name);
+  return association && /^[a-z0-9.-]+\\.[a-z]{2,}$/.test(domain) &&
+    sources.some(url=>{ try { const host=new URL(url).hostname.toLowerCase().replace(/^www\\./,''); return host===domain || host.endsWith('.'+domain); } catch { return false; } });
+}
+function sourcedAssociationForm(c) {
+  return {tf_name:String(c.name||'').trim(), tf_ytunnus:'',
+    tf_yhtiömuoto:'ry', tf_toimiala:c.segment||'Toimialajärjestö',
+    tf_osoite:'', tf_postinumero:'', tf_kaupunki:c.city||'',
+    tf_www:'https://'+String(c.domain).replace(/^https?:\/\//,'').replace(/\/.*$/,''),
+    tf_rekisteroity:''};
+}
+function existingAssociationAccount(name, domain) {
+  const normalized=normalizeCompanyName(name);
+  const host=String(domain||'').toLowerCase().replace(/^https?:\/\//,'').replace(/\/.*$/,'').replace(/^www\\./,'');
+  return allProspects.find(p=>{
+    const sameName=normalizeCompanyName(p.yritys_nimi)===normalized;
+    const oldHost=String(p.www||p.verkkosivu||'').toLowerCase().replace(/^https?:\/\//,'').replace(/\/.*$/,'').replace(/^www\\./,'');
+    return sameName || (host && oldHost===host);
+  });
+}
+
 async function verifyAndCreateCandidatesChunk(rawCandidates, opts, acceptedThisRun, rejectedOut, onCandidate, onSaving, shouldCancel) {
   const chunkVerified=[];
   for (const c of rawCandidates) {
     if (shouldCancel && shouldCancel()) break;
     if (onCandidate) onCandidate(c.name);
-    const verify=await verifyCandidateAgainstYtj({name:c.name, city:c.city, yTunnusHint:c.y_tunnus});
+    let verify=await verifyCandidateAgainstYtj({name:c.name, city:c.city, yTunnusHint:c.y_tunnus});
+    // PRH:n yrityshaku ei kata kaikkia yhdistyksiä. Ei koskaan hyväksytä
+    // väärää PRH-osumaa yhdistyksen tiliksi, vaan käytetään lähteistettyä nimeä.
+    if (opts?.allowSourcedAssociations && isSourcedAssociationCandidate(c)) {
+      const existing=existingAssociationAccount(c.name,c.domain);
+      if (existing || acceptedThisRun.some(a=>normalizeCompanyName(a.tf_name)===normalizeCompanyName(c.name))) {
+        rejectedOut.push({name:c.name,reason:'Jo CRM:ssä tai tässä erässä — ei luoda duplikaattia'}); continue;
+      }
+      const exactPrh=verify.accepted && normalizeCompanyName(verify.data.tf_name)===normalizeCompanyName(c.name);
+      if (!exactPrh) verify={accepted:true,data:sourcedAssociationForm(c),matchedName:c.name,matchScore:null};
+    }
     if (!verify.accepted) { rejectedOut.push({name:c.name, reason:verify.reason}); continue; }
     if (checkDuplicateAccount(verify.data.tf_ytunnus, acceptedThisRun)) {
       rejectedOut.push({name:c.name, reason:'Duplikaatti — yritys on jo CRM:ssä tai tässä erässä'});
@@ -8799,7 +8839,7 @@ async function runChatGptImportBatch(candidates, opts) {
   for (const chunk of chunks) {
     if (chatGptImportCancelled) break;
     try {
-      const created=await verifyAndCreateCandidatesChunk(chunk, opts, acceptedThisRun, rejected,
+      const created=await verifyAndCreateCandidatesChunk(chunk, {...opts,allowSourcedAssociations:true}, acceptedThisRun, rejected,
         name=>{
           processedCount++;
           const fm=fuzzyMatchExisting(name);
