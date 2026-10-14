@@ -8370,9 +8370,9 @@ function isSourcedAssociationCandidate(c) {
   const domain=String(c.domain||'').trim().toLowerCase().replace(/^https?:\/\//,'').replace(/\/.*$/,'');
   const sources=[...(Array.isArray(c.company_sources)?c.company_sources:[]),
     ...(Array.isArray(c.sources)?c.sources:[]), c.source_company, c.source_contact].filter(Boolean);
-  const association=/\\b(ry|rf)\\b/i.test(name) || /\\b(yhdistys|liitto)\\b/i.test(name);
-  return association && /^[a-z0-9.-]+\\.[a-z]{2,}$/.test(domain) &&
-    sources.some(url=>{ try { const host=new URL(url).hostname.toLowerCase().replace(/^www\\./,''); return host===domain || host.endsWith('.'+domain); } catch { return false; } });
+  const association=/\b(ry|rf)\b/i.test(name) || /\b(yhdistys|liitto)\b/i.test(name);
+  return association && /^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain) &&
+    sources.some(url=>{ try { const host=new URL(url).hostname.toLowerCase().replace(/^www\./,''); return host===domain || host.endsWith('.'+domain); } catch { return false; } });
 }
 function sourcedAssociationForm(c) {
   return {tf_name:String(c.name||'').trim(), tf_ytunnus:'',
@@ -8383,10 +8383,10 @@ function sourcedAssociationForm(c) {
 }
 function existingAssociationAccount(name, domain) {
   const normalized=normalizeCompanyName(name);
-  const host=String(domain||'').toLowerCase().replace(/^https?:\/\//,'').replace(/\/.*$/,'').replace(/^www\\./,'');
+  const host=String(domain||'').toLowerCase().replace(/^https?:\/\//,'').replace(/\/.*$/,'').replace(/^www\./,'');
   return allProspects.find(p=>{
     const sameName=normalizeCompanyName(p.yritys_nimi)===normalized;
-    const oldHost=String(p.www||p.verkkosivu||'').toLowerCase().replace(/^https?:\/\//,'').replace(/\/.*$/,'').replace(/^www\\./,'');
+    const oldHost=String(p.www||p.verkkosivu||'').toLowerCase().replace(/^https?:\/\//,'').replace(/\/.*$/,'').replace(/^www\./,'');
     return sameName || (host && oldHost===host);
   });
 }
@@ -8396,7 +8396,9 @@ async function verifyAndCreateCandidatesChunk(rawCandidates, opts, acceptedThisR
   for (const c of rawCandidates) {
     if (shouldCancel && shouldCancel()) break;
     if (onCandidate) onCandidate(c.name);
-    let verify=await verifyCandidateAgainstYtj({name:c.name, city:c.city, yTunnusHint:c.y_tunnus});
+    let verify=opts?.allowSourcedAssociations && isSourcedAssociationCandidate(c)
+      ? {accepted:false,reason:'Järjestö tarkistetaan omasta lähteestä'}
+      : await verifyCandidateAgainstYtj({name:c.name, city:c.city, yTunnusHint:c.y_tunnus});
     // PRH:n yrityshaku ei kata kaikkia yhdistyksiä. Ei koskaan hyväksytä
     // väärää PRH-osumaa yhdistyksen tiliksi, vaan käytetään lähteistettyä nimeä.
     if (opts?.allowSourcedAssociations && isSourcedAssociationCandidate(c)) {
