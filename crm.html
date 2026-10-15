@@ -1427,7 +1427,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-16.3';
+const BUILD_ID = '2026-10-16.4';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -7076,7 +7076,7 @@ function dashKpisClassicHtml(openSum, openN, st, conv) {
   return kpi('Avoin potentiaali',fmtEur(openSum),'var(--blue)',openN+' avointa keissiä')+
     kpi('Toteutunut win rate',fmtPct(conv.winRate),'var(--orange)',conv.closed?conv.won+'/'+conv.closed+' päättyneestä voitettu':'ei vielä päättyneitä kauppoja')+
     kpi('Odotetut voitot',fmtCountEstimate(conv.expectedWins),'var(--purple)',openN+' × '+fmtPct(conv.winRate))+
-    kpi('Historiapohjainen ennuste',fmtEur(conv.historicalForecast),'var(--orange)','avoin potentiaali × win rate')+
+    kpi('Ennuste',fmtEur(conv.historicalForecast),'var(--orange)','avoin potentiaali × win rate')+
     kpi('Voitetut',String(st['Sopimus syntynyt'].n),'var(--green)',fmtEur(st['Sopimus syntynyt'].sum))+
     kpi('Hävityt / Ei juuri nyt',String(st['Ei juuri nyt'].n),'var(--red)',fmtEur(st['Ei juuri nyt'].sum));
 }
@@ -7089,7 +7089,7 @@ function dashKpisSparaHtml(openSum, openN, st, conv) {
   return kpi('Avoin potentiaali',fmtEur(openSum),false,openN+' avointa keissiä')+
     kpi('Toteutunut win rate',fmtPct(conv.winRate),false,conv.closed?conv.won+'/'+conv.closed+' päättyneestä voitettu':'ei vielä päättyneitä kauppoja')+
     kpi('Odotetut voitot',fmtCountEstimate(conv.expectedWins),false,openN+' × '+fmtPct(conv.winRate))+
-    kpi('Historiapohjainen ennuste',fmtEur(conv.historicalForecast),false,'avoin potentiaali × win rate')+
+    kpi('Ennuste',fmtEur(conv.historicalForecast),false,'avoin potentiaali × win rate')+
     kpi('Voitetut',String(st['Sopimus syntynyt'].n),false,fmtEur(st['Sopimus syntynyt'].sum))+
     kpi('Hävityt / Ei juuri nyt',String(st['Ei juuri nyt'].n),true,fmtEur(st['Ei juuri nyt'].sum));
 }
@@ -7102,17 +7102,23 @@ function dashboardRecurringRevenueStats(st,conv) {
 function dashboardRecurringKpisHtml(theme,st,conv) {
   const r=dashboardRecurringRevenueStats(st,conv);
   if(theme==='spara') {
+    // val EI enää kanna /v- tai /kk-päätettä (poistettu käyttäjän pyynnöstä —
+    // "jättikokoiset €/v ja €/kk" isossa lihavoidussa arvossa näyttivät
+    // kömpelöiltä/tönköiltä, ks. myös card-value/spara-kpi-num:n overflow-
+    // wrap-korjaus samasta syystä). Yksikkö käy ilmi jo otsikosta (Avoin
+    // ARR/MRR, ARR-ennuste) ja sub-tekstistä — ei kadonnut tietoa, vain
+    // vähemmän toistoa isossa fontissa.
     const kpi=(label,val,sub)=>`<div class="spara-kpi-cell"><span class="spara-kpi-eyebrow">${label}</span><div class="spara-kpi-num">${val}</div><div class="spara-kpi-sub">${sub}</div></div>`;
-    return kpi('Avoin ARR',fmtEur(r.openArr)+'/v','avoin jatkuva vuosilaskutus')+
-      kpi('Avoin MRR',fmtEur(r.openMrr)+'/kk','ARR ÷ 12')+
-      kpi('ARR-ennuste',fmtEur(r.forecastArr)+'/v','avoin ARR × win rate')+
-      kpi('Voitettu ARR',fmtEur(r.wonArr)+'/v','MRR '+fmtEur(r.wonMrr)+'/kk');
+    return kpi('Avoin ARR',fmtEur(r.openArr),'avoin jatkuva vuosilaskutus')+
+      kpi('Avoin MRR',fmtEur(r.openMrr),'ARR ÷ 12')+
+      kpi('ARR-ennuste',fmtEur(r.forecastArr),'avoin ARR × win rate')+
+      kpi('Voitettu ARR',fmtEur(r.wonArr),'MRR '+fmtEur(r.wonMrr)+'/kk');
   }
   const kpi=(label,val,sub)=>`<div class="card"><div class="card-label">${label}</div><div class="card-value" style="color:var(--purple)">${val}</div><div style="font-size:10px;color:var(--text2);margin-top:2px">${sub}</div></div>`;
-  return kpi('Avoin ARR',fmtEur(r.openArr)+'/v','avoin jatkuva vuosilaskutus')+
-    kpi('Avoin MRR',fmtEur(r.openMrr)+'/kk','ARR ÷ 12')+
-    kpi('ARR-ennuste',fmtEur(r.forecastArr)+'/v','avoin ARR × win rate')+
-    kpi('Voitettu ARR',fmtEur(r.wonArr)+'/v','MRR '+fmtEur(r.wonMrr)+'/kk');
+  return kpi('Avoin ARR',fmtEur(r.openArr),'avoin jatkuva vuosilaskutus')+
+    kpi('Avoin MRR',fmtEur(r.openMrr),'ARR ÷ 12')+
+    kpi('ARR-ennuste',fmtEur(r.forecastArr),'avoin ARR × win rate')+
+    kpi('Voitettu ARR',fmtEur(r.wonArr),'MRR '+fmtEur(r.wonMrr)+'/kk');
 }
 
 // Jaettu datalaskenta (segmentointi vaiheittain per projekti) — vain
