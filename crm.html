@@ -1427,7 +1427,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-16.2';
+const BUILD_ID = '2026-10-16.3';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -3985,6 +3985,33 @@ async function fetchSentEmails(address, token) {
 function normalizedEmailAddress(value) {
   return String(value||'').trim().toLowerCase();
 }
+// Sama aikaikkuna koskee sekä mediaseurannan että Inboxista nostettujen
+// viestien Signaalit-jonoa. Saapuneesta viestistä säilytetään lisäksi oma
+// sähköpostitiketin merkintä; tämä rinnakkaismerkintä on vain käsittelyjonoa
+// varten ja poistuu jonosta normaalilla signaaliTila-kuittauksella.
+const HERO_SIGNAALI_PAIVAT=14;
+function ensureIncomingEmailSignal(acts,message,contactId,ticketId) {
+  if (!message?.id || acts.some(a=>a.tyyppi==='signaali_paivitys' && a.emailGraphId===message.id)) return false;
+  const receivedAt=Date.parse(message.ts||message.receivedDateTime||'');
+  if (!Number.isFinite(receivedAt) || receivedAt<Date.now()-HERO_SIGNAALI_PAIVAT*86400000) return false;
+  const contact=allContacts.find(c=>c.id===contactId);
+  const contactLabel=(contact?.nimi||contact?.sahkoposti||'').trim();
+  const subject=(message.subject||'(ei aihetta)').trim();
+  const preview=String(message.bodyText||message.bodyPreview||'').replace(/\s+/g,' ').trim().slice(0,240);
+  acts.push({
+    tyyppi:'signaali_paivitys',
+    teksti:`Saapunut sähköposti${contactLabel?' kontaktilta '+contactLabel:''}: ${subject}${preview?' — '+preview:''}`,
+    created_at:message.ts||message.receivedDateTime||new Date().toISOString(),
+    contactId:contactId||null,
+    emailSignal:true,
+    emailGraphId:message.id,
+    emailTicketId:ticketId||null,
+    emailSubject:subject,
+    emailPreview:preview,
+    emailWebLink:message.webLink||null
+  });
+  return true;
+}
 function inboxSyncStorageKey() {
   return 'suppilo.inboxLastSync.'+normalizedEmailAddress(microsoftAccount?.username||currentUserEmail||'unknown');
 }
@@ -4025,12 +4052,19 @@ async function syncInboxRepliesOnLogin(token) {
   allContacts.forEach(c=>{ const email=normalizedEmailAddress(c.sahkoposti); if(email) contactsByEmail.set(email,[...(contactsByEmail.get(email)||[]),c]); });
   const prospectById=new Map(allProspects.map(p=>[p.spara_id,p]));
   const actsByProspect=new Map();
-  const byConversation=new Map(), byCode=new Map(), knownGraphIds=new Set();
+  const byConversation=new Map(), byCode=new Map(), knownGraphIds=new Set(), knownEmailRefs=new Map();
   allProspects.forEach(p=>{
     const acts=parseActs(p); actsByProspect.set(p.spara_id,acts);
     acts.forEach(a=>{
-      if(a.graphId) knownGraphIds.add(a.graphId);
-      (a.thread||[]).forEach(t=>{ if(t.graphId) knownGraphIds.add(t.graphId); });
+      if(a.graphId) {
+        knownGraphIds.add(a.graphId);
+        if(a.tyyppi==='sahkoposti') knownEmailRefs.set(a.graphId,{p,ticket:a});
+      }
+      (a.thread||[]).forEach(t=>{
+        if(!t.graphId) return;
+        knownGraphIds.add(t.graphId);
+        if(a.tyyppi==='sahkoposti') knownEmailRefs.set(t.graphId,{p,ticket:a});
+      });
       if(a.tyyppi!=='sahkoposti'||!a.id) return;
       const ref={p,a};
       if(a.conversationId) byConversation.set(a.conversationId,ref);
@@ -4038,9 +4072,20 @@ async function syncInboxRepliesOnLogin(token) {
     });
   });
   const touched=new Set();
-  let linked=0,added=0;
+  let linked=0,added=0,signaled=0;
   for (const m of messages) {
-    if(!m.id||knownGraphIds.has(m.id)) continue;
+    if(!m.id) continue;
+    if(knownGraphIds.has(m.id)) {
+      // Ensimmäinen julkaisu täydentää myös viimeisten 14 päivän jo
+      // synkronoidut saapuneet viestit Signaalit-jonoon. emailGraphId tekee
+      // tästä idempotentin: seuraava kirjautuminen ei lisää toista riviä.
+      const known=knownEmailRefs.get(m.id);
+      const knownActs=known&&actsByProspect.get(known.p.spara_id);
+      if(knownActs && ensureIncomingEmailSignal(knownActs,m,known.ticket.contactId,known.ticket.id)) {
+        touched.add(known.p.spara_id); signaled++;
+      }
+      continue;
+    }
     let ref=m.conversationId?byConversation.get(m.conversationId):null;
     if(!ref) {
       const code=((m.subject||'')+' '+(m.bodyText||'')).match(/\[([A-Z]{2}-[A-Z0-9]{4,6})\]/)?.[1];
@@ -4059,6 +4104,7 @@ async function syncInboxRepliesOnLogin(token) {
     const contactId=ref?.a?.contactId||matchedContact?.id||'';
     if(!p||!contactId) continue; // Tuntemattomat lähettäjät kuuluvat myöhempään liidiominaisuuteen.
     const acts=actsByProspect.get(p.spara_id)||parseActs(p);
+    let emailTicket=null;
     if(ref) {
       const ticket=ref.a;
       ticket.thread=ticket.thread||[];
@@ -4066,6 +4112,7 @@ async function syncInboxRepliesOnLogin(token) {
         preview:truncateEmailBody(m.bodyText),webLink:m.webLink||null});
       if(ticket.tila==='Toimitettu'||ticket.tila==='Ajastettu') ticket.tila='Uusi';
       ticket.done=false; ticket.completed_at=null; ticket.updated_at=m.ts||new Date().toISOString();
+      emailTicket=ticket;
       linked++;
     } else {
       const ticket={id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,6),tyyppi:'sahkoposti',
@@ -4075,8 +4122,10 @@ async function syncInboxRepliesOnLogin(token) {
         thread:[{dir:'in',graphId:m.id,ts:m.ts,subject:m.subject,preview:truncateEmailBody(m.bodyText),webLink:m.webLink||null}]};
       acts.push(ticket);
       if(ticket.conversationId) byConversation.set(ticket.conversationId,{p,a:ticket});
+      emailTicket=ticket;
       added++;
     }
+    if(ensureIncomingEmailSignal(acts,m,contactId,emailTicket?.id)) signaled++;
     knownGraphIds.add(m.id); touched.add(p.spara_id);
   }
   // Ensin vastaus CRM:ään, sitten muistutusten peruutukset. Jos kumpi
@@ -4098,7 +4147,7 @@ async function syncInboxRepliesOnLogin(token) {
   }
   localStorage.setItem(inboxSyncStorageKey(),new Date().toISOString());
   if(touched.size) { updateSummary(); applyFilters(); renderDashboard(); }
-  return {checked:messages.length,linked,added,cancelled};
+  return {checked:messages.length,linked,added,signaled,cancelled};
 }
 let loginInboxSyncPromise=null;
 async function syncInboxThenProcessReminders() {
@@ -4250,6 +4299,11 @@ async function syncContactEmails(contactId, opts) {
       // osoitteeseen, ja jokaisesta syntyi tyhjä roskatehtävä
       // (cleanupOrphanSentEmailEntries() siivoaa nekin jos joku vanha
       // pääsisi tästä huolimatta läpi).
+      if (m.dir==='in') {
+        const emailTicket=acts.find(a=>a.tyyppi==='sahkoposti' &&
+          (a.graphId===m.id || (a.thread||[]).some(item=>item.graphId===m.id)));
+        ensureIncomingEmailSignal(acts,m,contactId,emailTicket?.id);
+      }
     });
     if (linked || added) {
       p.aktiviteetit=JSON.stringify(acts);
@@ -10056,7 +10110,6 @@ async function deleteEmailTemplate(id) {
 // Kuinka monta päivää taaksepäin "Uudet signaalit" -kuvake ja sen modal
 // katsovat — sama aikaikkuna molemmissa, jotta luku vastaa aina listan
 // pituutta.
-const HERO_SIGNAALI_PAIVAT=14;
 function newSignalActivities() {
   const cutoff=new Date(Date.now()-HERO_SIGNAALI_PAIVAT*86400000).toISOString().substring(0,10);
   const rows=[];
@@ -10070,7 +10123,8 @@ function newSignalActivities() {
       // relevantiksi, ks. setSignalTila) eivät enää näy "uudet signaalit"
       // -listalla — tämä ON koko "listan tyhjennys" -mekanismi, ei erillinen
       // poisto-toiminto joka poistaisi itse historiamerkinnän.
-      if (a.tyyppi==='signaali_paivitys' && a.teksti && a.teksti.startsWith('Uusi signaali') &&
+      const isQueueSignal=a.teksti && (a.teksti.startsWith('Uusi signaali') || a.emailSignal===true);
+      if (a.tyyppi==='signaali_paivitys' && isQueueSignal &&
           a.created_at && a.created_at.substring(0,10)>=cutoff && !a.signaaliTila) rows.push({p,a,sourceIndex});
     });
   });
@@ -10205,7 +10259,9 @@ function renderHeroSignaalit() {
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" onclick="markSignalRead('${p.spara_id}',${sourceIndex})">✓ Kuittaa luetuksi</button>
         <button class="btn btn-ghost btn-sm" onclick="dismissSignalNotRelevant('${p.spara_id}',${sourceIndex})">✕ Ei relevantti</button>
-        <button class="btn btn-outlook btn-sm" onclick="acknowledgeAndEmailSignal('${p.spara_id}',${sourceIndex})">✉️ Kuittaa ja luo viesti</button>
+        ${a.emailSignal
+          ? `<button class="btn btn-outlook btn-sm" onclick="acknowledgeAndOpenIncomingEmail('${p.spara_id}',${sourceIndex})">📨 Kuittaa ja avaa viesti</button>`
+          : `<button class="btn btn-outlook btn-sm" onclick="acknowledgeAndEmailSignal('${p.spara_id}',${sourceIndex})">✉️ Kuittaa ja luo viesti</button>`}
       </div>
     </div>`).join('');
   return clearBtn+items;
@@ -10249,6 +10305,21 @@ async function acknowledgeAndEmailSignal(tiliId, sourceIndex) {
   closeHeroModal(); updateSummary();
   openEmailComposer({tiliId, subject:`${p.yritys_nimi} – ${p.kampanja||'yhteydenotto'}`,
     openerText:`Huomasin äskettäin: ${signalText}`});
+}
+async function acknowledgeAndOpenIncomingEmail(tiliId, sourceIndex) {
+  const p=allProspects.find(x=>x.spara_id===tiliId); if (!p) return;
+  const a=parseActs(p)[sourceIndex];
+  if (!a || a.tyyppi!=='signaali_paivitys' || !a.emailSignal) return;
+  const webLink=a.emailWebLink;
+  // Avataan välilehti suoraan käyttäjän klikkauksesta ennen await-kohtaa,
+  // jotta mobiili- ja työpöytäselainten ponnahdusikkunaesto ei torju sitä.
+  const emailWindow=webLink?window.open(webLink,'_blank','noopener'):null;
+  if (!(await setSignalTila(tiliId,sourceIndex,'luettu'))) {
+    if(emailWindow) emailWindow.close();
+    return;
+  }
+  closeHeroModal(); updateSummary();
+  if (!webLink) openModal(tiliId);
 }
 // "Tyhjennä lista": kuittaa KAIKKI juuri nyt näkyvät signaalit luetuiksi
 // yhdellä klikkauksella sen sijaan että jokainen pitäisi käydä läpi erikseen.
