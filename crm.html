@@ -129,7 +129,7 @@
       #tab-kanban .kb-pf-wrap,#tab-kanban .kb-sf-wrap { width:100%; }
       #tab-kanban .kb-pf-wrap > button,#tab-kanban .kb-sf-wrap > button { width:100%;min-width:0;justify-content:space-between; }
       #tab-kanban .kb-pf-panel,#tab-kanban .kb-sf-panel { left:0;right:0;width:100%;min-width:0;max-width:none;max-height:52vh;max-height:52dvh; }
-      #tab-kanban .kb-ready-sort { width:100%; }
+      #tab-kanban .kb-action-sort { width:100%; }
       #email-modal .email-reminder-grid { grid-template-columns:1fr; }
       .info-grid { grid-template-columns:1fr; }
       .info-block,.info-block.full { grid-column:1/-1; }
@@ -563,7 +563,12 @@
     .kc-comm-bar.pending{background:var(--bg);border-color:var(--border);}
     .kc-comm-bar.cancelled{background:transparent;border-style:dashed;opacity:.55;}
     .kc-comm-bar.overdue{background:var(--red);border-color:var(--red);}
-    .kb-ready-sort{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);cursor:pointer;white-space:nowrap;}
+    .kc-next-action{display:flex;align-items:center;gap:6px;margin-top:7px;padding:5px 7px;border-radius:7px;font-size:10px;font-weight:700;border:1px solid var(--border);background:var(--bg2);color:var(--text);}
+    .kc-next-action.reply{border-color:var(--orange);background:color-mix(in srgb,var(--orange) 14%,var(--bg2));}
+    .kc-next-action.call{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 14%,var(--bg2));}
+    .kc-next-action.fix{border-color:var(--red);background:color-mix(in srgb,var(--red) 14%,var(--bg2));color:var(--red);}
+    .kc-next-action.wait{font-weight:500;color:var(--text2);}
+    .kb-action-sort{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);cursor:pointer;white-space:nowrap;}
     .dot-A{background:var(--red);} .dot-B{background:var(--orange);}
 
     /* Kanban — Spara-teema (korjattu). Jokainen kanban-, kcard-, kc- ja
@@ -1011,9 +1016,9 @@
         <button type="button" class="btn btn-ghost btn-sm" id="kb-sf-btn" aria-haspopup="true" aria-expanded="false" onclick="toggleKanbanSegmenttiFilter(event)">Segmentit: Kaikki ▾</button>
         <div class="kb-sf-panel hidden" id="kb-sf-panel" onclick="event.stopPropagation()"></div>
       </div>
-      <label class="kb-ready-sort" title="Näytä ensin tapaukset, joissa ei odoteta ajastetun viestin lähetystä">
-        <input type="checkbox" id="kb-ready-first" onchange="toggleKanbanReadyFirst(this.checked)">
-        Ei odottavia viestejä ensin
+      <label class="kb-action-sort" title="Nosta vastausta, soittoa tai viestijonon korjausta odottavat tapaukset sarakkeen kärkeen">
+        <input type="checkbox" id="kb-action-first" onchange="toggleKanbanActionFirst(this.checked)">
+        Toimenpiteitä odottavat ensin
       </label>
     </div>
     <div class="kanban" id="kanban-board"></div>
@@ -1427,7 +1432,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-16.4';
+const BUILD_ID = '2026-10-16.5';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -5525,10 +5530,14 @@ function nearestTask(p){return parseActs(p).map(normalizeTask).filter(a=>a.due_d
 // natiivi <select> sallii vain yhden valinnan kerrallaan, joten se
 // korvattiin pudotuspaneelilla jossa on valintaruutu per projekti.
 let kanbanProjektiFilter = new Set();
-let kanbanReadyFirst=localStorage.getItem('suppiloKanbanReadyFirst')==='1';
-function toggleKanbanReadyFirst(checked) {
-  kanbanReadyFirst=!!checked;
-  localStorage.setItem('suppiloKanbanReadyFirst',kanbanReadyFirst?'1':'0');
+// Uusi avain tarkoituksella: aiemman "ei odottavia viestejä" -valinnan
+// semantiikka oli eri ja oletus pois päältä. Ohjaavan työjonon pitää olla
+// heti käytössä kaikille, joten vain käyttäjän nimenomainen poisvalinta
+// ('0') poistaa uuden priorisoinnin.
+let kanbanActionFirst=localStorage.getItem('suppiloKanbanActionFirst')!=='0';
+function toggleKanbanActionFirst(checked) {
+  kanbanActionFirst=!!checked;
+  localStorage.setItem('suppiloKanbanActionFirst',kanbanActionFirst?'1':'0');
   renderKanban();
 }
 
@@ -5622,46 +5631,100 @@ function getAllKaupat(filterSet) {
 }
 
 function communicationProgress(p) {
-  const emails=parseActs(p).filter(a=>a.tyyppi==='sahkoposti').sort((a,b)=>
+  const acts=parseActs(p);
+  const emails=acts.filter(a=>a.tyyppi==='sahkoposti').sort((a,b)=>
     String(b.updated_at||b.completed_at||b.created_at||'').localeCompare(String(a.updated_at||a.completed_at||a.created_at||'')));
-  const email=emails[0]||null;
+  // Uusin SAAPUNUT vastaus ei saa vaihtaa mittarin pohjaksi väärää tikettiä
+  // ja näyttää sarjaa 0/3:na. Valitaan uusin oikea reminder-sarja tilin
+  // jonoriveistä ja vasta sen puuttuessa uusin sähköpostitiketti.
+  const seriesByTicket=new Map();
+  reminderQueue.filter(r=>r.tili_id===p.spara_id && r.ticket_id).forEach(r=>{
+    if(!seriesByTicket.has(r.ticket_id)) seriesByTicket.set(r.ticket_id,[]);
+    seriesByTicket.get(r.ticket_id).push(r);
+  });
+  const series=[...seriesByTicket.entries()].map(([ticketId,rows])=>({ticketId,rows,
+    ts:Math.max(...rows.map(r=>Date.parse(r.original_sent_at||r.created_at||'')||0))
+  })).sort((a,b)=>b.ts-a.ts)[0]||null;
+  const email=(series?emails.find(a=>a.id===series.ticketId):null)||emails[0]||null;
   const now=Date.now();
   let originalState='idle';
   if (email) {
     const scheduledAt=Date.parse(email.scheduledSendAt||'');
     if (email.tila==='Ajastettu' && Number.isFinite(scheduledAt) && scheduledAt>now) originalState='pending';
-    else if (email.tila==='Toimitettu'||email.done||(email.tila==='Ajastettu'&&Number.isFinite(scheduledAt)&&scheduledAt<=now)) originalState='sent';
+    else if ((email.thread||[]).some(item=>item.dir==='out') || email.tila==='Toimitettu'||email.done||
+      (email.tila==='Ajastettu'&&Number.isFinite(scheduledAt)&&scheduledAt<=now)) originalState='sent';
   }
-  const rows=email?.id?reminderRowsForTicket(email.id):[];
-  const states=[originalState,1,2].map((item,index)=>{
-    if (index===0) return originalState;
-    const row=rows.find(r=>Number(r.order)===item);
+  const rows=(series?.rows||(email?.id?reminderRowsForTicket(email.id):[]))
+    .slice().sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0));
+  const reminderOrders=rows.length?[1,2]:[];
+  const states=[originalState,...reminderOrders.map(order=>{
+    const row=rows.find(r=>Number(r.order)===order);
     const status=String(row?.status||'').toLowerCase();
     if (['sent','delivered','toimitettu'].includes(status)) return 'sent';
     if (['failed','error'].includes(status)) return 'overdue';
     if (['cancelled','canceled','peruttu'].includes(status)) return 'cancelled';
     if (['pending','processing','queued','scheduled','ajastettu'].includes(status)) {
-      // Erääntynyt: eräpäivä on jo mennyt mutta processOverdueReminders() ei
-      // ole vielä ehtinyt/onnistunut käsittelemään riviä seuraavalla
-      // kirjautumisella. Ilman tätä erottelua kaikki "vain ensimmäinen
-      // viesti lähtenyt" -kortit näyttivät TÄSMÄLLEEN samalta riippumatta
-      // siitä oliko +3/+10 pv -muistutus vielä aikataulussa vai jumissa —
-      // käyttäjä ei voinut Kanbania silmäilemällä erottaa näitä kahta
-      // tilannetta toisistaan ("näyttää siltä ettei yhtään muistutusta
-      // olisi lähetetty"). 'processing' ei koskaan erääntynyt — tausta-ajo
-      // on jo ottanut sen käsittelyyn juuri nyt.
       return (status!=='processing' && row?.due_at && Date.parse(row.due_at)<now) ? 'overdue' : 'pending';
     }
     return 'idle';
-  });
-  return {delivered:states.filter(x=>x==='sent').length,total:3,
-    hasPending:states.includes('pending')||states.includes('overdue'),states};
+  })];
+  const nextReminder=rows.filter(r=>['pending','processing','queued','scheduled','ajastettu'].includes(String(r.status||'').toLowerCase()))
+    .sort((a,b)=>(Date.parse(a.due_at)||Infinity)-(Date.parse(b.due_at)||Infinity))[0]||null;
+  const hasWaiting=states.includes('pending');
+  const hasProblem=states.includes('overdue');
+  return {delivered:states.filter(x=>x==='sent').length,total:states.length,
+    hasPending:hasWaiting||hasProblem,hasWaiting,hasProblem,
+    seriesComplete:originalState==='sent'&&!hasWaiting&&!hasProblem,
+    nextReminderAt:nextReminder?.due_at||null,states};
 }
 function communicationProgressHtml(progress) {
   const alert=progress.states.includes('overdue');
   return `<div class="kc-comm"${alert?' style="color:var(--red)"':''}>✉️ ${progress.delivered}/${progress.total} toimitettu${alert?' · erääntynyt':''}
     <div class="kc-comm-bars" aria-label="Viestinnän vaihe ${progress.delivered}/${progress.total}">${progress.states.map(state=>`<span class="kc-comm-bar ${state}"></span>`).join('')}</div>
   </div>`;
+}
+
+function latestEmailDirections(acts) {
+  let latestIn=0,latestOut=0;
+  acts.filter(a=>a.tyyppi==='sahkoposti').forEach(a=>{
+    const thread=a.thread||[];
+    if(thread.length) thread.forEach(item=>{
+      const ts=Date.parse(item.ts||a.updated_at||a.created_at||'')||0;
+      if(item.dir==='in') latestIn=Math.max(latestIn,ts);
+      if(item.dir==='out') latestOut=Math.max(latestOut,ts);
+    });
+    else {
+      const ts=Date.parse(a.updated_at||a.completed_at||a.created_at||'')||0;
+      if(String(a.teksti||'').startsWith('Saapunut:')) latestIn=Math.max(latestIn,ts);
+      else if(a.tila==='Toimitettu'||a.done) latestOut=Math.max(latestOut,ts);
+    }
+  });
+  return {latestIn,latestOut};
+}
+function kanbanNextAction(p,task,progress) {
+  if(task.tila!=='Sovi tapaaminen') return null;
+  const acts=parseActs(p);
+  const directions=latestEmailDirections(acts);
+  if(directions.latestIn>directions.latestOut) return {kind:'reply',rank:0,icon:'↩️',label:'Vastaa sähköpostiin'};
+  if(progress.hasProblem) return {kind:'fix',rank:1,icon:'⚠️',label:'Korjaa erääntynyt viesti'};
+  const openCall=acts.filter(a=>a.tyyppi==='soitto'&&!taskIsDone(a)).sort((a,b)=>
+    String(a.due_date||'9999').localeCompare(String(b.due_date||'9999')))[0]||null;
+  const today=new Date().toISOString().slice(0,10);
+  if(openCall && (!openCall.due_date||openCall.due_date<=today)) return {kind:'call',rank:2,icon:'📞',label:openCall.aihe||'Soita asiakkaalle'};
+  if(progress.hasWaiting) return {kind:'wait',rank:4,icon:'⏳',
+    label:progress.nextReminderAt?'Seuraava viesti '+fmtDateShort(progress.nextReminderAt):'Viestisarja odottaa'};
+  // Kun asiakas on jo vastannut ja myyjä on vastannut takaisin, ei soiteta
+  // heti perään: seuraava järkevä tila on asiakkaan uuden vastauksen odotus.
+  if(directions.latestIn&&directions.latestOut>directions.latestIn)
+    return {kind:'wait',rank:4,icon:'⏳',label:'Odottaa asiakkaan vastausta'};
+  if(openCall) return {kind:'wait',rank:4,icon:'📅',label:`Soitto ${fmtDateShort(openCall.due_date)}`};
+  if(progress.seriesComplete||progress.delivered>0)
+    return {kind:'call',rank:2,icon:'📞',label:'Viestisarja valmis — soita'};
+  return {kind:'call',rank:2,icon:'📞',label:'Soita tai sovi seuraava askel'};
+}
+function kanbanNextActionHtml(action) {
+  if(!action) return '';
+  return `<div class="kc-next-action ${action.kind}"><span>${action.icon}</span><span>${esc(action.label)}</span></div>`;
 }
 
 function kanbanCardHtml(k) {
@@ -5671,6 +5734,7 @@ function kanbanCardHtml(k) {
   return `<div class="kcard" draggable="true" data-sid="${p.spara_id}" data-task-id="${task.id}" onclick="openKauppa('${p.spara_id}','${task.id}')">
         <div class="kc-name"><span class="kc-prio dot-${p.prioriteetti||'B'}"></span>${esc(p.yritys_nimi)} – ${esc(task.aihe||'–')}</div>
         <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--green);font-weight:700">Kerta ${fmtEur(arvo)}</span>`:''}${arr?`<br><span style="color:var(--green);font-weight:700">ARR ${fmtEur(arr)}/v · MRR ${fmtEur(arr/12)}/kk</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
+        ${kanbanNextActionHtml(k.nextAction)}
         ${communicationProgressHtml(k.comm||communicationProgress(p))}
       </div>`;
 }
@@ -5684,6 +5748,7 @@ function kanbanCardSparaHtml(k) {
   return `<div class="kcard" draggable="true" data-sid="${p.spara_id}" data-task-id="${task.id}" onclick="openKauppa('${p.spara_id}','${task.id}')">
         <div class="kc-name"><span class="kc-prio dot-${p.prioriteetti||'B'}"></span>${esc(p.yritys_nimi)} – ${esc(task.aihe||'–')}</div>
         <div class="kc-meta">${p.segmentti?esc(p.segmentti):''}${p.kaupunki?' · '+esc(p.kaupunki):''}${arvo?`<br><span style="color:var(--spara-ink);font-weight:700">Kerta ${fmtEur(arvo)}</span>`:''}${arr?`<br><span style="color:var(--spara-ink);font-weight:700">ARR ${fmtEur(arr)}/v · MRR ${fmtEur(arr/12)}/kk</span>`:''}${p['yhteyshenkilö']?'<br>'+esc(p['yhteyshenkilö']):''}</div>
+        ${kanbanNextActionHtml(k.nextAction)}
         ${communicationProgressHtml(k.comm||communicationProgress(p))}
       </div>`;
 }
@@ -5701,7 +5766,7 @@ function kanbanColSparaHtml(v, cards, colSum, colArr) {
 
 function renderKanban() {
   applyDashboardThemeAttr();
-  const readyToggle=document.getElementById('kb-ready-first'); if (readyToggle) readyToggle.checked=kanbanReadyFirst;
+  const actionToggle=document.getElementById('kb-action-first'); if (actionToggle) actionToggle.checked=kanbanActionFirst;
   // Segmentti- ja hakusuodatus jatkosuodattavat Projektit-valinnan JÄLKEEN
   // — getAllKaupat palauttaa jo projektien mukaan rajatun listan, nämä vain
   // karsivat siitä lisää. Hakukenttä käyttää samoja kenttiä joita kortti
@@ -5719,9 +5784,12 @@ function renderKanban() {
   board.innerHTML='';
   const theme=dashboardTheme();
   VAIHEET.forEach(v => {
-    let cards=kaupat.filter(k=>k.task.tila===v).map(k=>({...k,comm:communicationProgress(k.p)}));
-    if (kanbanReadyFirst) cards=cards.map((k,index)=>({...k,_sortIndex:index})).sort((a,b)=>
-      Number(a.comm.hasPending)-Number(b.comm.hasPending)||a._sortIndex-b._sortIndex);
+    let cards=kaupat.filter(k=>k.task.tila===v).map(k=>{
+      const comm=communicationProgress(k.p);
+      return {...k,comm,nextAction:kanbanNextAction(k.p,k.task,comm)};
+    });
+    if (kanbanActionFirst) cards=cards.map((k,index)=>({...k,_sortIndex:index})).sort((a,b)=>
+      (a.nextAction?.rank??9)-(b.nextAction?.rank??9)||a._sortIndex-b._sortIndex);
     const colSum=cards.reduce((s,k)=>s+(Number(k.task.arvo)||0),0);
     const colArr=cards.reduce((s,k)=>s+(Number(k.task.arr)||0),0);
     const col=document.createElement('div'); col.className='kanban-col';
