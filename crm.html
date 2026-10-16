@@ -1432,7 +1432,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-16.5';
+const BUILD_ID = '2026-10-16.6';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -5333,6 +5333,11 @@ const VAIHE_TN={'Tietojenkeruu':.05,'Kontaktoi':.20,'Sovi tapaaminen':.40,'Tarjo
 const VAIHE_AVOIN=['Tietojenkeruu','Kontaktoi','Sovi tapaaminen','Tarjous työn alla'];
 function normalizeKauppaVaihe(v) { return VAIHE_LEGACY[v] || v || 'Tietojenkeruu'; }
 const fmtEur=n=>Math.round(n).toLocaleString('fi-FI')+' €';
+// Sama pyöristys/tuhaterotin kuin fmtEur mutta ilman €-merkkiä — isoille
+// KPI-lukemille, joissa € siirretään pikkuotsikkoon ettei ison fontin
+// arvo riko/rivitä omaa korttiaan (ks. dashKpisClassicHtml/SparaHtml,
+// dashboardRecurringKpisHtml, heroTileValues).
+const fmtEurNum=n=>Math.round(n).toLocaleString('fi-FI');
 function kauppaStats(){
   const st={}; VAIHEET.forEach(v=>st[v]={n:0,sum:0,arr:0});
   allProspects.forEach(p=>parseActs(p).forEach(a=>{
@@ -7141,10 +7146,10 @@ function dashKpisClassicHtml(openSum, openN, st, conv) {
   const kpi=(label,val,color,sub)=>`<div class="card"><div class="card-label">${label}</div>
     <div class="card-value" style="color:${color}">${val}</div>
     ${sub?`<div style="font-size:10px;color:var(--text2);margin-top:2px">${sub}</div>`:''}</div>`;
-  return kpi('Avoin potentiaali',fmtEur(openSum),'var(--blue)',openN+' avointa keissiä')+
+  return kpi('Avoin potentiaali (€)',fmtEurNum(openSum),'var(--blue)',openN+' avointa keissiä')+
     kpi('Toteutunut win rate',fmtPct(conv.winRate),'var(--orange)',conv.closed?conv.won+'/'+conv.closed+' päättyneestä voitettu':'ei vielä päättyneitä kauppoja')+
     kpi('Odotetut voitot',fmtCountEstimate(conv.expectedWins),'var(--purple)',openN+' × '+fmtPct(conv.winRate))+
-    kpi('Ennuste',fmtEur(conv.historicalForecast),'var(--orange)','avoin potentiaali × win rate')+
+    kpi('Ennuste (€)',fmtEurNum(conv.historicalForecast),'var(--orange)','avoin potentiaali × win rate')+
     kpi('Voitetut',String(st['Sopimus syntynyt'].n),'var(--green)',fmtEur(st['Sopimus syntynyt'].sum))+
     kpi('Hävityt / Ei juuri nyt',String(st['Ei juuri nyt'].n),'var(--red)',fmtEur(st['Ei juuri nyt'].sum));
 }
@@ -7154,10 +7159,10 @@ function dashKpisSparaHtml(openSum, openN, st, conv) {
   const kpi=(label,val,quiet,sub)=>`<div class="spara-kpi-cell"><span class="spara-kpi-eyebrow">${label}</span>
     <div class="spara-kpi-num${quiet?' is-quiet':''}">${val}</div>
     ${sub?`<div class="spara-kpi-sub">${sub}</div>`:''}</div>`;
-  return kpi('Avoin potentiaali',fmtEur(openSum),false,openN+' avointa keissiä')+
+  return kpi('Avoin potentiaali (€)',fmtEurNum(openSum),false,openN+' avointa keissiä')+
     kpi('Toteutunut win rate',fmtPct(conv.winRate),false,conv.closed?conv.won+'/'+conv.closed+' päättyneestä voitettu':'ei vielä päättyneitä kauppoja')+
     kpi('Odotetut voitot',fmtCountEstimate(conv.expectedWins),false,openN+' × '+fmtPct(conv.winRate))+
-    kpi('Ennuste',fmtEur(conv.historicalForecast),false,'avoin potentiaali × win rate')+
+    kpi('Ennuste (€)',fmtEurNum(conv.historicalForecast),false,'avoin potentiaali × win rate')+
     kpi('Voitetut',String(st['Sopimus syntynyt'].n),false,fmtEur(st['Sopimus syntynyt'].sum))+
     kpi('Hävityt / Ei juuri nyt',String(st['Ei juuri nyt'].n),true,fmtEur(st['Ei juuri nyt'].sum));
 }
@@ -7170,23 +7175,22 @@ function dashboardRecurringRevenueStats(st,conv) {
 function dashboardRecurringKpisHtml(theme,st,conv) {
   const r=dashboardRecurringRevenueStats(st,conv);
   if(theme==='spara') {
-    // val EI enää kanna /v- tai /kk-päätettä (poistettu käyttäjän pyynnöstä —
-    // "jättikokoiset €/v ja €/kk" isossa lihavoidussa arvossa näyttivät
-    // kömpelöiltä/tönköiltä, ks. myös card-value/spara-kpi-num:n overflow-
-    // wrap-korjaus samasta syystä). Yksikkö käy ilmi jo otsikosta (Avoin
-    // ARR/MRR, ARR-ennuste) ja sub-tekstistä — ei kadonnut tietoa, vain
-    // vähemmän toistoa isossa fontissa.
+    // val EI kanna €-merkkiä eikä /v- tai /kk-päätettä (poistettu käyttäjän
+    // pyynnöstä — isossa lihavoidussa fontissa ne näyttivät kömpelöiltä ja
+    // rivittyivät omalle rivilleen). Yksikkö on nyt sen sijaan pikkuotsikon
+    // perässä suluissa ("Avoin ARR (€)", kuukausiluvuilla "(€/kk)") — ei
+    // kadonnut tietoa, vain pois ison fontin kortista.
     const kpi=(label,val,sub)=>`<div class="spara-kpi-cell"><span class="spara-kpi-eyebrow">${label}</span><div class="spara-kpi-num">${val}</div><div class="spara-kpi-sub">${sub}</div></div>`;
-    return kpi('Avoin ARR',fmtEur(r.openArr),'avoin jatkuva vuosilaskutus')+
-      kpi('Avoin MRR',fmtEur(r.openMrr),'ARR ÷ 12')+
-      kpi('ARR-ennuste',fmtEur(r.forecastArr),'avoin ARR × win rate')+
-      kpi('Voitettu ARR',fmtEur(r.wonArr),'MRR '+fmtEur(r.wonMrr)+'/kk');
+    return kpi('Avoin ARR (€)',fmtEurNum(r.openArr),'avoin jatkuva vuosilaskutus')+
+      kpi('Avoin MRR (€/kk)',fmtEurNum(r.openMrr),'ARR ÷ 12')+
+      kpi('ARR-ennuste (€)',fmtEurNum(r.forecastArr),'avoin ARR × win rate')+
+      kpi('Voitettu ARR (€)',fmtEurNum(r.wonArr),'MRR '+fmtEur(r.wonMrr)+'/kk');
   }
   const kpi=(label,val,sub)=>`<div class="card"><div class="card-label">${label}</div><div class="card-value" style="color:var(--purple)">${val}</div><div style="font-size:10px;color:var(--text2);margin-top:2px">${sub}</div></div>`;
-  return kpi('Avoin ARR',fmtEur(r.openArr),'avoin jatkuva vuosilaskutus')+
-    kpi('Avoin MRR',fmtEur(r.openMrr),'ARR ÷ 12')+
-    kpi('ARR-ennuste',fmtEur(r.forecastArr),'avoin ARR × win rate')+
-    kpi('Voitettu ARR',fmtEur(r.wonArr),'MRR '+fmtEur(r.wonMrr)+'/kk');
+  return kpi('Avoin ARR (€)',fmtEurNum(r.openArr),'avoin jatkuva vuosilaskutus')+
+    kpi('Avoin MRR (€/kk)',fmtEurNum(r.openMrr),'ARR ÷ 12')+
+    kpi('ARR-ennuste (€)',fmtEurNum(r.forecastArr),'avoin ARR × win rate')+
+    kpi('Voitettu ARR (€)',fmtEurNum(r.wonArr),'MRR '+fmtEur(r.wonMrr)+'/kk');
 }
 
 // Jaettu datalaskenta (segmentointi vaiheittain per projekti) — vain
@@ -10220,7 +10224,7 @@ function heroTileValues() {
     sijoitus: null,
     tehtavat: computeTopTasks().length,
     prospektit: allProspects.length,
-    putki: fmtEur(VAIHE_AVOIN.reduce((s,v)=>s+st[v].sum,0))
+    putki: fmtEurNum(VAIHE_AVOIN.reduce((s,v)=>s+st[v].sum,0))
   };
 }
 function updateSummary() {
@@ -10257,7 +10261,7 @@ function heroClassicHtml(v) {
   <div class="hero-tile" onclick="openHeroModal('putki')">
     <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9M9.5 19V5M15 19v-7M20 19V11"/></svg></div>
     <div class="hero-tile-value" id="hero-putki">${v.putki}</div>
-    <div class="hero-tile-label">Myyntiputki</div>
+    <div class="hero-tile-label">Myyntiputki (€)</div>
   </div>`;
 }
 // Uusi epäsymmetrinen hero: "Odottaa reagointia" on aina se luku josta
@@ -10290,7 +10294,7 @@ function heroSparaHtml(v) {
       <div class="spara-hero-mini" onclick="openHeroModal('putki')">
         <div class="spara-hero-mini-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9M9.5 19V5M15 19v-7M20 19V11"/></svg></div>
         <div class="spara-hero-mini-num" id="hero-putki">${v.putki}</div>
-        <div class="spara-hero-mini-label">Myyntiputki</div>
+        <div class="spara-hero-mini-label">Myyntiputki (€)</div>
       </div>
     </div>
   </div>`;
