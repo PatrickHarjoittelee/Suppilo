@@ -720,6 +720,8 @@
     @media(max-width:900px){.dash-grid{grid-template-columns:1fr;}}
     .dash-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;}
     .dash-section-title{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;font-weight:600;}
+
+    .timeline-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.timeline-toolbar button{background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 10px;cursor:pointer}.timeline-chart{display:flex;align-items:stretch;gap:5px;height:185px;overflow-x:auto;border-bottom:1px solid var(--border)}.timeline-day{flex:1;min-width:30px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px}.timeline-stack{width:75%;max-width:45px;height:145px;display:flex;flex-direction:column-reverse;justify-content:flex-start}.timeline-segment{width:100%;min-height:0}.timeline-label{font-size:10px;color:var(--text2)}.timeline-legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;font-size:11px}.timeline-legend span::before{content:'● ';color:var(--legend-color)}
     .activity-kpi-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-bottom:16px;}
     .activity-kpi{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;min-width:0;}
     .activity-kpi-value{font-size:20px;font-weight:700;color:var(--text);}
@@ -1432,7 +1434,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-16.6';
+const BUILD_ID = '2026-10-26.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -7291,7 +7293,7 @@ function dashboardShellClassicHtml() {
     <div class="dash-section-title">Jatkuva laskutus</div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px" id="dash-recurring-kpis"></div>
     <div class="dash-section-title">Aktiviteetit</div>
-    <div class="activity-kpi-grid" id="dash-activity-kpis"></div>
+    <div class="activity-kpi-grid" id="dash-activity-kpis"></div><div class="dash-section" style="margin-bottom:16px"><div class="dash-section-title">Aktiviteettien aikajana</div><div id="dash-activity-timeline"></div></div>
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px">
       <div class="dash-section-title">Myyntiputki – kaupat vaiheittain</div>
       <div class="pipeline-row" id="dash-pipeline"></div>
@@ -7316,7 +7318,7 @@ function dashboardShellSparaHtml() {
     <div class="spara-section-title">Jatkuva laskutus</div>
     <div class="spara-kpi-row" id="dash-recurring-kpis"></div>
     <div class="spara-section-title">Aktiviteetit</div>
-    <div class="activity-kpi-grid" id="dash-activity-kpis"></div>
+    <div class="activity-kpi-grid" id="dash-activity-kpis"></div><div class="dash-section" style="margin-bottom:16px"><div class="dash-section-title">Aktiviteettien aikajana</div><div id="dash-activity-timeline"></div></div>
     <div class="spara-section-title">Myyntiputki vaiheittain</div>
     <div class="spara-funnel" id="dash-pipeline"></div>
     <div class="spara-dash-split">
@@ -7341,6 +7343,48 @@ function dashboardShellSparaHtml() {
 // (dash-kpis/dash-recurring-kpis/dash-activity-kpis/dash-pipeline/dash-upcoming/dash-projects), minkä ansiosta
 // loppuosa tästä funktiosta — ja erityisesti renderDashboardUpcoming():in
 // sivutuslogiikka — ei tarvitse mitään teematietoisuutta ollenkaan.
+
+let timelineOffset=0, timelinePeriod='week';
+function timelineNavigate(delta){timelineOffset+=delta;renderActivityTimeline();}
+function timelineSetPeriod(period){timelinePeriod=period;timelineOffset=0;renderActivityTimeline();}
+function timelineDateKey(value){
+  if(!value)return null;
+  const d=new Date(value);
+  if(!Number.isFinite(d.getTime()))return null;
+  return new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Helsinki',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
+}
+function renderActivityTimeline(){
+  const el=document.getElementById('dash-activity-timeline');if(!el)return;
+  const now=new Date(),helsinkiToday=timelineDateKey(now),start=new Date(helsinkiToday+'T12:00:00');
+  if(timelinePeriod==='week'){start.setDate(start.getDate()-(start.getDay()+6)%7+timelineOffset*7);}
+  else{start.setDate(1);start.setMonth(start.getMonth()+timelineOffset);}
+  const end=new Date(start);
+  if(timelinePeriod==='week')end.setDate(end.getDate()+7);else end.setMonth(end.getMonth()+1);
+  const days=[];
+  for(let d=new Date(start);d<end;d.setDate(d.getDate()+1))days.push({key:timelineDateKey(d),date:new Date(d),counts:[0,0,0,0]});
+  const byKey=new Map(days.map(d=>[d.key,d]));
+  const add=(value,idx)=>{const day=byKey.get(timelineDateKey(value));if(day)day.counts[idx]++;};
+  allProspects.forEach(p=>{
+    const acts=parseActs(p);
+    const deals=acts.filter(a=>a.tyyppi==='kauppa');
+    // Kaupan syntyminen lasketaan kauppa-aktiviteetin aikaleimasta, ei tilin muokkausajasta.
+    deals.forEach(a=>add(a.created_at||p.created_at,0));
+    acts.forEach(a=>{
+      if(a.tyyppi==='sahkoposti'&&a.tila==='Toimitettu')add(a.completed_at||a.sent_at||a.created_at,1);
+      if(a.tyyppi==='soitto'&&(a.done===true||a.tila==='Tavoitettu'))add(a.completed_at||a.updated_at||a.created_at,2);
+      if(a.tyyppi==='muu'&&(a.done===true||a.tila==='Valmis'))add(a.completed_at||a.updated_at||a.created_at,3);
+    });
+  });
+  reminderQueue.forEach(r=>{if(['sent','delivered','toimitettu'].includes(String(r.status||'').toLowerCase()))add(r.sent_at||r.sentAt,1);});
+  const colors=['#42A5F5','#4CAF50','#FFA726','#AB47BC'],labels=['Uudet kaupat','Lähetetyt sähköpostit','Tehdyt puhelut','Muut valmiit tehtävät'];
+  const totals=[0,0,0,0];days.forEach(d=>d.counts.forEach((n,i)=>totals[i]+=n));
+  const max=Math.max(1,...days.map(d=>d.counts.reduce((a,b)=>a+b,0)));
+  const title=days.length?days[0].date.toLocaleDateString('fi-FI',{day:'numeric',month:'numeric'})+' – '+days[days.length-1].date.toLocaleDateString('fi-FI',{day:'numeric',month:'numeric',year:'numeric'}):'';
+  el.innerHTML='<div class="timeline-toolbar"><button onclick="timelineNavigate(-1)">‹</button><strong>'+title+'</strong><button onclick="timelineNavigate(1)">›</button><button onclick="timelineSetPeriod(\'week\')">Viikko</button><button onclick="timelineSetPeriod(\'month\')">Kuukausi</button><button onclick="timelineSetPeriod(\'week\')">Tämä viikko</button></div>'+
+    '<div class="timeline-chart">'+days.map(d=>'<div class="timeline-day" title="'+d.date.toLocaleDateString('fi-FI')+' — '+labels.map((x,i)=>x+': '+d.counts[i]).join(', ')+'"><div class="timeline-stack">'+d.counts.map((n,i)=>'<div class="timeline-segment" style="height:'+(n/max*145)+'px;background:'+colors[i]+'"></div>').join('')+'</div><div class="timeline-label">'+d.date.getDate()+'.</div></div>').join('')+'</div>'+
+    '<div class="timeline-legend">'+labels.map((x,i)=>'<span style="--legend-color:'+colors[i]+'">'+x+': <b>'+totals[i]+'</b></span>').join('')+'</div>';
+}
+
 function renderDashboard() {
   applyDashboardThemeAttr();
   const theme=dashboardTheme();
@@ -7369,6 +7413,7 @@ function renderDashboard() {
   if (plEl) plEl.innerHTML=pipelineStageHtml();
 
   renderDashboardUpcoming();
+  renderActivityTimeline();
 
   const prEl=document.getElementById('dash-projects');
   if (prEl) prEl.innerHTML=projectDistributionHtml(v=>V_COLORS[v]);
