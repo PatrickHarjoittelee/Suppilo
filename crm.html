@@ -7355,7 +7355,7 @@ function timelineDateKey(value){
 }
 function renderActivityTimeline(){
   const el=document.getElementById('dash-activity-timeline');if(!el)return;
-  const now=new Date(),start=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const now=new Date(),helsinkiToday=timelineDateKey(now),start=new Date(helsinkiToday+'T12:00:00');
   if(timelinePeriod==='week'){start.setDate(start.getDate()-(start.getDay()+6)%7+timelineOffset*7);}
   else{start.setDate(1);start.setMonth(start.getMonth()+timelineOffset);}
   const end=new Date(start);
@@ -7368,11 +7368,11 @@ function renderActivityTimeline(){
     const acts=parseActs(p);
     const deals=acts.filter(a=>a.tyyppi==='kauppa');
     // Kaupan syntyminen lasketaan kauppa-aktiviteetin aikaleimasta, ei tilin muokkausajasta.
-    deals.forEach(a=>add(a.created_at||a.pvm,0));
+    deals.forEach(a=>add(a.created_at||p.created_at,0));
     acts.forEach(a=>{
-      if(a.tyyppi==='sahkoposti'&&a.tila==='Toimitettu')add(a.sent_at||a.created_at,1);
-      if(a.tyyppi==='soitto'&&(a.tila==='Valmis'||a.tila==='Tehty'||a.valmis===true))add(a.completed_at||a.updated_at||a.created_at,2);
-      if(a.tyyppi==='muu'&&(a.tila==='Valmis'||a.tila==='Tehty'||a.valmis===true))add(a.completed_at||a.updated_at||a.created_at,3);
+      if(a.tyyppi==='sahkoposti'&&a.tila==='Toimitettu')add(a.completed_at||a.sent_at||a.created_at,1);
+      if(a.tyyppi==='soitto'&&(a.done===true||a.tila==='Tavoitettu'))add(a.completed_at||a.updated_at||a.created_at,2);
+      if(a.tyyppi==='muu'&&(a.done===true||a.tila==='Valmis'))add(a.completed_at||a.updated_at||a.created_at,3);
     });
   });
   reminderQueue.forEach(r=>{if(['sent','delivered','toimitettu'].includes(String(r.status||'').toLowerCase()))add(r.sent_at||r.sentAt,1);});
