@@ -1,0 +1,6 @@
+{
+  "name": "suppilo-etj-integration-tests",
+  "private": true,
+  "scripts": { "test": "node --test etj-contract.test.cjs" },
+  "dependencies": { "jsdom": "26.1.0" }
+}

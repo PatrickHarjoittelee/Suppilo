@@ -1072,6 +1072,7 @@
     <div class="modal-header">
       <div class="modal-title" id="modal-title">Prospekti</div>
       <div style="display:flex;align-items:center;gap:4px">
+        <button class="btn btn-ghost btn-sm" onclick="openEtjContract(currentId)">ETJ-sopimuslinkki</button>
         <button class="modal-close" onclick="switchToTiedotAndEdit()" title="Muokkaa tilitietoja">✏️</button>
         <button class="modal-close" onclick="closeModal()">✕</button>
       </div>
@@ -1434,7 +1435,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-26.1';
+const BUILD_ID = '2026-10-28.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -10718,6 +10719,7 @@ async function saveGlobalTask() {
     <div class="modal-header">
       <div class="modal-title" id="yhmodal-title">Yhteyshenkilö</div>
       <div style="display:flex;align-items:center;gap:4px">
+        <button class="btn btn-ghost btn-sm" onclick="openEtjContractForContact()">ETJ-sopimuslinkki</button>
         <button class="modal-close" onclick="toggleYhEdit()" title="Muokkaa">✏️</button>
         <button class="modal-close" onclick="closeYhModal()">✕</button>
       </div>
@@ -11264,6 +11266,7 @@ async function saveGlobalTask() {
      scriptinä pääsovelluksen OMAN scriptin jälkeen (ei iframe-erottelua),
      jotta esim. ?import=-syväliike ja muu location.search-pohjainen koodi
      toimii normaalisti samassa dokumentissa. -->
+<script src="etj-contract.js?v=2026-10-28.1"></script>
 <script src="media-seuranta.js?v=2026-09-17.3"></script>
 
 </body>
