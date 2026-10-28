@@ -1317,12 +1317,18 @@
         <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.5">
           Liitä ChatGPT:n tuottama varmennettu prospekti-JSON tähän tai lataa se
           suoraan JSON-tiedostona. Jokainen yritys todennetaan edelleen PRH:n
-          avoimesta yritysrekisteristä ennen tiliä.
+          avoimesta yritysrekisteristä ennen tiliä, ellei alla olevaa ohitusta valita.
           JSON voi sisältää myös kohteen/brändin, segmentin, varmennetun domainin,
           ajantasaiseksi tarkistetun yhteyshenkilön sekä henkilökohtaisen sähköpostin
           lähde- ja varmennustietoineen. Vain <strong>contact_status=verified</strong> ja
           <strong>email_status=verified</strong> -osoite tallennetaan lähetettäväksi sähköpostiksi.
         </div>
+        <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer;background:color-mix(in srgb,var(--orange) 12%,transparent);border:1px solid var(--orange);border-radius:8px;padding:10px 12px;margin-bottom:14px">
+          <input type="checkbox" id="cgpt-skip-prh" style="margin-top:2px">
+          <span><strong>Ohita PRH-tarkistus</strong> — tili luodaan suoraan JSON:n tiedoilla ilman PRH:n
+            yritysrekisterivarmistusta. Käytä vain kun tiedät tiedon olevan oikea (esim. ulkomainen yritys tai
+            PRH:sta muuten puuttuva toimija) — Y-tunnusta ei tällöin tallenneta, koska sitä ei ole varmistettu.</span>
+        </label>
         <div class="form-grid">
           <div class="form-group full"><label>Projekti</label><select class="form-control" id="cgpt-projekti"></select></div>
         </div>
@@ -1435,7 +1441,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-28.1';
+const BUILD_ID = '2026-10-28.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -8733,6 +8739,17 @@ function sourcedAssociationForm(c) {
     tf_www:'https://'+String(c.domain).replace(/^https?:\/\//,'').replace(/\/.*$/,''),
     tf_rekisteroity:''};
 }
+// Käyttäjän eksplisiittisesti valitsema "Ohita PRH-tarkistus" (ks.
+// ChatGPT-tuonnin cgpt-skip-prh) — samalla periaatteella kuin
+// sourcedAssociationForm: tf_ytunnus jätetään aina tyhjäksi, koska sitä ei
+// ole varmistettu PRH:sta, ei arvata ChatGPT:n mahdollisesti antamasta.
+function manualImportForm(c) {
+  return {tf_name:String(c.name||'').trim(), tf_ytunnus:'',
+    tf_yhtiömuoto:'', tf_toimiala:c.segment||'',
+    tf_osoite:'', tf_postinumero:'', tf_kaupunki:c.city||'',
+    tf_www:c.domain?('https://'+String(c.domain).replace(/^https?:\/\//,'').replace(/\/.*$/,'')):'',
+    tf_rekisteroity:''};
+}
 function existingAssociationAccount(name, domain) {
   const normalized=normalizeCompanyName(name);
   const host=String(domain||'').toLowerCase().replace(/^https?:\/\//,'').replace(/\/.*$/,'').replace(/^www\./,'');
@@ -8748,9 +8765,22 @@ async function verifyAndCreateCandidatesChunk(rawCandidates, opts, acceptedThisR
   for (const c of rawCandidates) {
     if (shouldCancel && shouldCancel()) break;
     if (onCandidate) onCandidate(c.name);
-    let verify=opts?.allowSourcedAssociations && isSourcedAssociationCandidate(c)
-      ? {accepted:false,reason:'Järjestö tarkistetaan omasta lähteestä'}
-      : await verifyCandidateAgainstYtj({name:c.name, city:c.city, yTunnusHint:c.y_tunnus});
+    let verify;
+    if (opts?.allowSourcedAssociations && isSourcedAssociationCandidate(c)) {
+      verify={accepted:false,reason:'Järjestö tarkistetaan omasta lähteestä'};
+    } else if (opts?.skipPrhVerification) {
+      // Käyttäjän eksplisiittinen "Ohita PRH-tarkistus" (vain ChatGPT-tuonti,
+      // ks. submitChatGptImportPaste) — ei PRH-kutsua lainkaan, tili
+      // luodaan suoraan JSON:n tiedoilla. Tyhjän nimen tarkistus toistaa
+      // verifyCandidateAgainstYtj:n saman virheviestin, ettei tätä polkua
+      // pitkin pääse luomaan nimetöntä tiliä.
+      const trimmedName=String(c.name||'').trim();
+      verify=trimmedName
+        ? {accepted:true, data:manualImportForm(c), matchedName:trimmedName, matchScore:null}
+        : {accepted:false, reason:'Ei nimeä ehdotuksessa'};
+    } else {
+      verify=await verifyCandidateAgainstYtj({name:c.name, city:c.city, yTunnusHint:c.y_tunnus});
+    }
     // PRH:n yrityshaku ei kata kaikkia yhdistyksiä. Ei koskaan hyväksytä
     // väärää PRH-osumaa yhdistyksen tiliksi, vaan käytetään lähteistettyä nimeä.
     if (opts?.allowSourcedAssociations && isSourcedAssociationCandidate(c)) {
@@ -9400,8 +9430,15 @@ async function handleChatGptImportFile(event) {
 
 function openChatGptImportModal() {
   populateProjektiSelects();
+  // Oletusprojekti nimenomaan ETJ+ tälle tuonnille (muista valitsimista
+  // poiketen, jotka oletuksena jäävät "Muu Projekti" -tasolle, ks.
+  // populateProjektiSelects) — ChatGPT-tuonti on käytännössä aina ETJ+.
+  const etjSel=document.getElementById('cgpt-projekti');
+  const etjNimi=baseProjektiNimi('BASE_ETJ_PLUS');
+  if (etjSel && [...etjSel.options].some(o=>o.value===etjNimi)) etjSel.value=etjNimi;
   document.getElementById('cgpt-paste').value='';
   clearChatGptImportFileSelection();
+  document.getElementById('cgpt-skip-prh').checked=false;
   document.getElementById('cgpt-want-contact').checked=true;
   document.getElementById('cgpt-want-signal').checked=true;
   document.getElementById('cgpt-want-deal').checked=false;
@@ -9425,6 +9462,7 @@ function submitChatGptImportPaste() {
   catch(e) { showToast('Tuonti epäonnistui: '+e.message,'error'); return; }
   const opts={
     kampanja:document.getElementById('cgpt-projekti').value,
+    skipPrhVerification:document.getElementById('cgpt-skip-prh').checked,
     wantContact:document.getElementById('cgpt-want-contact').checked,
     wantSignal:document.getElementById('cgpt-want-signal').checked,
     wantDeal:document.getElementById('cgpt-want-deal').checked,
