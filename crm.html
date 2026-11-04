@@ -1441,7 +1441,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-10-28.2';
+const BUILD_ID = '2026-11-04.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -11241,6 +11241,77 @@ async function saveGlobalTask() {
     return null;
   }
 
+  // Sama haku kuin findMatch(), mutta palauttaa itse tietueet (tili + mahdollinen
+  // yhteyshenkilö), jotta saapuva puhelu voidaan kirjata oikealle tilille ja
+  // oikealle henkilölle. findMatch() jätetään koskemattomaksi, koska sen JSON
+  // on Android-sovelluksen kanssa sovittu sopimus.
+  function findAccountAndContact(rawNumber) {
+    var contact = (allContacts || []).find(function (c) { return numbersMatch(c.puhelin, rawNumber); });
+    if (contact) {
+      var acc = (allProspects || []).find(function (p) { return p.spara_id === contact.tili_id; });
+      return acc ? { account: acc, contact: contact } : null;
+    }
+    var account = (allProspects || []).find(function (p) {
+      return numbersMatch(p.suora_numero, rawNumber) || numbersMatch(p.vaihde_puhelin, rawNumber);
+    });
+    return account ? { account: account, contact: null } : null;
+  }
+
+  // Estää tuplakirjauksen jos sama numero raportoidaan kahdesti lyhyen ajan sisällä.
+  var recentCallLogs = {};
+
+  // Kirjaa päättyneen saapuvan puhelun tilin Tehtävät-listaan "Soitto"-
+  // tehtävänä (sama rakenne kuin addTask()/soitaNyt() luo, mutta ei vaadi
+  // avattua modaalia eikä lomakkeen kenttiä). Vastattu puhelu → 'Tavoitettu'
+  // (TASK_DONE.soitto, eli tehty), vastaamatta jäänyt → 'Vastaamaton' (jää
+  // avoimeksi seurannaksi). Kommenttikenttään (muistiinpanot) tulee
+  // "Saapuva puhelu". Kutsutaan Android-sovelluksesta puhelun päätyttyä.
+  async function logIncomingCall(rawNumber, answered) {
+    var hit = findAccountAndContact(rawNumber);
+    if (!hit) return null;
+    var p = hit.account;
+    var contactId = hit.contact ? hit.contact.id : null;
+
+    var key = p.spara_id + '|' + (contactId || '') + '|' + (answered ? '1' : '0');
+    var nowMs = Date.now();
+    if (recentCallLogs[key] && nowMs - recentCallLogs[key] < 60000) return null;
+    recentCallLogs[key] = nowMs;
+
+    var now = new Date();
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    var dueDate = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+    var dueTime = pad(now.getHours()) + ':' + pad(now.getMinutes());
+    var tila = answered ? 'Tavoitettu' : 'Vastaamaton';
+    var done = (TASK_DONE.soitto || []).indexOf(tila) >= 0;
+    var createdAt = now.toISOString();
+    var id = 'TK' + Date.now();
+
+    var acts = parseActs(p);
+    acts.push({
+      id: id, tyyppi: 'soitto', tila: tila, aihe: 'Saapuva puhelu', arvo: null, arr: null,
+      tekija: (currentUser && currentUser.nimi) || currentUserEmail || null,
+      muistiinpanot: 'Saapuva puhelu', created_at: createdAt,
+      due_date: dueDate, due_time: dueTime,
+      done: done, completed_at: done ? createdAt : null, contactId: contactId
+    });
+    p.aktiviteetit = JSON.stringify(acts);
+    var near = nearestTask(p);
+    p.seuraava_toimenpide = near ? (near.aihe || near.tyyppi) : null;
+    p.seuraava_pvm = near ? near.due_date : null;
+
+    try {
+      await saveCrmState(p);
+      if (currentId === p.spara_id) { renderTaskList(p); renderActivities(p); }
+      updateSummary(); applyFilters();
+      return id;
+    } catch (e) {
+      delete recentCallLogs[key];
+      if (window.Android && window.Android.log) window.Android.log('logIncomingCall error: ' + e.message);
+      showToast('Saapuvan puhelun kirjaus epäonnistui: ' + e.message, 'error');
+      return null;
+    }
+  }
+
   var pendingCustomerId = null;
 
   window.Spara = {
@@ -11252,6 +11323,15 @@ async function saveGlobalTask() {
         }
       } catch (e) {
         if (window.Android && window.Android.log) window.Android.log('incomingCall error: ' + e.message);
+      }
+    },
+    // Kutsutaan kun saapuva puhelu on päättynyt. answered=true jos puheluun
+    // vastattiin. Kirjaa Soitto-tehtävän tilille, ks. logIncomingCall().
+    incomingCallEnded: function (rawNumber, answered) {
+      try {
+        return logIncomingCall(rawNumber, !!answered);
+      } catch (e) {
+        if (window.Android && window.Android.log) window.Android.log('incomingCallEnded error: ' + e.message);
       }
     },
     openCustomer: function (customerId) {
