@@ -1441,7 +1441,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-11-04.1';
+const BUILD_ID = '2026-11-04.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -5874,6 +5874,22 @@ function openKauppa(sid, taskId) {
   if (!kauppa) kauppa=parseActs(p).find(a=>a.tyyppi==='kauppa'&&!taskIsDone(normalizeTask(a)))
     ||parseActs(p).find(a=>a.tyyppi==='kauppa');
   if (kauppa) editTask(kauppa.id);
+}
+
+// Avaa tilin ja siirtyy sen Tehtävät-välilehdelle; jos taskId annettu ja
+// löytyy, avaa sen tehtävän suoraan muokkaukseen (esim. juuri kirjattu
+// saapuva puhelu, jolle halutaan kirjoittaa keskustelun pääkohdat
+// muistiinpanoihin). Kutsutaan Android-sovelluksen ilmoituksista, ks.
+// window.Spara.openCustomerTasks.
+function openTilinTehtavat(sid, taskId) {
+  openModal(sid);
+  document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.mtab-content').forEach(x=>x.classList.remove('active'));
+  document.querySelector('[data-mt="tehtavat"]')?.classList.add('active');
+  document.getElementById('mt-tehtavat')?.classList.add('active');
+  const p=allProspects.find(x=>x.spara_id===sid); if(!p) return;
+  renderTaskList(p);
+  if (taskId && parseActs(p).some(a=>a.id===taskId)) editTask(taskId);
 }
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
@@ -11303,6 +11319,17 @@ async function saveGlobalTask() {
       await saveCrmState(p);
       if (currentId === p.spara_id) { renderTaskList(p); renderActivities(p); }
       updateSummary(); applyFilters();
+      // Kerro Android-sovellukselle mikä tehtävä luotiin, jotta sen ilmoitus
+      // voi avata juuri tämän tehtävän muistiinpanojen kirjoitusta varten.
+      if (window.Android && window.Android.callLogged) {
+        try {
+          window.Android.callLogged(JSON.stringify({
+            customerId: p.spara_id, taskId: id, company: p.yritys_nimi || null,
+            person: hit.contact ? (hit.contact.nimi || null) : (p['yhteyshenkilö'] || null),
+            answered: !!answered
+          }));
+        } catch (_) { /* ilmoitus on lisäominaisuus, kirjaus on jo tehty */ }
+      }
       return id;
     } catch (e) {
       delete recentCallLogs[key];
@@ -11313,6 +11340,7 @@ async function saveGlobalTask() {
   }
 
   var pendingCustomerId = null;
+  var pendingTasksOpen = null;
 
   window.Spara = {
     incomingCall: function (rawNumber) {
@@ -11332,6 +11360,16 @@ async function saveGlobalTask() {
         return logIncomingCall(rawNumber, !!answered);
       } catch (e) {
         if (window.Android && window.Android.log) window.Android.log('incomingCallEnded error: ' + e.message);
+      }
+    },
+    // Avaa tilin Tehtävät-välilehden (ja halutessa yksittäisen tehtävän
+    // muokkauksen). Android-ilmoitukset kutsuvat tätä. Jos data ei ole vielä
+    // ladattu, toistetaan alla olevassa pollauksessa.
+    openCustomerTasks: function (customerId, taskId) {
+      if (typeof allProspects !== 'undefined' && allProspects.length && typeof openTilinTehtavat === 'function') {
+        openTilinTehtavat(customerId, taskId || null);
+      } else {
+        pendingTasksOpen = { id: customerId, taskId: taskId || null };
       }
     },
     openCustomer: function (customerId) {
@@ -11369,6 +11407,10 @@ async function saveGlobalTask() {
   // Halpa pollaus joka merkitsee vain niinä muutamana sekuntina jolloin
   // openCustomer() kutsuttiin ennen kuin loadData() ehti valmistua.
   setInterval(function () {
+    if (pendingTasksOpen && typeof allProspects !== 'undefined' && allProspects.length) {
+      var po = pendingTasksOpen; pendingTasksOpen = null;
+      if (typeof openTilinTehtavat === 'function') openTilinTehtavat(po.id, po.taskId);
+    }
     if (pendingCustomerId && typeof allProspects !== 'undefined' && allProspects.length) {
       var id = pendingCustomerId; pendingCustomerId = null;
       if (typeof openModal === 'function') openModal(id);
