@@ -11377,7 +11377,10 @@ async function saveGlobalTask() {
       var a = acts[i];
       if (a.tyyppi !== 'soitto' || taskIsDone(normalizeTask(a))) continue;
       if (!a.due_date || a.due_date > today) continue;
-      if (a.contactId && contactId && a.contactId !== contactId) continue;
+      // Henkilökohtainen tehtävä päivitetään vain jos puhelu osui samaan henkilöön;
+      // pelkkään tilin numeroon (vaihde, contactId null) soitettu puhelu ei kuulu
+      // millekään yksittäiselle henkilölle osoitetulle tehtävälle.
+      if (a.contactId && a.contactId !== contactId) continue;
       existing = a; break;
     }
 
@@ -11387,6 +11390,11 @@ async function saveGlobalTask() {
       existing.tila = tila;
       existing.done = done;
       existing.completed_at = done ? createdAt : null;
+      // Sama metatieto kuin updateTaskEdit() asettaa tilamuutoksessa: milloin
+      // päivitetty ja kuka (puhelun soittaja), jotta aikajana/auditointi kertoo
+      // oikein myös vastaamatta jääneestä yrityksestä (completed_at on silloin null).
+      existing.updated_at = createdAt;
+      existing.tekija = tekija;
       if (!existing.muistiinpanot) existing.muistiinpanot = 'Lähtevä puhelu';
       if (!existing.contactId && contactId) existing.contactId = contactId;
     } else {
