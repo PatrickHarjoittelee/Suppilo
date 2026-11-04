@@ -1441,7 +1441,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-11-04.3';
+const BUILD_ID = '2026-11-04.5';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1450,6 +1450,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // (kuvasuhde aina lukittu, näyttää mitat) ohjaa kuvien koon muokkausta.
   try { document.execCommand('enableObjectResizing', false, false); } catch(_) {}
   readImportParamOnLoad();
+  readOpenParamsOnLoad();
 });
 
 // ?import=<encodeURIComponent(JSON.stringify({candidates:[...]}))> —
@@ -1468,6 +1469,24 @@ document.addEventListener('DOMContentLoaded', () => {
 // Google-kirjautuminen joskus valmistuu.
 const IMPORT_URL_MAX_CANDIDATES=3;
 const IMPORT_URL_MAX_RAW_LENGTH=6000; // chat-kuplat/sähköposti/SMS eivät aina kestä paljon pidempää linkkiä
+// ?tili=<spara_id>[&tehtava=<tehtävän id>] — syvälinkki tilin Tehtävät-näkymään
+// (ja halutessa yksittäisen tehtävän muokkaukseen). Android-sovelluksen
+// puheluilmoitus tarjoaa tämän "Avaa selaimessa" -linkkinä. Käyttää samaa
+// window.Spara.openCustomerTasks():ia kuin sovelluksen sisäinen avaus: se
+// odottaa itse että kirjautuminen on valmis ja tilit + tehtävät ladattu, joten
+// tässä ei tarvita omaa pollausta. Parametri poistetaan osoitteesta käytön
+// jälkeen, ettei sivun päivitys avaa samaa tiliä uudelleen.
+function readOpenParamsOnLoad() {
+  try {
+    const q=new URLSearchParams(location.search);
+    const id=(q.get('tili')||'').trim();
+    if (!id || !window.Spara || !window.Spara.openCustomerTasks) return;
+    window.Spara.openCustomerTasks(id, (q.get('tehtava')||'').trim()||null);
+    q.delete('tili'); q.delete('tehtava');
+    const rest=q.toString();
+    history.replaceState(null,'',location.pathname+(rest?'?'+rest:'')+location.hash);
+  } catch(e) { /* syvälinkki on lisäominaisuus — sivu toimii ilman */ }
+}
 let pendingImportPayload=null;
 function readImportParamOnLoad() {
   let raw;
@@ -4949,6 +4968,11 @@ function normalizeTalopakettiPisteet() {
   });
 }
 
+// Asetetaan kun CRM-tilan (aktiviteetit jne.) ensimmäinen haku on sovellettu:
+// loadData() täyttää allProspects:n ENNEN sitä, joten syvälinkit/ilmoitukset
+// (window.Spara.openCustomerTasks) odottavat tätä, ettei tili avaudu tyhjillä
+// tehtävillä eikä päivity enää jälkikäteen.
+let crmStateApplied = false;
 function applyCrmState(crmRows) {
   const map = {};
   crmRows.forEach((row,i) => {
@@ -4993,6 +5017,7 @@ function applyCrmState(crmRows) {
     if (ov.parent_tili_id != null) p.parent_tili_id = ov.parent_tili_id || null;
     if (ov.tili_tyyppi    != null) p.tili_tyyppi    = ov.tili_tyyppi || null;
   });
+  crmStateApplied = true;
 }
 
 async function saveCrmState(p) {
@@ -11445,10 +11470,14 @@ async function saveGlobalTask() {
   // Tehtävät-välilehti ettei pyyntö jää roikkumaan.
   function tasksOpenReady(po) {
     if (typeof allProspects === 'undefined' || !allProspects.length || typeof openTilinTehtavat !== 'function') return false;
+    // CRM-tilan (aktiviteetit) pitää olla ladattu myös ilman taskId:tä —
+    // muuten tili avautuu tyhjällä tehtävälistalla. 20 s jälkeen avataan silti.
+    var timedOut = Date.now() - po.since > 20000;
+    if (typeof crmStateApplied !== 'undefined' && !crmStateApplied && !timedOut) return false;
     if (!po.taskId) return true;
     var acc = allProspects.find(function (x) { return x.spara_id === po.id; });
     if (acc && parseActs(acc).some(function (a) { return a.id === po.taskId; })) return true;
-    return Date.now() - po.since > 20000;
+    return timedOut;
   }
 
   window.Spara = {
