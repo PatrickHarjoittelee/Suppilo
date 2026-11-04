@@ -1441,7 +1441,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-11-04.4';
+const BUILD_ID = '2026-11-04.5';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -4968,6 +4968,11 @@ function normalizeTalopakettiPisteet() {
   });
 }
 
+// Asetetaan kun CRM-tilan (aktiviteetit jne.) ensimmäinen haku on sovellettu:
+// loadData() täyttää allProspects:n ENNEN sitä, joten syvälinkit/ilmoitukset
+// (window.Spara.openCustomerTasks) odottavat tätä, ettei tili avaudu tyhjillä
+// tehtävillä eikä päivity enää jälkikäteen.
+let crmStateApplied = false;
 function applyCrmState(crmRows) {
   const map = {};
   crmRows.forEach((row,i) => {
@@ -5012,6 +5017,7 @@ function applyCrmState(crmRows) {
     if (ov.parent_tili_id != null) p.parent_tili_id = ov.parent_tili_id || null;
     if (ov.tili_tyyppi    != null) p.tili_tyyppi    = ov.tili_tyyppi || null;
   });
+  crmStateApplied = true;
 }
 
 async function saveCrmState(p) {
@@ -11464,10 +11470,14 @@ async function saveGlobalTask() {
   // Tehtävät-välilehti ettei pyyntö jää roikkumaan.
   function tasksOpenReady(po) {
     if (typeof allProspects === 'undefined' || !allProspects.length || typeof openTilinTehtavat !== 'function') return false;
+    // CRM-tilan (aktiviteetit) pitää olla ladattu myös ilman taskId:tä —
+    // muuten tili avautuu tyhjällä tehtävälistalla. 20 s jälkeen avataan silti.
+    var timedOut = Date.now() - po.since > 20000;
+    if (typeof crmStateApplied !== 'undefined' && !crmStateApplied && !timedOut) return false;
     if (!po.taskId) return true;
     var acc = allProspects.find(function (x) { return x.spara_id === po.id; });
     if (acc && parseActs(acc).some(function (a) { return a.id === po.taskId; })) return true;
-    return Date.now() - po.since > 20000;
+    return timedOut;
   }
 
   window.Spara = {
