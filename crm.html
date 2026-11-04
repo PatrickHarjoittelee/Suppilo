@@ -11342,6 +11342,20 @@ async function saveGlobalTask() {
   var pendingCustomerId = null;
   var pendingTasksOpen = null;
 
+  // Onko Tehtävät-näkymän avaus valmis tehtäväksi? loadData() asettaa
+  // allProspects:n ENNEN kuin CRM-välilehden tila (aktiviteetit) on haettu ja
+  // sovellettu (applyCrmState), joten pelkkä "allProspects ei ole tyhjä" ei
+  // riitä: tehtävä ei vielä löytyisi eikä sen muokkausta avattaisi. Odotetaan
+  // siksi että pyydetty tehtävä löytyy; 20 s jälkeen avataan ainakin tilin
+  // Tehtävät-välilehti ettei pyyntö jää roikkumaan.
+  function tasksOpenReady(po) {
+    if (typeof allProspects === 'undefined' || !allProspects.length || typeof openTilinTehtavat !== 'function') return false;
+    if (!po.taskId) return true;
+    var acc = allProspects.find(function (x) { return x.spara_id === po.id; });
+    if (acc && parseActs(acc).some(function (a) { return a.id === po.taskId; })) return true;
+    return Date.now() - po.since > 20000;
+  }
+
   window.Spara = {
     incomingCall: function (rawNumber) {
       try {
@@ -11366,10 +11380,11 @@ async function saveGlobalTask() {
     // muokkauksen). Android-ilmoitukset kutsuvat tätä. Jos data ei ole vielä
     // ladattu, toistetaan alla olevassa pollauksessa.
     openCustomerTasks: function (customerId, taskId) {
-      if (typeof allProspects !== 'undefined' && allProspects.length && typeof openTilinTehtavat === 'function') {
-        openTilinTehtavat(customerId, taskId || null);
+      var po = { id: customerId, taskId: taskId || null, since: Date.now() };
+      if (tasksOpenReady(po)) {
+        openTilinTehtavat(po.id, po.taskId);
       } else {
-        pendingTasksOpen = { id: customerId, taskId: taskId || null };
+        pendingTasksOpen = po;   // toistetaan alla olevassa pollauksessa
       }
     },
     openCustomer: function (customerId) {
@@ -11407,9 +11422,9 @@ async function saveGlobalTask() {
   // Halpa pollaus joka merkitsee vain niinä muutamana sekuntina jolloin
   // openCustomer() kutsuttiin ennen kuin loadData() ehti valmistua.
   setInterval(function () {
-    if (pendingTasksOpen && typeof allProspects !== 'undefined' && allProspects.length) {
+    if (pendingTasksOpen && tasksOpenReady(pendingTasksOpen)) {
       var po = pendingTasksOpen; pendingTasksOpen = null;
-      if (typeof openTilinTehtavat === 'function') openTilinTehtavat(po.id, po.taskId);
+      openTilinTehtavat(po.id, po.taskId);
     }
     if (pendingCustomerId && typeof allProspects !== 'undefined' && allProspects.length) {
       var id = pendingCustomerId; pendingCustomerId = null;
