@@ -1441,7 +1441,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-11-06.2';
+const BUILD_ID = '2026-11-06.3';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -10699,12 +10699,24 @@ async function createTiliFromContactForm(nimi) {
   const kaupunki=(document.getElementById('gc-nt-kaupunki')?.value||'').trim();
   const kampanja=document.getElementById('gc-nt-kampanja')?.value||baseProjektiNimi('BASE_MUU');
   if (!name) { showToast('Yrityksen nimi on pakollinen','error'); return null; }
-  const existing=y_tunnus ? findExistingAccountByBusinessId(y_tunnus) : null;
+  // Luetaan Tilit-välilehden TÄMÄNHETKINEN sisältö ennen duplikaattitarkistusta ja
+  // ID:n varausta, kuten saveNewTili(): toisessa selaimessa/käyttäjällä juuri luotu tili
+  // ei näy tämän sivun vanhentuneessa datassa, ja pelkkä paikallinen tarkistus voisi
+  // luoda Y-tunnuksen duplikaatin tai käyttää uudelleen jo olemassa olevaa ID:tä.
+  let latest;
+  try { latest=parseProspects(await sheetGet(`${MAIN_TAB}!A1:AB`)); }
+  catch(e) { throw new Error('Tilien tarkistus epäonnistui: '+e.message); }
+  let existing=y_tunnus ? findExistingAccountByBusinessId(y_tunnus, latest) : null;
   if (existing) {
+    if (!allProspects.some(p=>p.spara_id===existing.spara_id)) {
+      await loadData();
+      existing=findExistingAccountByBusinessId(y_tunnus)||existing;
+      if (!allProspects.some(p=>p.spara_id===existing.spara_id)) allProspects.push(existing);
+    }
     if (!confirm(`Y-tunnus ${y_tunnus} löytyy jo: ${existing.yritys_nimi}. Lisätäänkö yhteystieto sille?`)) return null;
     return {id:existing.spara_id, created:false};
   }
-  const maxId=allProspects.map(p=>p.spara_id).filter(sid=>/^ID\d+$/.test(sid))
+  const maxId=[...allProspects,...latest].map(p=>p.spara_id).filter(sid=>/^ID\d+$/.test(sid))
     .reduce((max,sid)=>Math.max(max,parseInt(sid.replace('ID',''))),20260119);
   const id='ID'+(maxId+1);
   const nowIso=new Date().toISOString();
@@ -11416,9 +11428,14 @@ async function saveGlobalTask() {
     var near = nearestTask(p);
     p.seuraava_toimenpide = near ? (near.aihe || near.tyyppi) : null;
     p.seuraava_pvm = near ? near.due_date : null;
-    activeIncomingTasks[key] = { accountId: p.spara_id, taskId: id, at: Date.now() };
+    // Tallennuksen lupaus talteen: lyhyen puhelun päättyessä loppupäivitys ketjutetaan
+    // tämän perään (logIncomingCall), jotta kaksi tallennusta ei mene päällekkäin
+    // väärään järjestykseen (esim. 'Uusi' ylikirjoittaisi 'Tavoitettu') eikä
+    // _crmRow:ttomalle tilille synny kahta riviä.
+    var ringSave = saveCrmState(p);
+    activeIncomingTasks[key] = { accountId: p.spara_id, taskId: id, at: Date.now(), saving: ringSave.then(function () {}, function () {}) };
 
-    saveCrmState(p).then(function () {
+    ringSave.then(function () {
       if (currentId === p.spara_id) { renderTaskList(p); renderActivities(p); }
       updateSummary(); applyFilters();
     }).catch(function (e) {
@@ -11459,6 +11476,7 @@ async function saveGlobalTask() {
     // luodaan vain jos sitä ei ole (esim. vanha sovellus ei pyytänyt luomaan sitä soidessa).
     var activeKey = callKey(rawNumber);
     var active = activeIncomingTasks[activeKey];
+    var pendingRingSave = null;
     var ringTask = (active && active.accountId === p.spara_id && Date.now() - active.at < 6 * 60 * 60 * 1000)
       ? acts.find(function (a) { return a.id === active.taskId; }) : null;
     if (ringTask) {
@@ -11468,6 +11486,7 @@ async function saveGlobalTask() {
       ringTask.completed_at = done ? createdAt : null;
       ringTask.updated_at = createdAt;
       ringTask.tekija = tekija;
+      pendingRingSave = active.saving || null;
       delete activeIncomingTasks[activeKey];
       // Jos tehtävän muokkauslomake on auki, pidä sen tila-valinta ajan tasalla —
       // muuten myyjän tallennus palauttaisi tilan 'Uusi'.
@@ -11491,6 +11510,7 @@ async function saveGlobalTask() {
     p.seuraava_pvm = near ? near.due_date : null;
 
     try {
+      if (pendingRingSave) await pendingRingSave;   // soidessa aloitettu tallennus valmiiksi ensin
       await saveCrmState(p);
       if (currentId === p.spara_id) { renderTaskList(p); renderActivities(p); }
       updateSummary(); applyFilters();
