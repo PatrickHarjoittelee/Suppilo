@@ -1441,7 +1441,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-11-06.4';
+const BUILD_ID = '2026-11-06.5';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1683,7 +1683,10 @@ function login()  { tokenClient.requestAccessToken({ prompt: '' }); }
 function logout() {
   closeUserMenu();
   localStorage.removeItem('suppilo.sessionActive');
-  microsoftAccount = null;
+  // Sovelluksessa MSAL:n välimuisti on localStorage (säilyy sovelluksen uudelleenkäynnistyksen
+  // yli) — se on tyhjennettävä uloskirjautuessa, ettei seuraava CRM-käyttäjä pääse edellisen
+  // käyttäjän Outlook-tiliin hiljaisella token-haulla.
+  clearMicrosoftCache();
   if (accessToken) google.accounts.oauth2.revoke(accessToken, ()=>{});
   accessToken = null;
   document.getElementById('app').style.display = 'none';
@@ -1701,6 +1704,21 @@ function isAndroidApp() {
 }
 function microsoftClientId() {
   return (localStorage.getItem('suppilo.microsoftClientId') || '').trim();
+}
+// Poistaa MSAL:n tallentaman Outlook-tilin ja tokenit sekä nollaa muistissa olevan tilan.
+// MSAL v2 tallentaa avaimia sekä "msal."-etuliitteellä että tili-/token-avaimina jotka
+// sisältävät ympäristön (login.windows.net / login.microsoftonline.com) tai clientId:n.
+// Client ID -asetus (suppilo.microsoftClientId) ja muut CRM-asetukset jätetään ennalleen.
+function clearMicrosoftCache() {
+  const cid=microsoftClientId();
+  const isMsalKey=k=>k.indexOf('msal.')===0 || (cid && k.indexOf(cid)!==-1 && k!=='suppilo.microsoftClientId')
+    || k.indexOf('-login.windows.net-')!==-1 || k.indexOf('-login.microsoftonline.com-')!==-1;
+  [localStorage, sessionStorage].forEach(store=>{
+    try { Object.keys(store).filter(isMsalKey).forEach(k=>store.removeItem(k)); } catch(_) {}
+  });
+  try { msalInstance && msalInstance.clearCache && msalInstance.clearCache(); } catch(_) {}
+  msalInstance=null; microsoftAccount=null; msalInstanceKey=null;
+  try { updateMicrosoftStatus(); } catch(_) {}
 }
 
 // Azure AD hylkää /common-päätepisteen sovelluksilta jotka on rekisteröity
