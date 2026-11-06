@@ -1441,7 +1441,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-11-06.1';
+const BUILD_ID = '2026-11-06.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -1480,6 +1480,14 @@ function readOpenParamsOnLoad() {
   try {
     const q=new URLSearchParams(location.search);
     const id=(q.get('tili')||'').trim();
+    const uusi=(q.get('uusi_yhteystieto')||'').trim();
+    if (uusi && window.Spara && window.Spara.openNewContact) {
+      window.Spara.openNewContact(uusi);
+      q.delete('uusi_yhteystieto');
+      const restNew=q.toString();
+      history.replaceState(null,'',location.pathname+(restNew?'?'+restNew:'')+location.hash);
+      return;
+    }
     if (!id || !window.Spara || !window.Spara.openCustomerTasks) return;
     window.Spara.openCustomerTasks(id, (q.get('tehtava')||'').trim()||null);
     q.delete('tili'); q.delete('tehtava');
@@ -10655,34 +10663,94 @@ function closeQuickAdd() { const m=document.getElementById('quick-add-menu'); if
 document.addEventListener('click', ()=>{ closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter(); closeEmailToPicker(); closeBulkSegmenttiFilter(); });
 
 // ── Global Add Contact ────────────────────────────────────────────────────────
-function openGlobalContact() {
+const GC_NEW_TILI='__new__';
+// prefill (valinnainen): {puhelin, nimi} — esim. Android-sovelluksen "Tallenna yhteystiedoksi"
+// -painike täyttää tuntemattoman soittajan numeron valmiiksi.
+function openGlobalContact(prefill) {
   const sel=document.getElementById('gc-tili');
   const sorted=[...allProspects].sort((a,b)=>(a.yritys_nimi||'').localeCompare(b.yritys_nimi||'','fi'));
-  sel.innerHTML=sorted.map(p=>`<option value="${p.spara_id}">${esc(p.yritys_nimi)}</option>`).join('');
-  ['gc-nimi','gc-titteli','gc-puhelin','gc-sahkoposti','gc-linkedin'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  // "Luo uusi tili" on ensimmäinen ja oletusvalinta
+  sel.innerHTML=`<option value="${GC_NEW_TILI}">➕ Luo uusi tili</option>`+sorted.map(p=>`<option value="${p.spara_id}">${esc(p.yritys_nimi)}</option>`).join('');
+  sel.value=GC_NEW_TILI;
+  ['gc-nimi','gc-titteli','gc-puhelin','gc-sahkoposti','gc-linkedin','gc-nt-nimi','gc-nt-ytunnus','gc-nt-kaupunki'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const kSel=document.getElementById('gc-nt-kampanja');
+  if (kSel) {
+    kSel.innerHTML=allProjektitNimet().map(n=>`<option>${esc(n)}</option>`).join('');
+    const def=baseProjektiNimi('BASE_MUU'); if (def) kSel.value=def;
+  }
+  if (prefill && prefill.puhelin) document.getElementById('gc-puhelin').value=prefill.puhelin;
+  if (prefill && prefill.nimi) document.getElementById('gc-nimi').value=prefill.nimi;
+  onGcTiliChange();
   document.getElementById('addcontact-modal').classList.remove('hidden');
+}
+function onGcTiliChange() {
+  const isNew=document.getElementById('gc-tili')?.value===GC_NEW_TILI;
+  const box=document.getElementById('gc-newtili'); if (box) box.style.display=isNew?'':'none';
 }
 function closeGlobalContact() { document.getElementById('addcontact-modal').classList.add('hidden'); }
 function closeGlobalContactMaybe(e) { if(e.target===document.getElementById('addcontact-modal')) closeGlobalContact(); }
+// Kevyt tilin luonti yhteystiedon lomakkeelta: vain nimi, Y-tunnus, kaupunki ja
+// projekti (muut tiedot täydennetään tilin omalla lomakkeella). Sama rivirakenne ja
+// samat jälkitoimet (rivi täsmälliseen paikkaan sheetPutilla, Tietojenkeruu-kauppa,
+// vaihe) kuin saveNewTili():ssä; Y-tunnuksen duplikaatti käytetään olemassa olevaa tiliä.
+async function createTiliFromContactForm(nimi) {
+  const name=(document.getElementById('gc-nt-nimi')?.value||'').trim();
+  const y_tunnus=(document.getElementById('gc-nt-ytunnus')?.value||'').trim();
+  const kaupunki=(document.getElementById('gc-nt-kaupunki')?.value||'').trim();
+  const kampanja=document.getElementById('gc-nt-kampanja')?.value||baseProjektiNimi('BASE_MUU');
+  if (!name) { showToast('Yrityksen nimi on pakollinen','error'); return null; }
+  const existing=y_tunnus ? findExistingAccountByBusinessId(y_tunnus) : null;
+  if (existing) {
+    if (!confirm(`Y-tunnus ${y_tunnus} löytyy jo: ${existing.yritys_nimi}. Lisätäänkö yhteystieto sille?`)) return null;
+    return {id:existing.spara_id, created:false};
+  }
+  const maxId=allProspects.map(p=>p.spara_id).filter(sid=>/^ID\d+$/.test(sid))
+    .reduce((max,sid)=>Math.max(max,parseInt(sid.replace('ID',''))),20260119);
+  const id='ID'+(maxId+1);
+  const nowIso=new Date().toISOString();
+  const row=[id,kampanja,'','',name,'','',kaupunki,y_tunnus,'','','','','','','','','','','','','',nimi,'','','','',nowIso];
+  const colA=await sheetGet(`${MAIN_TAB}!A:A`);
+  const rowIndex=colA.length+1;
+  await sheetPut(`${MAIN_TAB}!A${rowIndex}:AB${rowIndex}`,[row]);
+  const p={spara_id:id,kampanja,prioriteetti:null,segmentti:'',yritys_nimi:name,juridinen_yhtio:'',osoite:'',kaupunki,y_tunnus,
+    liikevaihto_meur:null,kulutusarvio_mwh:null,pisteet:null,vaihde_puhelin:null,yleinen_sahkoposti:null,www:'',signaali:null,perustelu:null,
+    velvoiteluokka:null,huomiot:'',kontaktoinnin_tila:null,tulos_seuraava_toimi:null,lahde:'','yhteyshenkilö':nimi,titteli:null,suora_numero:null,
+    henk_sahkoposti:'',linkedin:null,created_at:nowIso,vaihe:null,_isTili:true,_rowIndex:rowIndex,...blankCrm(),avausviesti:null};
+  const kauppa={id:'TK'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
+    tyyppi:'kauppa',tila:'Tietojenkeruu',aihe:kampanja,arvo:0,arr:0,tekija:currentUser.nimi||currentUserEmail||null,muistiinpanot:null,
+    created_at:nowIso,due_date:null,done:false};
+  p.aktiviteetit=JSON.stringify([kauppa]);
+  p.vaihe='Tietojenkeruu';
+  allProspects.push(p);
+  await saveCrmState(p);
+  return {id, created:true, rowIndex};
+}
 async function saveGlobalContact() {
-  const tiliId=document.getElementById('gc-tili')?.value;
+  let tiliId=document.getElementById('gc-tili')?.value;
   const nimi=(document.getElementById('gc-nimi')?.value||'').trim();
   if(!tiliId||!nimi){showToast('Tili ja nimi ovat pakollisia','error');return;}
-  if (contactNameExists(tiliId,nimi) && !confirm(`"${nimi}" on jo lisätty tälle tilille. Lisätäänkö silti toinen samanniminen yhteyshenkilö?`)) return;
-  const id='YH'+Date.now();
-  const row=[id,tiliId,nimi,
-    document.getElementById('gc-titteli')?.value.trim()||'',
-    document.getElementById('gc-puhelin')?.value.trim()||'',
-    document.getElementById('gc-sahkoposti')?.value.trim()||'',
-    document.getElementById('gc-linkedin')?.value.trim()||'',
-    new Date().toISOString()];
+  let createdTili=false;
   try {
+    if (tiliId===GC_NEW_TILI) {
+      const res=await createTiliFromContactForm(nimi);
+      if (!res) return;
+      tiliId=res.id; createdTili=res.created;
+    }
+    if (contactNameExists(tiliId,nimi) && !confirm(`"${nimi}" on jo lisätty tälle tilille. Lisätäänkö silti toinen samanniminen yhteyshenkilö?`)) return;
+    const id='YH'+Date.now();
+    const row=[id,tiliId,nimi,
+      document.getElementById('gc-titteli')?.value.trim()||'',
+      document.getElementById('gc-puhelin')?.value.trim()||'',
+      document.getElementById('gc-sahkoposti')?.value.trim()||'',
+      document.getElementById('gc-linkedin')?.value.trim()||'',
+      new Date().toISOString()];
     const colA=await sheetGet(`${YH_TAB}!A:A`);
     await sheetAppend(`${YH_TAB}!A:H`,[row]);
     allContacts.push({...Object.fromEntries(YH_COLS.map((k,i)=>[k,row[i]])),_rowIndex:colA.length+1});
     closeGlobalContact();
     applyYhFilters();
-    showToast('Yhteystieto lisätty: '+nimi,'success');
+    if (createdTili) { buildSegmentFilter(); updateSummary(); applyFilters(); renderDashboard(); openModal(tiliId); }
+    showToast(createdTili?`Tili ja yhteystieto lisätty: ${nimi}`:'Yhteystieto lisätty: '+nimi,'success');
   } catch(e){showToast('Virhe: '+e.message,'error');}
 }
 
@@ -10740,7 +10808,18 @@ async function saveGlobalTask() {
     </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-group full"><label>Tili *</label><select class="form-control" id="gc-tili"></select></div>
+        <div class="form-group full"><label>Tili *</label><select class="form-control" id="gc-tili" onchange="onGcTiliChange()"></select></div>
+        <!-- Avautuu kun tiliksi valitaan "Luo uusi tili" — yhteystiedon kenttien yläpuolelle -->
+        <div class="form-group full" id="gc-newtili" style="display:none">
+          <div style="font-size:10px;color:var(--text2);margin:2px 0 8px;font-weight:600;letter-spacing:.5px;text-transform:uppercase">Uusi tili</div>
+          <div class="form-grid">
+            <div class="form-group full"><label>Yrityksen nimi *</label><input class="form-control" id="gc-nt-nimi" placeholder="Yritys Oy"></div>
+            <div class="form-group"><label>Y-tunnus</label><input class="form-control" id="gc-nt-ytunnus" placeholder="1234567-8"></div>
+            <div class="form-group"><label>Kaupunki</label><input class="form-control" id="gc-nt-kaupunki" placeholder="Helsinki"></div>
+            <div class="form-group full"><label>Projekti</label><select class="form-control" id="gc-nt-kampanja"></select></div>
+          </div>
+          <div style="font-size:10px;color:var(--text2);margin:14px 0 0;font-weight:600;letter-spacing:.5px;text-transform:uppercase">Yhteystieto</div>
+        </div>
         <div class="form-group"><label>Nimi *</label><input class="form-control" id="gc-nimi" placeholder="Etunimi Sukunimi"></div>
         <div class="form-group"><label>Titteli / rooli</label><input class="form-control" id="gc-titteli" placeholder="Toimitusjohtaja"></div>
         <div class="form-group"><label>Puhelin</label><input class="form-control" id="gc-puhelin" placeholder="+358 40…" type="tel"></div>
@@ -11532,6 +11611,7 @@ async function saveGlobalTask() {
 
   var pendingCustomerId = null;
   var pendingTasksOpen = null;
+  var pendingNewContact = null;
 
   // Onko Tehtävät-näkymän avaus valmis tehtäväksi? loadData() asettaa
   // allProspects:n ENNEN kuin CRM-välilehden tila (aktiviteetit) on haettu ja
@@ -11602,6 +11682,15 @@ async function saveGlobalTask() {
         if (window.Android && window.Android.log) window.Android.log('outgoingCallEnded error: ' + e.message);
       }
     },
+    // Avaa "Uusi yhteystieto" -lomakkeen numero valmiiksi täytettynä (tuntematon soittaja).
+    // Odottaa että tilit on ladattu, koska lomake listaa ne.
+    openNewContact: function (number) {
+      pendingNewContact = { puhelin: String(number || ''), since: Date.now() };
+      if (typeof allProspects !== 'undefined' && allProspects.length && typeof openGlobalContact === 'function') {
+        var pc = pendingNewContact; pendingNewContact = null;
+        openGlobalContact({ puhelin: pc.puhelin });
+      }
+    },
     openCustomer: function (customerId) {
       if (typeof allProspects !== 'undefined' && allProspects.length && typeof openModal === 'function') {
         openModal(customerId);
@@ -11637,6 +11726,10 @@ async function saveGlobalTask() {
   // Halpa pollaus joka merkitsee vain niinä muutamana sekuntina jolloin
   // openCustomer() kutsuttiin ennen kuin loadData() ehti valmistua.
   setInterval(function () {
+    if (pendingNewContact && typeof allProspects !== 'undefined' && allProspects.length && typeof openGlobalContact === 'function') {
+      var pc2 = pendingNewContact; pendingNewContact = null;
+      openGlobalContact({ puhelin: pc2.puhelin });
+    }
     if (pendingTasksOpen && tasksOpenReady(pendingTasksOpen)) {
       var po = pendingTasksOpen; pendingTasksOpen = null;
       openTilinTehtavat(po.id, po.taskId);
