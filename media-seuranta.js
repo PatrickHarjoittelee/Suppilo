@@ -17,7 +17,7 @@
   // vanhentuneiden otsikoiden kanssa).
   const WATCH_COLS = ['id','nimi','hakusanat','lahteet','alue','min_pisteet','aktiivinen','created_at','updated_at','vaaditut','poissuljetut'];
   const SIGNAL_COLS = ['id','seuranta_id','otsikko','lahde','url','julkaistu_at','deadline','organisaatio','y_tunnus','tili_id','yhteyshenkilo_id','pisteet','tila','tiivistelma','created_at'];
-  const MEDIA_VERSION = '2026-09-17.3';
+  const MEDIA_VERSION = '2026-11-07.1';
 
   let watches = [];
   let signals = [];

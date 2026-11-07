@@ -120,12 +120,18 @@
          samalla spesifisyydellä, joten ilman tätä ne ohittaisivat nämä mobiilisäännöt. */
       .tabs { padding:0 4px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;justify-content:space-between; }
       .tabs::-webkit-scrollbar { display:none; }
-      .tabs .tab { display:flex;align-items:center;justify-content:center;gap:6px;flex:1 1 auto;min-width:0;
+      /* flex:1 0 auto (ei kutistu): välilehdet jakavat ylimääräisen tilan tasan mutta eivät koskaan
+         kutistu sisältöään pienemmiksi — jos rivi ei mahdu (hyvin kapea näyttö, suurennettu
+         tekstikoko, laskurit), se vierii vaakasuunnassa eikä aktiivisen välilehden teksti
+         piirry viereisten kuvakkeiden päälle. */
+      .tabs .tab { display:flex;align-items:center;justify-content:center;gap:6px;flex:1 0 auto;
              padding:11px 6px;font-size:12px;white-space:nowrap; }
       .tabs .tab .tab-ico { display:block; }
       .tabs .tab .tab-label { display:none; }
       .tabs .tab.active .tab-label { display:inline; }
       .tabs .tab .media-kpi-badge { margin-left:0;min-width:16px;height:16px;font-size:9px;padding:0 4px; }
+      /* Kapeimmat puhelimet (~320 px): tiiviimpi täyttö, jotta pisinkin aktiivinen nimi (Yhteyshenkilöt) mahtuu ilman vieritystä */
+      @media (max-width:340px) { .tabs .tab { padding:11px 4px;gap:4px; } }
       main { padding:10px; }
       .toolbar { flex-direction:column;gap:6px; }
       .toolbar input:not([type=checkbox]),.toolbar select { min-width:unset;width:100%; }
@@ -1447,7 +1453,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-11-07.1';
+const BUILD_ID = '2026-11-07.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
