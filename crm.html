@@ -217,8 +217,34 @@
        .summary-bar:in flex-wrap:wrap-arvon rivin 136 perussäännöstä) sen
        sijaan että koko rivi vierisi vaakasuunnassa — ei vaadi omaa
        overflow-x-sääntöä ollenkaan. */
+    /* Lyhyt nimi vain kapeilla näytöillä (täysi nimi työpöydällä). */
+    .hero-tile-label .hl-short{display:none;}
+    .hero-tile-value .hv-short{display:none;}
+    /* Puhelimessa kaikki viisi laattaa yhdellä tiiviillä rivillä (aiemmin 2+2+1 isoa laattaa):
+       pienempi kuvake ja luku, lyhyet nimet. #hero-area-id ohittaa myöhemmin tulevan
+       .summary-bar-säännön (display:flex, padding:14px 24px); Sparan teeman oma
+       [data-dash-theme="spara"] #hero-area -sääntö voittaa tämän, ja sillä teemalla on oma hero. */
     @media(max-width:640px){
-      .hero-tile{flex:1 1 calc(50% - 6px);min-width:0;padding:10px 12px;}
+      #hero-area { display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;padding:8px 10px; }
+      .hero-tile { min-width:0;padding:8px 2px 7px;border-radius:10px; }
+      .hero-tile:hover { transform:none; }
+      .hero-tile-icon { margin-bottom:3px; }
+      .hero-tile-icon svg { width:17px;height:17px; }
+      .hero-tile-value { font-size:15px;line-height:1.15;letter-spacing:-.2px;font-variant-numeric:tabular-nums;white-space:nowrap; }
+      .hero-tile-label { font-size:8px;letter-spacing:.2px;margin-top:2px;line-height:1.15; }
+      .hero-tile-value { overflow:hidden;text-overflow:ellipsis; }   /* varmistus: ei koskaan laatan ulkopuolelle */
+      .hero-tile-value .hv-full { display:none; }
+      .hero-tile-value .hv-short { display:inline; }
+      .hero-tile-label .hl-full { display:none; }
+      .hero-tile-label .hl-short { display:inline; }
+    }
+    /* Keskikokoiset puhelimet (~360-390 px): luku hieman pienemmäksi, jotta pisinkin luku (esim. 646 280) ei kosketa laatan reunoja */
+    @media(max-width:390px){ .hero-tile-value { font-size:14px; } }
+    /* Kapeimmat puhelimet (~320 px): vielä hieman pienempi, jotta pisinkin luku (esim. 646 280) mahtuu */
+    @media(max-width:350px){
+      #hero-area { gap:4px;padding:8px 6px; }
+      .hero-tile-value { font-size:13px; }
+      .hero-tile-label { font-size:7.5px;letter-spacing:0; }
     }
 
     /* Tabs */
@@ -1453,7 +1479,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-11-07.2';
+const BUILD_ID = '2026-11-08.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -10468,32 +10494,44 @@ function updateSummary() {
 // Tämänhetkinen 5-laatan hero, siirretty sellaisenaan staattisesta
 // HTML:stä template-funktioksi — rakenne/luokat/onclick koskemattomia,
 // vain arvot tulevat nyt parametrina staattisten "–"-merkkien sijaan.
+// Hero-laatan luku: täysi luku työpöydällä, puhelimessa tiivistetty jos se on suuri
+// (>= 100 000: "646 k", >= 1 000 000: "1,2 M"), jotta viiden laatan rivillä pitkä luku
+// (esim. 1 234 567) ei vuoda laatan ulkopuolelle. Muut arvot ("–", pienet luvut) sellaisenaan.
+function heroNumHtml(v) {
+  const full=String(v);
+  const n=/^[\d\s\u00a0\u202f]+$/.test(full) ? Number(full.replace(/\D/g,'')) : NaN;
+  if (!(n>=100000)) return full;
+  const short=n>=999500   // pyöristyisi muuten muotoon "1 000 k"
+    ? (n/1e6).toLocaleString('fi-FI',{maximumFractionDigits:1})+' M'
+    : Math.round(n/1000).toLocaleString('fi-FI')+' k';
+  return `<span class="hv-full">${full}</span><span class="hv-short">${short}</span>`;
+}
 function heroClassicHtml(v) {
   return `
   <div class="hero-tile" onclick="openHeroModal('signaalit')">
     <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15a9 9 0 0 1 9-9"/><path d="M4 15a13 13 0 0 1 13-13"/><circle cx="4" cy="15" r="2"/><path d="M8 19l8-8"/></svg></div>
-    <div class="hero-tile-value" id="hero-signaalit">${v.signaalit}</div>
-    <div class="hero-tile-label">Uudet signaalit</div>
+    <div class="hero-tile-value" id="hero-signaalit">${heroNumHtml(v.signaalit)}</div>
+    <div class="hero-tile-label"><span class="hl-full">Uudet signaalit</span><span class="hl-short">Signaalit</span></div>
   </div>
   <div class="hero-tile" onclick="openHeroModal('sijoitus')">
     <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.5v9M9.3 15c0 1 1.1 1.8 2.7 1.8s2.7-.7 2.7-1.8c0-2.4-5.4-1.1-5.4-3.5 0-1 1.1-1.8 2.7-1.8s2.5.6 2.6 1.5"/></svg></div>
     <div class="hero-tile-value" id="hero-sijoitus">${v.sijoitus??'–'}</div>
-    <div class="hero-tile-label">Sijoitusmahdollisuudet</div>
+    <div class="hero-tile-label"><span class="hl-full">Sijoitusmahdollisuudet</span><span class="hl-short">Sijoitus</span></div>
   </div>
   <div class="hero-tile" onclick="openHeroModal('tehtavat')">
     <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"/><path d="M12 7v5l3.2 2"/></svg></div>
-    <div class="hero-tile-value" id="hero-tehtavat">${v.tehtavat}</div>
-    <div class="hero-tile-label">Työn alla</div>
+    <div class="hero-tile-value" id="hero-tehtavat">${heroNumHtml(v.tehtavat)}</div>
+    <div class="hero-tile-label"><span class="hl-full">Työn alla</span><span class="hl-short">Työn alla</span></div>
   </div>
   <div class="hero-tile" onclick="openHeroModal('prospektit')">
     <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="10" height="18"/><rect x="14" y="9" width="6" height="12"/><path d="M7.5 7h1M10.5 7h1M7.5 10.5h1M10.5 10.5h1M7.5 14h1M10.5 14h1M16.5 12.5h1M16.5 15.5h1"/></svg></div>
-    <div class="hero-tile-value" id="hero-prospektit">${v.prospektit}</div>
-    <div class="hero-tile-label">Prospektit yhteensä</div>
+    <div class="hero-tile-value" id="hero-prospektit">${heroNumHtml(v.prospektit)}</div>
+    <div class="hero-tile-label"><span class="hl-full">Prospektit yhteensä</span><span class="hl-short">Prospektit</span></div>
   </div>
   <div class="hero-tile" onclick="openHeroModal('putki')">
     <div class="hero-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9M9.5 19V5M15 19v-7M20 19V11"/></svg></div>
-    <div class="hero-tile-value" id="hero-putki">${v.putki}</div>
-    <div class="hero-tile-label">Myyntiputki (€)</div>
+    <div class="hero-tile-value" id="hero-putki">${heroNumHtml(v.putki)}</div>
+    <div class="hero-tile-label"><span class="hl-full">Myyntiputki (€)</span><span class="hl-short">Putki (€)</span></div>
   </div>`;
 }
 // Uusi epäsymmetrinen hero: "Odottaa reagointia" on aina se luku josta
