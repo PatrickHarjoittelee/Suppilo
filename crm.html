@@ -1269,6 +1269,8 @@
         <div class="form-group"><label>Y-tunnus</label><input class="form-control" id="tf_ytunnus" placeholder="1234567-8"></div>
         <div class="form-group"><label>Toimiala</label><input class="form-control" id="tf_toimiala"></div>
         <div class="form-group"><label>Yhtiömuoto</label><input class="form-control" id="tf_yhtiömuoto"></div>
+        <div class="form-group"><label>Liikevaihto (M€)</label><input class="form-control" id="tf_liikevaihto" placeholder="esim. 12,5"></div>
+        <div class="form-group"><label>Henkilöstömäärä</label><input class="form-control" id="tf_henkilostomaara" placeholder="esim. 45 tai 10-49"></div>
         <div class="form-group"><label>Katuosoite</label><input class="form-control" id="tf_osoite"></div>
         <div class="form-group"><label>Postinumero</label><input class="form-control" id="tf_postinumero"></div>
         <div class="form-group"><label>Kaupunki</label><input class="form-control" id="tf_kaupunki"></div>
@@ -1479,7 +1481,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-11-08.2';
+const BUILD_ID = '2026-11-08.3';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -5149,6 +5151,8 @@ function applyCrmState(crmRows) {
     if (ov.huomiot     != null) p.huomiot          = ov.huomiot;
     if (ov.parent_tili_id != null) p.parent_tili_id = ov.parent_tili_id || null;
     if (ov.tili_tyyppi    != null) p.tili_tyyppi    = ov.tili_tyyppi || null;
+    if (ov.liikevaihto_meur != null) p.liikevaihto_meur = ov.liikevaihto_meur;
+    if (ov.henkilostomaara  != null) p.henkilostomaara  = ov.henkilostomaara;
   });
   crmStateApplied = true;
 }
@@ -5211,6 +5215,8 @@ function renderTiedotEdit(p) {
       <div class="form-group"><label>Y-tunnus</label><input class="form-control" id="me-ytunnus" value="${esc(p.y_tunnus||'')}"></div>
       <div class="form-group"><label>Toimiala</label><input class="form-control" id="me-toimiala" value="${esc(p.segmentti||'')}"></div>
       <div class="form-group"><label>Yhtiömuoto</label><input class="form-control" id="me-yhtiömuoto" value="${esc(p.juridinen_yhtio||'')}"></div>
+      <div class="form-group"><label>Liikevaihto (M€)</label><input class="form-control" id="me-liikevaihto" placeholder="esim. 12,5" value="${esc(p.liikevaihto_meur||'')}"></div>
+      <div class="form-group"><label>Henkilöstömäärä</label><input class="form-control" id="me-henkilostomaara" placeholder="esim. 45 tai 10-49" value="${esc(p.henkilostomaara||'')}"></div>
       <div class="form-group full"><label>Katuosoite</label><input class="form-control" id="me-osoite" value="${esc(p.osoite||'')}"></div>
       <div class="form-group"><label>Postinumero</label><input class="form-control" id="me-postinumero" value="${esc(p.postinumero||'')}"></div>
       <div class="form-group"><label>Kaupunki</label><input class="form-control" id="me-kaupunki" value="${esc(p.kaupunki||'')}"></div>
@@ -5237,6 +5243,8 @@ async function saveMuokkaa() {
   p.y_tunnus        = document.getElementById('me-ytunnus')?.value.trim() || '';
   p.segmentti       = document.getElementById('me-toimiala')?.value.trim() || '';
   p.juridinen_yhtio = document.getElementById('me-yhtiömuoto')?.value.trim() || '';
+  p.liikevaihto_meur= document.getElementById('me-liikevaihto')?.value.trim() || '';
+  p.henkilostomaara = document.getElementById('me-henkilostomaara')?.value.trim() || '';
   p.osoite          = document.getElementById('me-osoite')?.value.trim() || '';
   p.postinumero     = document.getElementById('me-postinumero')?.value.trim() || '';
   p.kaupunki        = document.getElementById('me-kaupunki')?.value.trim() || '';
@@ -5254,7 +5262,16 @@ async function saveMuokkaa() {
     juridinen_yhtio: p.juridinen_yhtio, osoite: p.osoite, postinumero: p.postinumero,
     kaupunki: p.kaupunki, www: p.www, 'yhteyshenkilö': p['yhteyshenkilö'],
     henk_sahkoposti: p.henk_sahkoposti, huomiot: p.huomiot,
-    parent_tili_id:p.parent_tili_id||'', tili_tyyppi:p.tili_tyyppi||''
+    parent_tili_id:p.parent_tili_id||'', tili_tyyppi:p.tili_tyyppi||'',
+    // liikevaihto_meur kirjoitetaan myös overrideen vaikka sillä ON oma
+    // sarake ID-tilien Tilit-rivillä (saveTiliData), koska legacy-tileillä
+    // (ei ID-etuliitettä) ei ole — sama kahtiajako kuin muillakin yllä
+    // olevilla kentillä. henkilostomaara taas EI saa omaa saraketta
+    // kummallekaan tilityypille lainkaan — ei haluttu laajentaa Tilit-
+    // välilehden 28/14-sarakkeista riviformaattia yhden uuden kentän takia
+    // (ks. saveTiliData: moni muukin paikka olettaa tarkan sarakemäärän).
+    // Molemmat luetaan takaisin applyCrmState():ssa kuten muutkin overridet.
+    liikevaihto_meur: p.liikevaihto_meur, henkilostomaara: p.henkilostomaara
   };
   try {
     await saveCrmState(p);
@@ -6099,7 +6116,8 @@ function openModal(sid) {
     ${children.length?f('Toimipaikat',children.map(ch=>`<button class="btn btn-ghost btn-sm" style="margin:2px 4px 2px 0" onclick="openModal('${ch.spara_id}')">${esc(ch.yritys_nimi)}</button>`).join(''),true):''}
     ${f('Konserni / juridinen',p.juridinen_yhtio,true)}
     ${f('Segmentti',p.segmentti)} ${f('Kaupunki',p.kaupunki)} ${f('Osoite',p.osoite)} ${f('Y-tunnus',p.y_tunnus)}
-    ${f('Liikevaihto',p.liikevaihto_meur?p.liikevaihto_meur+' M€':null)} ${f('Kulutusarvio MWh/v',p.kulutusarvio_mwh)}
+    ${f('Liikevaihto',p.liikevaihto_meur?p.liikevaihto_meur+' M€':null)} ${f('Henkilöstömäärä',p.henkilostomaara)}
+    ${f('Kulutusarvio MWh/v',p.kulutusarvio_mwh)}
     <div class="section-divider"></div>
     ${f('Yhteyshenkilö',p['yhteyshenkilö'])} ${f('Titteli',p.titteli)}
     ${f('Suora numero',tel(p.suora_numero, p['yhteyshenkilö']))} ${f('Henk. sähköposti',mail(p.henk_sahkoposti))}
@@ -9685,9 +9703,9 @@ function openAddTili() {
   document.getElementById('addtili-ytj-input').value = '';
   document.getElementById('addtili-ytj-status').textContent = '';
   hideYtjDropdown('addtili');
-  ['tf_name','tf_ytunnus','tf_toimiala','tf_yhtiömuoto','tf_osoite','tf_postinumero',
-   'tf_kaupunki','tf_www','tf_yhteyshenkilö','tf_sahkoposti','tf_rekisteroity','tf_lisatiedot',
-   'tf_signaali','tf_perustelu','tf_avausviesti']
+  ['tf_name','tf_ytunnus','tf_toimiala','tf_yhtiömuoto','tf_liikevaihto','tf_henkilostomaara',
+   'tf_osoite','tf_postinumero','tf_kaupunki','tf_www','tf_yhteyshenkilö','tf_sahkoposti',
+   'tf_rekisteroity','tf_lisatiedot','tf_signaali','tf_perustelu','tf_avausviesti']
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   const kSel=document.getElementById('tf_kampanja');
   if (kSel) kSel.value=baseProjektiNimi('BASE_MUU');
@@ -9709,6 +9727,8 @@ async function saveNewTili() {
   const id = 'ID' + (maxId + 1);
   const segmentti   = document.getElementById('tf_toimiala')?.value.trim()||'';
   const yhtiömuoto  = document.getElementById('tf_yhtiömuoto')?.value.trim()||'';
+  const liikevaihto = document.getElementById('tf_liikevaihto')?.value.trim()||'';
+  const henkilostomaara = document.getElementById('tf_henkilostomaara')?.value.trim()||'';
   const osoite      = document.getElementById('tf_osoite')?.value.trim()||'';
   const postinumero = document.getElementById('tf_postinumero')?.value.trim()||'';
   const kaupunki    = document.getElementById('tf_kaupunki')?.value.trim()||'';
@@ -9727,7 +9747,7 @@ async function saveNewTili() {
     id, kampanja, '',
     segmentti, name, yhtiömuoto,
     osoite, kaupunkiVal, y_tunnus,
-    '', '', '',
+    liikevaihto, '', '',
     '', '', www,
     signaali, perustelu, '',
     huomiot, '', '',
@@ -9778,7 +9798,8 @@ async function saveNewTili() {
       spara_id:id, kampanja, prioriteetti:null,
       segmentti, yritys_nimi:name, juridinen_yhtio:yhtiömuoto,
       osoite, kaupunki:kaupunkiVal, y_tunnus,
-      liikevaihto_meur:null, kulutusarvio_mwh:null, pisteet:null,
+      liikevaihto_meur:liikevaihto||null, henkilostomaara:henkilostomaara||null,
+      kulutusarvio_mwh:null, pisteet:null,
       vaihde_puhelin:null, yleinen_sahkoposti:null, www,
       signaali:signaali||null, perustelu:perustelu||null, velvoiteluokka:null,
       huomiot, kontaktoinnin_tila:null, tulos_seuraava_toimi:null,
@@ -9799,6 +9820,9 @@ async function saveNewTili() {
       created_at:new Date().toISOString(),due_date:null,done:false};
     p.aktiviteetit=JSON.stringify([kauppa]);
     p.vaihe='Tietojenkeruu';
+    // henkilostomaara ei saa omaa saraketta Tilit-rivillä (ks. saveMuokkaa:n
+    // kommentti) — ainoa tallennuspaikka on tili_override, jo heti luonnissa.
+    if (henkilostomaara) p.tili_override = { ...p.tili_override, henkilostomaara };
     allProspects.push(p);
     await saveCrmState(p);
     closeAddTili();
