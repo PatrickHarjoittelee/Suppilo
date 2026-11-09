@@ -1481,7 +1481,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-11-08.3';
+const BUILD_ID = '2026-11-09.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -5294,12 +5294,17 @@ async function saveMuokkaa() {
 // Talopaketti-perusdataa ei voi poistaa täältä, koska CRM-tila sille
 // tallennetaan aina override-kerroksena, ei suorana rivikirjoituksena.
 async function confirmDeleteTili(sid) {
+  return runTiliCreation(()=>confirmDeleteTiliImpl(sid));
+}
+async function confirmDeleteTiliImpl(sid) {
   const p=allProspects.find(x=>x.spara_id===sid); if (!p) return;
   if (!p._isTili || !p._rowIndex) { showToast('Perusdataa (ETJ+/Talopaketit) ei voi poistaa täältä','error'); return; }
   const linked=allContacts.filter(c=>c.tili_id===sid);
   const warn=linked.length?`\n\nHuom: tilillä on ${linked.length} yhteyshenkilöä, jotka jäävät ilman tiliä.`:'';
   if (!confirm(`Poistetaanko tili "${p.yritys_nimi}" pysyvästi? Tätä ei voi perua.${warn}`)) return;
   try {
+    // Säilytä myös ennen tämän version käyttöönottoa luodut tunnisteet.
+    await reserveNewTiliIds(0);
     await sheetPut(`${MAIN_TAB}!A${p._rowIndex}:AB${p._rowIndex}`, [Array(28).fill('')]);
     allProspects.splice(allProspects.indexOf(p),1);
     closeModal();
@@ -7996,19 +8001,91 @@ function closeSignalMonitoringMaybe(e) { if (e.target===document.getElementById(
 //  contactSuggestion:{nimi,titteli,email,puhelin,linkedin,contactStatus,emailStatus,domain,domainStatus,...}|null}
 // opts: {kampanja, wantContact, wantSignal, wantDeal, wantDraft}
 // Palauttaa luotujen tilien spara_id-listan.
+// Yhden käyttäjän tallennukset sarjassa myös saman sivun eri lomakkeista.
+// Tämä ei ole palvelinlukko eikä monikäyttäjävaraus.
+let tiliCreationQueue = Promise.resolve();
+function runTiliCreation(work) {
+  const pending = tiliCreationQueue.then(work);
+  tiliCreationQueue = pending.catch(()=>{});
+  return pending;
+}
+
+// Korjaustunnisteet eivät nosta normaalia laskuria, mutta ovat aina varattuja.
+// Käyttäjän toimittama historia vahvistaa normaalin sarjan vähintään 60517:ään.
+const TILI_ID_HISTORY_TAB = 'Tili-ID-historia';
+const TILI_ID_KNOWN_HIGH = 20260517;
+const TILI_REPAIR_IDS = new Set(Array.from({length:7},(_,i)=>'ID'+(20269901+i)));
+function planNewTiliIds(colA, accountRows, historyRows, crmIds, contactIds, count) {
+  if (!Number.isSafeInteger(count) || count<0) throw new Error('Virheellinen tilien määrä');
+  const used = new Set(), current = new Set();
+  for (let i=1;i<Math.max(colA.length,accountRows.length);i++) {
+    const id=String(colA[i]?.[0]??'').trim().toUpperCase();
+    const row=accountRows[i]||[];
+    if (!id) {
+      if (row.some(v=>String(v??'').trim())) throw new Error('Tilit-riviltä '+(i+1)+' puuttuu ID. Korjaa rivi ennen lisäystä.');
+      continue; // Kokonaan tyhjä poistettu rivi sallitaan, numeroaukkoja ei täytetä.
+    }
+    if (id!==String(row[0]??'').trim().toUpperCase()) throw new Error('Tilien sisältö muuttui tarkistuksen aikana. Yritä uudelleen.');
+    if (!/^(ID|T)[1-9]\d*$/.test(id)) throw new Error('Virheellinen tilitunniste rivillä '+(i+1));
+    if (current.has(id)) throw new Error('Tilit-välilehdellä on duplikaatti-ID '+id+'. Korjaa duplikaatti ennen lisäystä.');
+    current.add(id); used.add(id);
+  }
+  const recorded=new Set();
+  for (const row of historyRows.slice(1)) {
+    const id=String(row[0]??'').trim().toUpperCase();
+    if (!/^ID[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id.slice(2)))) throw new Error('Tili-ID-historia sisältää virheellisen tunnisteen');
+    recorded.add(id); used.add(id);
+  }
+  // CRM-tila ja yhteyshenkilöviittaukset säilyttävät myös vanhoja poistettuja ID:itä.
+  for (const row of [...crmIds.slice(1),...contactIds.slice(1)]) {
+    const id=String(row[0]??'').trim().toUpperCase();
+    if (/^ID[1-9]\d*$/.test(id)) used.add(id);
+  }
+  used.add('ID'+TILI_ID_KNOWN_HIGH);
+  for (const id of TILI_REPAIR_IDS) used.add(id);
+  let high=TILI_ID_KNOWN_HIGH;
+  for (const id of used) {
+    if (!/^ID[1-9]\d*$/.test(id)) continue; // Legacy T-ID:t eivät kuulu numerosarjaan.
+    const n=Number(id.slice(2));
+    if (!Number.isSafeInteger(n)) throw new Error('Tilitunnisteen numero on liian suuri');
+    if (!TILI_REPAIR_IDS.has(id)) high=Math.max(high,n);
+  }
+  const ids=[];
+  while (ids.length<count) {
+    high++;
+    if (!Number.isSafeInteger(high)) throw new Error('Tilien numerosarja on täynnä');
+    const id='ID'+high;
+    if (!used.has(id)) { ids.push(id); used.add(id); }
+  }
+  return {ids, startRow:Math.max(colA.length,accountRows.length)+1,
+    historyToAdd:[...used].filter(id=>/^ID[1-9]\d*$/.test(id)&&!recorded.has(id)).map(id=>[id])};
+}
+async function reserveNewTiliIds(count) {
+  // A-sarake luetaan aina tallennuksessa kokonaan; selaimen allProspects ei ole lähde.
+  const colA=await sheetGet(`${MAIN_TAB}!A:A`);
+  const accountRows=await sheetGet(`${MAIN_TAB}!A:AB`);
+  const meta=await apiGet('?fields=sheets.properties');
+  const hasHistory=meta.sheets.some(s=>s.properties.title===TILI_ID_HISTORY_TAB);
+  const historyRows=hasHistory ? await sheetGet(`${TILI_ID_HISTORY_TAB}!A:A`) : [['spara_id']];
+  if (hasHistory && historyRows[0]?.[0]!=='spara_id') throw new Error('Tili-ID-historian otsikko puuttuu');
+  const crmIds=await sheetGet(`${CRM_TAB}!A:A`);
+  const contactIds=await sheetGet(`${YH_TAB}!B:B`);
+  const plan=planNewTiliIds(colA,accountRows,historyRows,crmIds,contactIds,count);
+  if (!hasHistory) await addSheet(TILI_ID_HISTORY_TAB,['spara_id']);
+  // Pysyvä historia ENNEN tilikirjoitusta: epävarmaksi jäänyttä / epäonnistunutta
+  // tallennusta ei kierrätetä seuraavalla yrityksellä. Epäonnistuminen jättää aukon.
+  if (plan.historyToAdd.length) await sheetPut(`${TILI_ID_HISTORY_TAB}!A${historyRows.length+1}:A${historyRows.length+plan.historyToAdd.length}`,plan.historyToAdd);
+  return plan;
+}
+
 async function createProspectAccountsBatch(candidates, opts) {
+  return runTiliCreation(()=>createProspectAccountsBatchImpl(candidates,opts));
+}
+async function createProspectAccountsBatchImpl(candidates, opts) {
   if (!candidates.length) return [];
   const ts=new Date().toISOString();
 
-  // spara_id lasketaan kerran, kasvatetaan paikallisesti — saveNewTili():n
-  // skannaus ei ole silmukkaturvallinen useammalle tilille samassa ajossa.
-  let maxId = allProspects
-    .map(p=>p.spara_id)
-    .filter(sid=>/^ID\d+$/.test(sid))
-    .reduce((max,sid)=>Math.max(max,parseInt(sid.replace('ID',''))), 20260119);
-
-  const tiliColA = await sheetGet(`${MAIN_TAB}!A:A`);
-  const tiliStartRow = tiliColA.length+1;
+  const {ids, startRow:tiliStartRow}=await reserveNewTiliIds(candidates.length);
   let tiliRowIndex = tiliStartRow;
   let yhRowIndex = null;
   if (opts.wantContact) yhRowIndex = (await sheetGet(`${YH_TAB}!A:A`)).length+1;
@@ -8016,8 +8093,7 @@ async function createProspectAccountsBatch(candidates, opts) {
   const newProspects=[], tiliRows=[], crmRows=[], contactRows=[], newContacts=[], verifyRows=[];
 
   for (const c of candidates) {
-    maxId += 1;
-    const id = 'ID'+maxId;
+    const id = ids[newProspects.length];
     const kaupunkiVal = c.tf_postinumero ? `${c.tf_postinumero} ${c.tf_kaupunki||''}`.trim() : (c.tf_kaupunki||'');
     const signaali = opts.wantSignal ? (c.signaali||'') : '';
     const perustelu = opts.wantSignal ? (c.perustelu||'') : '';
@@ -9717,14 +9793,16 @@ function closeAddTili() { document.getElementById('addtili-modal').classList.add
 function closeTiliMaybe(e) { if (e.target===document.getElementById('addtili-modal')) closeAddTili(); }
 
 async function saveNewTili() {
+  const btn=document.getElementById('addtili-save-btn');
+  if (btn?.disabled) return;
+  if (btn) btn.disabled=true;
+  try { return await runTiliCreation(saveNewTiliImpl); }
+  finally { if (btn) btn.disabled=false; }
+}
+async function saveNewTiliImpl() {
   const name = document.getElementById('tf_name')?.value.trim();
   if (!name) { showToast('Yrityksen nimi on pakollinen', 'error'); return; }
   const kampanja = document.getElementById('tf_kampanja')?.value || baseProjektiNimi('BASE_MUU');
-  const maxId = allProspects
-    .map(p => p.spara_id)
-    .filter(sid => /^ID\d+$/.test(sid))
-    .reduce((max, sid) => Math.max(max, parseInt(sid.replace('ID',''))), 20260119);
-  const id = 'ID' + (maxId + 1);
   const segmentti   = document.getElementById('tf_toimiala')?.value.trim()||'';
   const yhtiömuoto  = document.getElementById('tf_yhtiömuoto')?.value.trim()||'';
   const liikevaihto = document.getElementById('tf_liikevaihto')?.value.trim()||'';
@@ -9744,7 +9822,7 @@ async function saveNewTili() {
   const avausviesti    = document.getElementById('tf_avausviesti')?.value.trim()||'';
   const nowIso = new Date().toISOString();
   const row = [
-    id, kampanja, '',
+    '', kampanja, '',
     segmentti, name, yhtiömuoto,
     osoite, kaupunkiVal, y_tunnus,
     liikevaihto, '', '',
@@ -9755,7 +9833,6 @@ async function saveNewTili() {
     henk_sahkoposti, '', nowIso
   ];
   const saveBtn=document.getElementById('addtili-save-btn');
-  if (saveBtn?.disabled) return;
   const originalBtnText=saveBtn?.textContent||'Lisää järjestelmään';
   if (saveBtn) { saveBtn.disabled=true; saveBtn.textContent='Tarkistetaan…'; }
 
@@ -9784,8 +9861,8 @@ async function saveNewTili() {
     }
 
     if (saveBtn) saveBtn.textContent='Tallennetaan…';
-    const colA = await sheetGet(`${MAIN_TAB}!A:A`);
-    const rowIndex = colA.length + 1;
+    const {ids:[id], startRow:rowIndex}=await reserveNewTiliIds(1);
+    row[0]=id;
     // sheetPut TÄSMÄLLISEEN riviin, EI sheetAppend — ks. perustelu
     // createProspectAccountsBatch():n vastaavan kohdan yllä (rivi ~5423):
     // sheetAppend():n oma taulukontunnistus voi eksyä jos Tilit-
@@ -10855,6 +10932,9 @@ function closeGlobalContactMaybe(e) { if(e.target===document.getElementById('add
 // samat jälkitoimet (rivi täsmälliseen paikkaan sheetPutilla, Tietojenkeruu-kauppa,
 // vaihe) kuin saveNewTili():ssä; Y-tunnuksen duplikaatti käytetään olemassa olevaa tiliä.
 async function createTiliFromContactForm(nimi) {
+  return runTiliCreation(()=>createTiliFromContactFormImpl(nimi));
+}
+async function createTiliFromContactFormImpl(nimi) {
   const name=(document.getElementById('gc-nt-nimi')?.value||'').trim();
   const y_tunnus=(document.getElementById('gc-nt-ytunnus')?.value||'').trim();
   const kaupunki=(document.getElementById('gc-nt-kaupunki')?.value||'').trim();
@@ -10877,13 +10957,9 @@ async function createTiliFromContactForm(nimi) {
     if (!confirm(`Y-tunnus ${y_tunnus} löytyy jo: ${existing.yritys_nimi}. Lisätäänkö yhteystieto sille?`)) return null;
     return {id:existing.spara_id, created:false};
   }
-  const maxId=[...allProspects,...latest].map(p=>p.spara_id).filter(sid=>/^ID\d+$/.test(sid))
-    .reduce((max,sid)=>Math.max(max,parseInt(sid.replace('ID',''))),20260119);
-  const id='ID'+(maxId+1);
+  const {ids:[id], startRow:rowIndex}=await reserveNewTiliIds(1);
   const nowIso=new Date().toISOString();
   const row=[id,kampanja,'','',name,'','',kaupunki,y_tunnus,'','','','','','','','','','','','','',nimi,'','','','',nowIso];
-  const colA=await sheetGet(`${MAIN_TAB}!A:A`);
-  const rowIndex=colA.length+1;
   await sheetPut(`${MAIN_TAB}!A${rowIndex}:AB${rowIndex}`,[row]);
   const p={spara_id:id,kampanja,prioriteetti:null,segmentti:'',yritys_nimi:name,juridinen_yhtio:'',osoite:'',kaupunki,y_tunnus,
     liikevaihto_meur:null,kulutusarvio_mwh:null,pisteet:null,vaihde_puhelin:null,yleinen_sahkoposti:null,www:'',signaali:null,perustelu:null,
