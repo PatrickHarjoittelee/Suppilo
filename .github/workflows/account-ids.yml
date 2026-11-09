@@ -1,0 +1,15 @@
+name: Account ID regression tests
+on:
+  push:
+    paths: ['crm.html', 'tests/account-ids.test.cjs', '.github/workflows/account-ids.yml']
+  pull_request:
+    paths: ['crm.html', 'tests/account-ids.test.cjs', '.github/workflows/account-ids.yml']
+jobs:
+  account-ids:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/account-ids.test.cjs
