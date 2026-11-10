@@ -1,0 +1,33 @@
+const fs = require('node:fs');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const html = fs.readFileSync(__dirname + '/../crm.html', 'utf8');
+let syntaxCount = 0;
+for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+  if (/\bsrc=/.test(m[1]) || !m[2].trim()) continue;
+  new vm.Script(m[2]); syntaxCount++;
+}
+const load = html.slice(html.indexOf('async function loadData()'), html.indexOf('// ── Parse'));
+assert.match(load, /const mainRows = await sheetGet\(`\$\{MAIN_TAB\}!A:AB`\)/);
+assert.doesNotMatch(load, /A1:AZ500/);
+const start = html.indexOf('const cv =');
+const end = html.indexOf('// Talopakettivalmistajat-tileillä', start);
+const context = vm.createContext({});
+vm.runInContext(html.slice(start, end), context);
+const rows = Array.from({length: 601}, () => []);
+rows[0] = ['Spara Account ID'];
+rows[499] = ['ID20260511','ETJ+','','Kiinteistöomistajat','Vanha tili'];
+rows[519] = ['ID20260524','ETJ+','','Teollisuus','Toijala Works Oy'];
+rows[519][22] = 'Juha Manninen';
+rows[600] = ['ID20260600','ETJ+','','Teollisuus','Rivin 601 tili'];
+context.rows = rows;
+const old = vm.runInContext('parseProspects(rows.slice(0,500))', context);
+const fixed = vm.runInContext('parseProspects(rows)', context);
+assert.equal(old.some(p=>p.spara_id==='ID20260524'), false);
+const account = fixed.find(p=>p.spara_id==='ID20260524');
+assert.equal(account.yritys_nimi, 'Toijala Works Oy');
+assert.equal(account['yhteyshenkilö'], 'Juha Manninen');
+assert.equal(account._rowIndex, 520);
+assert.equal(fixed.find(p=>p.spara_id==='ID20260600')._rowIndex, 601);
+assert.equal(fixed.length, 3);
+console.log(`PASS: ${syntaxCount} scripts compile; old range reproduces missing account; corrected range keeps accounts at rows 500, 520 and 601 and preserves physical row numbers through blanks.`);
