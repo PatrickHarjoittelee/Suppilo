@@ -1481,7 +1481,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-11-09.1';
+const BUILD_ID = '2026-11-10.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -4772,7 +4772,8 @@ async function loadData() {
     } else if (!tabNames.includes(MAIN_TAB)) {
       await addSheet(MAIN_TAB, TILIT_COLS);
     }
-    const mainRows = await sheetGet(`${MAIN_TAB}!A1:AZ500`);
+    // Lue kaikki tilirivit: yhteyshenkilöt ja CRM-tila voivat viitata myös rivin 500 jälkeisiin tileihin.
+    const mainRows = await sheetGet(`${MAIN_TAB}!A:AB`);
     if ((mainRows[0]?.[27]||'') !== 'lisatty') {
       // Sheetsin values.append kasvattaa rivimäärän automaattisesti mutta EI
       // sarakemäärää — jos ruudukko on rajattu tarkalleen nykyiseen
@@ -8887,8 +8888,8 @@ function lastSignalCheckAt(p) {
   return Math.max(...acts.map(a=>Date.parse(a.created_at)||0));
 }
 
-// Budjettisuoja, ei viimeistely: Tilit!A1:AZ500-lukualue olettaa jopa ~500
-// tiliä — suodattamaton "päivitä kaikki" olisi ~100 lohkoa yhdellä
+// Budjettisuoja, ei viimeistely: koko Tilit-välilehti voi sisältää satoja
+// tilejä — suodattamaton "päivitä kaikki" olisi ~100 lohkoa yhdellä
 // klikkauksella. Puhdas funktio (ei I/O) jotta samaa käytetään sekä
 // lomakkeen elävään esikatseluun että itse ajoon.
 //
