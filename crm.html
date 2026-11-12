@@ -1481,7 +1481,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-11-10.1';
+const BUILD_ID = '2026-11-12.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -4698,6 +4698,30 @@ async function sheetBatchUpdate(data) {
   await apiPost('/values:batchUpdate', { valueInputOption:'RAW', data });
 }
 
+// Google Sheetsin values.append yrittää päätellä avoimen A:M-alueen
+// "taulukon" rajat. Jos CRM-tila-välilehdellä on tyhjä väli tai aiemmin
+// sivuun ajautunutta dataa, Sheets voi lisätä uuden 13 sarakkeen tietueen
+// saman rivin oikealle puolelle (havaittu M:U) seuraavan A:M-rivin sijasta.
+// CRM-rivit kirjoitetaan siksi aina ensimmäiselle A-sarakkeen jälkeiselle
+// vapaalle riville. Jono estää kahta samanaikaista tallennusta valitsemasta
+// samaa rivinumeroa.
+let crmAppendQueue = Promise.resolve();
+async function appendCrmRowsNow(rows) {
+  if (!rows?.length) return;
+  if (rows.some(row=>!Array.isArray(row)||row.length>CRM_COLS.length)) {
+    throw new Error(`Virheellinen CRM-rivi: enintään ${CRM_COLS.length} saraketta sallittu`);
+  }
+  const idRows = await sheetGet(`${CRM_TAB}!A:A`);
+  const startRow = Math.max(2, idRows.length + 1);
+  const endRow = startRow + rows.length - 1;
+  await sheetPut(`${CRM_TAB}!A${startRow}:M${endRow}`, rows);
+}
+function appendCrmRows(rows) {
+  const write = crmAppendQueue.then(()=>appendCrmRowsNow(rows));
+  crmAppendQueue = write.catch(()=>{});
+  return write;
+}
+
 // ── Load ──────────────────────────────────────────────────────────────────────
 // Oli aiemmin loadData():n oma paikallinen const-funktio — ei siis
 // koskaan ollut globaalisti kutsuttavissa, vaikka nimeltään ja
@@ -4987,7 +5011,7 @@ async function initVirtualKaupat() {
   });
   if (newRows.length) {
     try {
-      await sheetAppend(`${CRM_TAB}!A:M`, newRows);
+      await appendCrmRows(newRows);
       const crmRows = await sheetGet(`${CRM_TAB}!A:M`);
       applyCrmState(crmRows);
     } catch(e) { console.error('initVirtualKaupat:', e); }
@@ -5167,7 +5191,7 @@ async function saveCrmState(p) {
   if (p._crmRow) {
     await sheetPut(`${CRM_TAB}!A${p._crmRow}:M${p._crmRow}`, [row]);
   } else {
-    await sheetAppend(`${CRM_TAB}!A:M`, [row]);
+    await appendCrmRows([row]);
     const crmRows = await sheetGet(`${CRM_TAB}!A:M`);
     applyCrmState(crmRows);
   }
@@ -6743,7 +6767,7 @@ async function initKaupat() {
       p.seuraava_pvm||'',p.muistiinpanot||'',p.aktiviteetit,ts,p.crm_status||'Prospekti',ov,'','',p.avausviesti||''];
   });
   try {
-    await sheetAppend(`${CRM_TAB}!A:M`,rows);
+    await appendCrmRows(rows);
     const crmRows=await sheetGet(`${CRM_TAB}!A:M`);
     applyCrmState(crmRows);
     updateSummary(); applyFilters(); renderDashboard();
@@ -8210,11 +8234,11 @@ async function createProspectAccountsBatchImpl(candidates, opts) {
   // mennyt seuraavalle riville). Korjaus: kirjoitetaan Tilit-riville
   // TÄSMÄLLISEEN, jo laskettuun rivinumeroon (sheetPut, ei sheetAppend)
   // — ei jätetä Sheetsin arvattavaksi mihin data kuuluu. Sama korjaus
-  // saveNewTili():ssa. CRM-tila/Yhteyshenkilöt-välilehdillä ei ole
-  // vastaavaa rivintyhjennysmekanismia eikä siis samaa aukko-riskiä,
-  // joten niiden sheetAppend jätetty ennalleen.
+  // saveNewTili():ssa. CRM-tila käyttää vastaavaa täsmällistä
+  // appendCrmRows()-kirjoitusta, koska sielläkin havaittiin sivuun M:U-
+  // sarakkeisiin ajautuneita tietueita. Yhteyshenkilöt jätetään ennalleen.
   await sheetPut(`${MAIN_TAB}!A${tiliStartRow}:AB${tiliStartRow+tiliRows.length-1}`, tiliRows);
-  await sheetAppend(`${CRM_TAB}!A:M`, crmRows);
+  await appendCrmRows(crmRows);
   if (contactRows.length) await sheetAppend(`${YH_TAB}!A:H`, contactRows);
   if (verifyRows.length) await sheetAppend(`${YH_VERIFY_TAB}!A:J`, verifyRows);
 
@@ -9338,7 +9362,7 @@ async function runSignalMonitoringBatch() {
           return [p.spara_id,p.vaihe||'',p.omistaja||'',p.seuraava_toimenpide||'',
             p.seuraava_pvm||'',p.muistiinpanot||'',p.aktiviteetit,ts,p.crm_status||'Prospekti',ov,'','',p.avausviesti||''];
         });
-        await sheetAppend(`${CRM_TAB}!A:M`, rows);
+        await appendCrmRows(rows);
         const crmRows=await sheetGet(`${CRM_TAB}!A:M`);
         applyCrmState(crmRows);
       }

@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "test": "node --test etj-contract.test.cjs",
-    "test:account-ids": "node --test account-ids.test.cjs"
+    "test:account-ids": "node --test account-ids.test.cjs",
+    "test:crm-append": "node crm-append.test.cjs"
   },
   "dependencies": { "jsdom": "26.1.0" }
 }

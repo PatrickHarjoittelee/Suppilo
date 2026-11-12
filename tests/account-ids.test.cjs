@@ -24,6 +24,7 @@ function harness(opts={}) {
   const c={console,Date,URL,setTimeout,allProspects:clone(opts.cached||[]),allContacts:[],
     currentUser:{nimi:'Tester'}, currentUserEmail:'test@example.test',
     MAIN_TAB:'Tilit',CRM_TAB:'CRM-tila',YH_TAB:'Yhteyshenkilöt',YH_VERIFY_TAB:'Yhteyshenkilövarmennus',
+    CRM_COLS:Array(13).fill(''),
     document:{getElementById:get},confirm:()=>true,showToast:(...x)=>toasts.push(x),
     IMPORT_MAX_TEXT_LENGTH:500000,IMPORT_MAX_CANDIDATES:50,PROSPECTING_CHUNK_SIZE:5,
     chatGptImportFileText:'',chatGptImportFileName:'',chatGptImportCancelled:false,chatGptImportInProgress:false,
@@ -51,6 +52,8 @@ function harness(opts={}) {
   };
   for(const name of ['closeAddTili','openModal','closeModal','buildSegmentFilter','updateSummary','applyFilters','renderDashboard','renderKanban','applyYhFilters','applyCrmState'])c[name]=()=>{};
   vm.createContext(c);
+  const crmAppendHelper=html.slice(html.indexOf('let crmAppendQueue ='),html.indexOf('// ── Load'));
+  vm.runInContext(crmAppendHelper,c);
   const helper=html.slice(html.indexOf('let tiliCreationQueue ='),html.indexOf('async function createProspectAccountsBatch('));
   vm.runInContext(helper,c);
   for(const name of ['blankCrm','createProspectAccountsBatch','createProspectAccountsBatchImpl','saveNewTili','saveNewTiliImpl',
