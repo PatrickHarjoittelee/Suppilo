@@ -1481,7 +1481,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-11-12.1';
+const BUILD_ID = '2026-11-23.1';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -5552,9 +5552,13 @@ const fmtEur=n=>Math.round(n).toLocaleString('fi-FI')+' €';
 // arvo riko/rivitä omaa korttiaan (ks. dashKpisClassicHtml/SparaHtml,
 // dashboardRecurringKpisHtml, heroTileValues).
 const fmtEurNum=n=>Math.round(n).toLocaleString('fi-FI');
-function kauppaStats(){
+// prospects: valinnainen, oletuksena koko allProspects — Dashboardin oma
+// projekti/toimiala-suodatin (ks. dashboardFilteredProspects) antaa tähän
+// rajatun listan, kaikki muut kutsujat (hero-rivi, Kanban) jättävät tyhjäksi
+// ja saavat täsmälleen ennallaan olleen, suodattamattoman tuloksen.
+function kauppaStats(prospects){
   const st={}; VAIHEET.forEach(v=>st[v]={n:0,sum:0,arr:0});
-  allProspects.forEach(p=>parseActs(p).forEach(a=>{
+  (prospects||allProspects).forEach(p=>parseActs(p).forEach(a=>{
     if(a.tyyppi!=='kauppa') return;
     const tila=normalizeKauppaVaihe(a.tila);
     if(!st[tila]) return;
@@ -7278,8 +7282,11 @@ function taskPriorityScore(task, p, maxDealValue) {
 // Vain avoimen putken tilit (VAIHE_AVOIN) huomioidaan — jo voitettu tai
 // hävitty kauppa ei enää palvele "saadaan kauppoja syntymään tehokkaasti"
 // -tavoitetta, vaikka tilillä olisikin unohtunut avoin tehtävä.
-function computeTopTasks() {
-  const eligible=allProspects.filter(p=>VAIHE_AVOIN.includes(normalizeKauppaVaihe(p.vaihe)));
+// prospects: valinnainen, ks. kauppaStats — Dashboardin "Seuraavat
+// toimenpiteet" antaa suodatetun listan, hero-rivi (heroTileValues/
+// renderHeroTehtavat) ei anna mitään ja saa aina koko datan.
+function computeTopTasks(prospects) {
+  const eligible=(prospects||allProspects).filter(p=>VAIHE_AVOIN.includes(normalizeKauppaVaihe(p.vaihe)));
   const maxDealValue=Math.max(1,...eligible.map(bestOpenDealValue));
   const scored=[];
   eligible.forEach(p=>{
@@ -7308,7 +7315,7 @@ const DASH_UPCOMING_PAGE_SIZE=5;
 // dashboardia uudelleen, jotta napin klikkaus on välitön.
 function renderDashboardUpcoming() {
   const upEl=document.getElementById('dash-upcoming'); if (!upEl) return;
-  const ranked=computeTopTasks();
+  const ranked=computeTopTasks(dashboardFilteredProspects());
   const pages=Math.max(1,Math.ceil(ranked.length/DASH_UPCOMING_PAGE_SIZE));
   if (dashUpcomingPage>=pages) dashUpcomingPage=0;
   const start=dashUpcomingPage*DASH_UPCOMING_PAGE_SIZE;
@@ -7339,9 +7346,10 @@ function renderDashboardUpcoming() {
 // Myyntiputken vaihekohtainen erittely — käytetään sekä Dashboard-välilehden
 // omassa "Myyntiputki – kaupat vaiheittain" -osiossa että hero-rivin
 // 📈-kuvakkeen modalissa (renderHeroPutki), jotta sama tieto ei elä kahtena
-// erillisenä kopiona.
-function pipelineStageHtml() {
-  const st=kauppaStats();
+// erillisenä kopiona. prospects: valinnainen, ks. kauppaStats — Dashboard
+// antaa suodatetun listan, renderHeroPutki ei anna mitään (aina koko data).
+function pipelineStageHtml(prospects) {
+  const st=kauppaStats(prospects);
   return dashboardTheme()==='spara' ? pipelineFunnelHtml(st) : pipelineBoxesHtml(st);
 }
 function pipelineBoxesHtml(st) {
@@ -7427,7 +7435,7 @@ function dashboardRecurringKpisHtml(theme,st,conv) {
 // Jaettu datalaskenta (segmentointi vaiheittain per projekti) — vain
 // esitys eroaa teeman mukaan, ei koskaan kahta kopiota tästä logiikasta.
 function projectDistributionSegs(proj) {
-  const tilit=allProspects.filter(p=>p.kampanja===proj);
+  const tilit=dashboardFilteredProspects().filter(p=>p.kampanja===proj);
   const n=tilit.length||1;
   const segs=VAIHEET.map(v=>{
     const cnt=tilit.filter(p=>normalizeKauppaVaihe(p.vaihe)===v).length;
@@ -7436,7 +7444,7 @@ function projectDistributionSegs(proj) {
   return {tilit,segs};
 }
 function projectDistributionHtml(colorForStage) {
-  const projects=[...new Set(allProspects.map(p=>p.kampanja))].filter(Boolean);
+  const projects=[...new Set(dashboardFilteredProspects().map(p=>p.kampanja))].filter(Boolean);
   if (dashboardTheme()==='spara') {
     // Yksi täyttöpalkki per projekti (tilimäärä suhteessa suurimpaan
     // projektiin), EI vaihekohtaisesti segmentoitu — sama yksinkertainen
@@ -7475,7 +7483,7 @@ function projectDistributionHtml(colorForStage) {
 // koskemattomat ETJ+/Talopaketti-perusdatarivit) eivät saa tätä kenttää
 // lainkaan eivätkä siis näy — oikein, niille ei ole tapahtunut mitään.
 function renderDashboardRecent() {
-  const rows=allProspects.filter(p=>p.crm_updated_at)
+  const rows=dashboardFilteredProspects().filter(p=>p.crm_updated_at)
     .sort((a,b)=>b.crm_updated_at.localeCompare(a.crm_updated_at))
     .slice(0,5);
   if (!rows.length) return '<div class="empty" style="padding:16px">Ei vielä muutoksia</div>';
@@ -7486,16 +7494,23 @@ function renderDashboardRecent() {
 }
 
 function dashboardActivityStats() {
-  const activities=allProspects.flatMap(p=>parseActs(p));
+  const filtered=dashboardFilteredProspects();
+  const activities=filtered.flatMap(p=>parseActs(p));
+  // reminderQueue-rivit eivät kanna kampanjaa/segmenttiä itse, vain
+  // tili_id:n — rajataan samaan suodatettuun tilijoukkoon sen kautta,
+  // ettei esim. "Lähetetyt sähköpostit" -luku sekoita suodatettua ja
+  // suodattamatonta dataa keskenään.
+  const filteredIds=new Set(filtered.map(p=>p.spara_id));
+  const filteredReminders=reminderQueue.filter(r=>filteredIds.has(r.tili_id));
   const reminderStatus=r=>String(r.status||'').trim().toLowerCase();
   const scheduledReminderStatuses=new Set(['pending','processing','queued','scheduled','ajastettu']);
   const sentReminderStatuses=new Set(['sent','delivered','toimitettu']);
   return {
-    total:activities.length+reminderQueue.length,
+    total:activities.length+filteredReminders.length,
     sentEmails:activities.filter(a=>a.tyyppi==='sahkoposti'&&a.tila==='Toimitettu').length+
-      reminderQueue.filter(r=>sentReminderStatuses.has(reminderStatus(r))).length,
+      filteredReminders.filter(r=>sentReminderStatuses.has(reminderStatus(r))).length,
     scheduledEmails:activities.filter(a=>a.tyyppi==='sahkoposti'&&a.tila==='Ajastettu').length+
-      reminderQueue.filter(r=>scheduledReminderStatuses.has(reminderStatus(r))).length,
+      filteredReminders.filter(r=>scheduledReminderStatuses.has(reminderStatus(r))).length,
     callTasks:activities.filter(a=>a.tyyppi==='soitto').length,
     otherTasks:activities.filter(a=>a.tyyppi==='muu').length,
     dealMoves:activities.filter(a=>a.tyyppi==='vaihe_muutos').length
@@ -7518,7 +7533,8 @@ function dashboardActivityKpisHtml() {
 }
 
 function dashboardShellClassicHtml() {
-  return `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px" id="dash-kpis"></div>
+  return `${dashboardFilterBarHtml()}
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px" id="dash-kpis"></div>
     <div class="dash-section-title">Jatkuva laskutus</div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px" id="dash-recurring-kpis"></div>
     <div class="dash-section-title">Aktiviteetit</div>
@@ -7543,7 +7559,8 @@ function dashboardShellClassicHtml() {
     </div>`;
 }
 function dashboardShellSparaHtml() {
-  return `<div class="spara-kpi-row" id="dash-kpis"></div>
+  return `${dashboardFilterBarHtml()}
+    <div class="spara-kpi-row" id="dash-kpis"></div>
     <div class="spara-section-title">Jatkuva laskutus</div>
     <div class="spara-kpi-row" id="dash-recurring-kpis"></div>
     <div class="spara-section-title">Aktiviteetit</div>
@@ -7593,7 +7610,8 @@ function renderActivityTimeline(){
   for(let d=new Date(start);d<end;d.setDate(d.getDate()+1))days.push({key:timelineDateKey(d),date:new Date(d),counts:[0,0,0,0]});
   const byKey=new Map(days.map(d=>[d.key,d]));
   const add=(value,idx)=>{const day=byKey.get(timelineDateKey(value));if(day)day.counts[idx]++;};
-  allProspects.forEach(p=>{
+  const filtered=dashboardFilteredProspects();
+  filtered.forEach(p=>{
     const acts=parseActs(p);
     const deals=acts.filter(a=>a.tyyppi==='kauppa');
     // Kaupan syntyminen lasketaan kauppa-aktiviteetin aikaleimasta, ei tilin muokkausajasta.
@@ -7604,7 +7622,10 @@ function renderActivityTimeline(){
       if(a.tyyppi==='muu'&&(a.done===true||a.tila==='Valmis'))add(a.completed_at||a.updated_at||a.created_at,3);
     });
   });
-  reminderQueue.forEach(r=>{if(['sent','delivered','toimitettu'].includes(String(r.status||'').toLowerCase()))add(r.sent_at||r.sentAt,1);});
+  // Sama tili_id-rajaus kuin dashboardActivityStats():ssa — reminderQueue
+  // ei kanna kampanjaa/segmenttiä itse.
+  const filteredIds=new Set(filtered.map(p=>p.spara_id));
+  reminderQueue.forEach(r=>{if(filteredIds.has(r.tili_id)&&['sent','delivered','toimitettu'].includes(String(r.status||'').toLowerCase()))add(r.sent_at||r.sentAt,1);});
   const colors=['#42A5F5','#4CAF50','#FFA726','#AB47BC'],labels=['Uudet kaupat','Lähetetyt sähköpostit','Tehdyt puhelut','Muut valmiit tehtävät'];
   const totals=[0,0,0,0];days.forEach(d=>d.counts.forEach((n,i)=>totals[i]+=n));
   const max=Math.max(1,...days.map(d=>d.counts.reduce((a,b)=>a+b,0)));
@@ -7614,16 +7635,58 @@ function renderActivityTimeline(){
     '<div class="timeline-legend">'+labels.map((x,i)=>'<span style="--legend-color:'+colors[i]+'">'+x+': <b>'+totals[i]+'</b></span>').join('')+'</div>';
 }
 
+// Dashboard-välilehden oma projekti/toimiala-suodatin. EI vaikuta mihinkään
+// muualla (hero-rivi, Kanban, muut välilehdet) käytettyyn dataan: kaikki
+// jaetut apufunktiot (kauppaStats, computeTopTasks, pipelineStageHtml)
+// ottavat suodatetun listan valinnaisena parametrina ja käyttävät oletuksena
+// koko allProspects:ia täsmälleen kuten ennen tätä muutosta.
+let dashboardFilterProjekti='', dashboardFilterSegmentti='';
+function dashboardFilteredProspects() {
+  return allProspects.filter(p =>
+    (!dashboardFilterProjekti || p.kampanja===dashboardFilterProjekti) &&
+    (!dashboardFilterSegmentti || p.segmentti===dashboardFilterSegmentti));
+}
+function setDashboardFilterProjekti(v) { dashboardFilterProjekti=v; dashUpcomingPage=0; renderDashboard(); }
+function setDashboardFilterSegmentti(v) { dashboardFilterSegmentti=v; dashUpcomingPage=0; renderDashboard(); }
+// Valitsimien vaihtoehdot tulevat aina KOKO datasta (ei toisiaan rajaten)
+// — yksinkertaisempi ja ennakoitavampi kuin molempien ristiin kaventaminen,
+// eivätkä vaihtoehdot näin katoa/ilmesty kesken valinnan.
+function dashboardFilterOptionsHtml(current, options, allLabel) {
+  return `<option value=""${current?'':' selected'}>${allLabel}</option>`+
+    options.map(o=>`<option value="${esc(o)}"${o===current?' selected':''}>${esc(o)}</option>`).join('');
+}
+function populateDashboardFilterSelects() {
+  const projSel=document.getElementById('dash-filter-projekti');
+  if (projSel) {
+    const projects=[...new Set(allProspects.map(p=>p.kampanja))].filter(Boolean).sort((a,b)=>a.localeCompare(b,'fi'));
+    projSel.innerHTML=dashboardFilterOptionsHtml(dashboardFilterProjekti, projects, 'Kaikki projektit');
+  }
+  const segSel=document.getElementById('dash-filter-segmentti');
+  if (segSel) {
+    const segments=[...new Set(allProspects.map(p=>p.segmentti))].filter(Boolean).sort((a,b)=>a.localeCompare(b,'fi'));
+    segSel.innerHTML=dashboardFilterOptionsHtml(dashboardFilterSegmentti, segments, 'Kaikki toimialat');
+  }
+}
+function dashboardFilterBarHtml() {
+  return `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+    <div class="form-group" style="margin:0;flex:1;min-width:140px"><label>Projekti</label><select class="form-control" id="dash-filter-projekti" onchange="setDashboardFilterProjekti(this.value)"></select></div>
+    <div class="form-group" style="margin:0;flex:1;min-width:140px"><label>Toimiala</label><select class="form-control" id="dash-filter-segmentti" onchange="setDashboardFilterSegmentti(this.value)"></select></div>
+  </div>`;
+}
+
 function renderDashboard() {
   applyDashboardThemeAttr();
   const theme=dashboardTheme();
   const shellEl=document.getElementById('dash-body');
   if (shellEl) shellEl.innerHTML = theme==='spara' ? dashboardShellSparaHtml() : dashboardShellClassicHtml();
+  populateDashboardFilterSelects();
+
+  const filtered=dashboardFilteredProspects();
 
   // KPI:t: kappalemääräinen toteutunut konversio ensin, eurot vasta sen
   // päälle. Vaihekohtainen VAIHE_TN jää operatiiviseksi vaihepainoksi
   // suppilovisualisointiin ja tehtävien priorisointiin, ei "ennusteeksi".
-  const st=kauppaStats();
+  const st=kauppaStats(filtered);
   const openSum=VAIHE_AVOIN.reduce((s,v)=>s+st[v].sum,0);
   const openN=VAIHE_AVOIN.reduce((s,v)=>s+st[v].n,0);
   const conv=historicalConversionStats(st,openSum,openN);
@@ -7639,7 +7702,7 @@ function renderDashboard() {
   if (activityKpiEl) activityKpiEl.innerHTML=dashboardActivityKpisHtml();
 
   const plEl=document.getElementById('dash-pipeline');
-  if (plEl) plEl.innerHTML=pipelineStageHtml();
+  if (plEl) plEl.innerHTML=pipelineStageHtml(filtered);
 
   renderDashboardUpcoming();
   renderActivityTimeline();
