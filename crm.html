@@ -135,10 +135,10 @@
       main { padding:10px; }
       .toolbar { flex-direction:column;gap:6px; }
       .toolbar input:not([type=checkbox]),.toolbar select { min-width:unset;width:100%; }
-      #tab-kanban .toolbar { align-items:stretch; }
-      #tab-kanban .kb-pf-wrap,#tab-kanban .kb-sf-wrap { width:100%; }
-      #tab-kanban .kb-pf-wrap > button,#tab-kanban .kb-sf-wrap > button { width:100%;min-width:0;justify-content:space-between; }
-      #tab-kanban .kb-pf-panel,#tab-kanban .kb-sf-panel { left:0;right:0;width:100%;min-width:0;max-width:none;max-height:52vh;max-height:52dvh; }
+      #tab-kanban .toolbar,#tab-dashboard .toolbar { align-items:stretch; }
+      #tab-kanban .kb-pf-wrap,#tab-kanban .kb-sf-wrap,#tab-dashboard .kb-pf-wrap,#tab-dashboard .kb-sf-wrap { width:100%; }
+      #tab-kanban .kb-pf-wrap > button,#tab-kanban .kb-sf-wrap > button,#tab-dashboard .kb-pf-wrap > button,#tab-dashboard .kb-sf-wrap > button { width:100%;min-width:0;justify-content:space-between; }
+      #tab-kanban .kb-pf-panel,#tab-kanban .kb-sf-panel,#tab-dashboard .kb-pf-panel,#tab-dashboard .kb-sf-panel { left:0;right:0;width:100%;min-width:0;max-width:none;max-height:52vh;max-height:52dvh; }
       #tab-kanban .kb-action-sort { width:100%; }
       #email-modal .email-reminder-grid { grid-template-columns:1fr; }
       .info-grid { grid-template-columns:1fr; }
@@ -1099,6 +1099,16 @@
   </div>
 
   <div class="tab-content active" id="tab-dashboard">
+    <div class="toolbar">
+      <div class="kb-pf-wrap">
+        <button type="button" class="btn btn-ghost btn-sm" id="dash-pf-btn" aria-haspopup="true" aria-expanded="false" onclick="toggleDashProjektiFilter(event)">Projekti: Kaikki ▾</button>
+        <div class="kb-pf-panel hidden" id="dash-pf-panel" onclick="event.stopPropagation()"></div>
+      </div>
+      <div class="kb-sf-wrap">
+        <button type="button" class="btn btn-ghost btn-sm" id="dash-sf-btn" aria-haspopup="true" aria-expanded="false" onclick="toggleDashSegmenttiFilter(event)">Toimiala: Kaikki ▾</button>
+        <div class="kb-sf-panel hidden" id="dash-sf-panel" onclick="event.stopPropagation()"></div>
+      </div>
+    </div>
     <div id="dash-body"><div class="empty" style="padding:16px">Ladataan…</div></div>
   </div>
 </main>
@@ -1481,7 +1491,7 @@
 // Nostetaan tätä joka kerta kun crm.html muuttuu — helpottaa sen
 // tarkistamista onko selaimessa uusin versio vai vanha välimuistiin
 // jäänyt kopio. Näkyy kirjautumisruudussa ja Asetuksissa.
-const BUILD_ID = '2026-11-23.1';
+const BUILD_ID = '2026-11-23.2';
 applyDashboardThemeAttr();
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.build-marker-text').forEach(el => el.textContent = 'Versio: '+BUILD_ID);
@@ -2520,7 +2530,7 @@ function toggleBulkSegmenttiFilter(e) {
   e.stopPropagation();
   const panel=document.getElementById('bulk-sf-panel'); if (!panel) return;
   const opening=panel.classList.contains('hidden');
-  closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter(); closeEmailToPicker();
+  closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter(); closeEmailToPicker(); closeDashProjektiFilter(); closeDashSegmenttiFilter();
   if (opening) { renderBulkSegmenttiFilterPanel(); panel.classList.remove('hidden'); }
   else panel.classList.add('hidden');
 }
@@ -3368,7 +3378,7 @@ function toggleEmailToPicker(e) {
   e.stopPropagation();
   const panel=document.getElementById('email-to-picker-panel'); if (!panel) return;
   const opening=panel.classList.contains('hidden');
-  closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter(); closeBulkSegmenttiFilter();
+  closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter(); closeBulkSegmenttiFilter(); closeDashProjektiFilter(); closeDashSegmenttiFilter();
   if (opening) { renderEmailToPicker(); panel.classList.remove('hidden'); }
   else panel.classList.add('hidden');
 }
@@ -7533,8 +7543,7 @@ function dashboardActivityKpisHtml() {
 }
 
 function dashboardShellClassicHtml() {
-  return `${dashboardFilterBarHtml()}
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px" id="dash-kpis"></div>
+  return `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px" id="dash-kpis"></div>
     <div class="dash-section-title">Jatkuva laskutus</div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px" id="dash-recurring-kpis"></div>
     <div class="dash-section-title">Aktiviteetit</div>
@@ -7559,8 +7568,7 @@ function dashboardShellClassicHtml() {
     </div>`;
 }
 function dashboardShellSparaHtml() {
-  return `${dashboardFilterBarHtml()}
-    <div class="spara-kpi-row" id="dash-kpis"></div>
+  return `<div class="spara-kpi-row" id="dash-kpis"></div>
     <div class="spara-section-title">Jatkuva laskutus</div>
     <div class="spara-kpi-row" id="dash-recurring-kpis"></div>
     <div class="spara-section-title">Aktiviteetit</div>
@@ -7635,43 +7643,97 @@ function renderActivityTimeline(){
     '<div class="timeline-legend">'+labels.map((x,i)=>'<span style="--legend-color:'+colors[i]+'">'+x+': <b>'+totals[i]+'</b></span>').join('')+'</div>';
 }
 
-// Dashboard-välilehden oma projekti/toimiala-suodatin. EI vaikuta mihinkään
-// muualla (hero-rivi, Kanban, muut välilehdet) käytettyyn dataan: kaikki
-// jaetut apufunktiot (kauppaStats, computeTopTasks, pipelineStageHtml)
-// ottavat suodatetun listan valinnaisena parametrina ja käyttävät oletuksena
-// koko allProspects:ia täsmälleen kuten ennen tätä muutosta.
-let dashboardFilterProjekti='', dashboardFilterSegmentti='';
+// Dashboard-välilehden oma projekti/toimiala-suodatin — monivalintainen,
+// sama Set-pohjainen kaava ja sama kb-pf-*/kb-sf-* -painike+paneeli-UI kuin
+// Kanbanin omilla suodattimilla (ks. toggleKanbanProjektiFilter ym.), vain
+// id:t ja kohdefunktio eri. EI vaikuta mihinkään muualla (hero-rivi, Kanban,
+// muut välilehdet) käytettyyn dataan: kaikki jaetut apufunktiot (kauppaStats,
+// computeTopTasks, pipelineStageHtml) ottavat suodatetun listan valinnaisena
+// parametrina ja käyttävät oletuksena koko allProspects:ia täsmälleen kuten
+// ennen tätä muutosta.
+// HUOM painike+paneeli ovat STAATTISTA HTML:ää #tab-dashboardin
+// työkalurivillä, #dash-bodyn ULKOPUOLELLA — renderDashboard() korvaa
+// #dash-bodyn sisällön joka kerta, ja jos paneeli eläisi sen SISÄLLÄ,
+// jokainen yksittäinen rastiklikkaus (joka kutsuu renderDashboard():ia)
+// sulkisi/tuhoaisi paneelin heti, eikä monivalinta olisi käytännössä
+// mahdollista.
+let dashboardProjektiFilter = new Set(), dashboardSegmenttiFilter = new Set();
 function dashboardFilteredProspects() {
   return allProspects.filter(p =>
-    (!dashboardFilterProjekti || p.kampanja===dashboardFilterProjekti) &&
-    (!dashboardFilterSegmentti || p.segmentti===dashboardFilterSegmentti));
+    (!dashboardProjektiFilter.size || dashboardProjektiFilter.has(p.kampanja)) &&
+    (!dashboardSegmenttiFilter.size || dashboardSegmenttiFilter.has(p.segmentti)));
 }
-function setDashboardFilterProjekti(v) { dashboardFilterProjekti=v; dashUpcomingPage=0; renderDashboard(); }
-function setDashboardFilterSegmentti(v) { dashboardFilterSegmentti=v; dashUpcomingPage=0; renderDashboard(); }
-// Valitsimien vaihtoehdot tulevat aina KOKO datasta (ei toisiaan rajaten)
-// — yksinkertaisempi ja ennakoitavampi kuin molempien ristiin kaventaminen,
-// eivätkä vaihtoehdot näin katoa/ilmesty kesken valinnan.
-function dashboardFilterOptionsHtml(current, options, allLabel) {
-  return `<option value=""${current?'':' selected'}>${allLabel}</option>`+
-    options.map(o=>`<option value="${esc(o)}"${o===current?' selected':''}>${esc(o)}</option>`).join('');
+
+function toggleDashProjektiFilter(e) {
+  e.stopPropagation();
+  const panel=document.getElementById('dash-pf-panel'); if (!panel) return;
+  const opening=panel.classList.contains('hidden');
+  closeQuickAdd(); closeUserMenu(); closeDashSegmenttiFilter();
+  closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter(); closeBulkSegmenttiFilter(); closeEmailToPicker();
+  if (opening) { renderDashProjektiFilterPanel(); panel.classList.remove('hidden'); }
+  else panel.classList.add('hidden');
+  document.getElementById('dash-pf-btn')?.setAttribute('aria-expanded', String(opening));
 }
-function populateDashboardFilterSelects() {
-  const projSel=document.getElementById('dash-filter-projekti');
-  if (projSel) {
-    const projects=[...new Set(allProspects.map(p=>p.kampanja))].filter(Boolean).sort((a,b)=>a.localeCompare(b,'fi'));
-    projSel.innerHTML=dashboardFilterOptionsHtml(dashboardFilterProjekti, projects, 'Kaikki projektit');
-  }
-  const segSel=document.getElementById('dash-filter-segmentti');
-  if (segSel) {
-    const segments=[...new Set(allProspects.map(p=>p.segmentti))].filter(Boolean).sort((a,b)=>a.localeCompare(b,'fi'));
-    segSel.innerHTML=dashboardFilterOptionsHtml(dashboardFilterSegmentti, segments, 'Kaikki toimialat');
-  }
+function closeDashProjektiFilter() {
+  document.getElementById('dash-pf-panel')?.classList.add('hidden');
+  document.getElementById('dash-pf-btn')?.setAttribute('aria-expanded','false');
 }
-function dashboardFilterBarHtml() {
-  return `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
-    <div class="form-group" style="margin:0;flex:1;min-width:140px"><label>Projekti</label><select class="form-control" id="dash-filter-projekti" onchange="setDashboardFilterProjekti(this.value)"></select></div>
-    <div class="form-group" style="margin:0;flex:1;min-width:140px"><label>Toimiala</label><select class="form-control" id="dash-filter-segmentti" onchange="setDashboardFilterSegmentti(this.value)"></select></div>
-  </div>`;
+function renderDashProjektiFilterPanel() {
+  const panel=document.getElementById('dash-pf-panel'); if (!panel) return;
+  const nimet=allProjektitNimet();
+  panel.innerHTML = nimet.length ? nimet.map(n=>`<label class="kb-pf-item">
+      <input type="checkbox" ${dashboardProjektiFilter.has(n)?'checked':''} onchange="toggleDashProjektiOption(${esc(JSON.stringify(n))})">
+      ${esc(n)}
+    </label>`).join('') : '<div style="padding:10px 14px;font-size:12px;color:var(--text2)">Ei projekteja</div>';
+}
+function toggleDashProjektiOption(nimi) {
+  if (dashboardProjektiFilter.has(nimi)) dashboardProjektiFilter.delete(nimi);
+  else dashboardProjektiFilter.add(nimi);
+  updateDashProjektiFilterBtn();
+  dashUpcomingPage=0;
+  renderDashboard();
+}
+function updateDashProjektiFilterBtn() {
+  const btn=document.getElementById('dash-pf-btn'); if (!btn) return;
+  const n=dashboardProjektiFilter.size;
+  const label = n===0 ? 'Kaikki' : n===1 ? [...dashboardProjektiFilter][0] : n+' valittu';
+  btn.textContent = 'Projekti: '+label+' ▾';
+}
+
+function toggleDashSegmenttiFilter(e) {
+  e.stopPropagation();
+  const panel=document.getElementById('dash-sf-panel'); if (!panel) return;
+  const opening=panel.classList.contains('hidden');
+  closeQuickAdd(); closeUserMenu(); closeDashProjektiFilter();
+  closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter(); closeBulkSegmenttiFilter(); closeEmailToPicker();
+  if (opening) { renderDashSegmenttiFilterPanel(); panel.classList.remove('hidden'); }
+  else panel.classList.add('hidden');
+  document.getElementById('dash-sf-btn')?.setAttribute('aria-expanded', String(opening));
+}
+function closeDashSegmenttiFilter() {
+  document.getElementById('dash-sf-panel')?.classList.add('hidden');
+  document.getElementById('dash-sf-btn')?.setAttribute('aria-expanded','false');
+}
+function renderDashSegmenttiFilterPanel() {
+  const panel=document.getElementById('dash-sf-panel'); if (!panel) return;
+  const segs=distinctSegments();
+  panel.innerHTML = segs.length ? segs.map(s=>`<label class="kb-sf-item">
+      <input type="checkbox" ${dashboardSegmenttiFilter.has(s)?'checked':''} onchange="toggleDashSegmenttiOption(${esc(JSON.stringify(s))})">
+      ${esc(s)}
+    </label>`).join('') : '<div style="padding:10px 14px;font-size:12px;color:var(--text2)">Ei toimialoja</div>';
+}
+function toggleDashSegmenttiOption(seg) {
+  if (dashboardSegmenttiFilter.has(seg)) dashboardSegmenttiFilter.delete(seg);
+  else dashboardSegmenttiFilter.add(seg);
+  updateDashSegmenttiFilterBtn();
+  dashUpcomingPage=0;
+  renderDashboard();
+}
+function updateDashSegmenttiFilterBtn() {
+  const btn=document.getElementById('dash-sf-btn'); if (!btn) return;
+  const n=dashboardSegmenttiFilter.size;
+  const label = n===0 ? 'Kaikki' : n===1 ? [...dashboardSegmenttiFilter][0] : n+' valittu';
+  btn.textContent = 'Toimiala: '+label+' ▾';
 }
 
 function renderDashboard() {
@@ -7679,7 +7741,6 @@ function renderDashboard() {
   const theme=dashboardTheme();
   const shellEl=document.getElementById('dash-body');
   if (shellEl) shellEl.innerHTML = theme==='spara' ? dashboardShellSparaHtml() : dashboardShellClassicHtml();
-  populateDashboardFilterSelects();
 
   const filtered=dashboardFilteredProspects();
 
@@ -10344,6 +10405,10 @@ function populateProjektiSelects() {
   // "jos aiempi arvo ei enää kelpaa" -käsittely.
   [...kanbanProjektiFilter].forEach(n=>{ if(!nimet.includes(n)) kanbanProjektiFilter.delete(n); });
   updateKanbanProjektiFilterBtn();
+  // Sama periaate Dashboardin omalle monivalintaiselle projektisuodattimelle.
+  [...dashboardProjektiFilter].forEach(n=>{ if(!nimet.includes(n)) dashboardProjektiFilter.delete(n); });
+  updateDashProjektiFilterBtn();
+  if (!document.getElementById('dash-pf-panel')?.classList.contains('hidden')) renderDashProjektiFilterPanel();
   if (!document.getElementById('kb-pf-panel')?.classList.contains('hidden')) renderKanbanProjektiFilterPanel();
   // tf_kampanja (Lisää tili) ja pm-projekti (Älykäs Prospektointi) ovat
   // "mihin luodaan" -valitsimia, ei suodattimia — ei tyhjää "Kaikki
@@ -10940,6 +11005,10 @@ function buildSegmentFilter() {
   [...kanbanSegmenttiFilter].forEach(s=>{ if(!segs.includes(s)) kanbanSegmenttiFilter.delete(s); });
   updateKanbanSegmenttiFilterBtn();
   if (!document.getElementById('kb-sf-panel')?.classList.contains('hidden')) renderKanbanSegmenttiFilterPanel();
+  // Sama periaate Dashboardin omalle monivalintaiselle toimialasuodattimelle.
+  [...dashboardSegmenttiFilter].forEach(s=>{ if(!segs.includes(s)) dashboardSegmenttiFilter.delete(s); });
+  updateDashSegmenttiFilterBtn();
+  if (!document.getElementById('dash-sf-panel')?.classList.contains('hidden')) renderDashSegmenttiFilterPanel();
 }
 function kampBadge(k) {
   if (!k) return '–';
@@ -10986,7 +11055,7 @@ function toggleQuickAdd(e) {
   m.style.display=m.style.display==='none'?'':'none';
 }
 function closeQuickAdd() { const m=document.getElementById('quick-add-menu'); if(m) m.style.display='none'; }
-document.addEventListener('click', ()=>{ closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter(); closeEmailToPicker(); closeBulkSegmenttiFilter(); });
+document.addEventListener('click', ()=>{ closeQuickAdd(); closeUserMenu(); closeKanbanProjektiFilter(); closeKanbanSegmenttiFilter(); closeEmailToPicker(); closeBulkSegmenttiFilter(); closeDashProjektiFilter(); closeDashSegmenttiFilter(); });
 
 // ── Global Add Contact ────────────────────────────────────────────────────────
 const GC_NEW_TILI='__new__';
